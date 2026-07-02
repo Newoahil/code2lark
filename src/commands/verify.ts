@@ -23,6 +23,7 @@ export async function verifyCommand(args: string[], options: Record<string, stri
   }
 
   const packagePath = path.resolve(packageArg);
+  const mode = getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime")));
   const level2 = hasOption(options, "level2");
   const strict = hasOption(options, "strict") || level2;
   const envPath = getStringOption(options, "env", path.join(packagePath, "bot-runtime", ".env"));
@@ -41,6 +42,27 @@ export async function verifyCommand(args: string[], options: Record<string, stri
   checks.push(checkFile("capability_map", path.join(manifestDir, "capability_map.json")));
   checks.push(checkFile("interaction_contract", path.join(manifestDir, "interaction_contract.json")));
   checks.push(checkFile("required_permissions", path.join(manifestDir, "required_permissions.json")));
+
+  if (mode === "embedded-adapter" || mode === "embedded") {
+    checks.push(...buildEmbeddedAdapterChecks(packagePath));
+    printChecks(checks);
+    writeReports(reportDir, checks, {
+      packagePath,
+      envPath,
+      runtimeUrl,
+      simulate: false,
+      sendStartCard: false,
+      level2: false,
+      targetBaseUrl: "",
+      mode: "embedded-adapter",
+    });
+    const failed = checks.some((check) => check.status === "fail");
+    const warned = checks.some((check) => check.status === "warn");
+    if (failed || (strict && warned)) {
+      process.exitCode = 1;
+    }
+    return;
+  }
 
   let service: ServiceManifest | undefined;
   let permissions: RequiredPermissions | undefined;
@@ -427,6 +449,7 @@ export async function verifyCommand(args: string[], options: Record<string, stri
     sendStartCard,
     level2,
     targetBaseUrl,
+    mode,
   });
   const failed = checks.some((check) => check.status === "fail");
   const warned = checks.some((check) => check.status === "warn");
@@ -439,6 +462,19 @@ function checkFile(name: string, filePath: string): CheckResult {
   return fs.existsSync(filePath)
     ? { name, status: "pass", detail: filePath }
     : { name, status: "fail", detail: `Missing ${filePath}` };
+}
+
+function buildEmbeddedAdapterChecks(packagePath: string): CheckResult[] {
+  return [
+    checkFile("adapter:handlers", path.join(packagePath, "adapter", "handlers.ts")),
+    checkFile("adapter:cards", path.join(packagePath, "adapter", "cards.ts")),
+    checkFile("adapter:service-client", path.join(packagePath, "adapter", "service-client.ts")),
+    checkFile("adapter:validation", path.join(packagePath, "adapter", "validation.ts")),
+    checkFile("adapter:types", path.join(packagePath, "adapter", "types.ts")),
+    checkFile("adapter:audit-events", path.join(packagePath, "adapter", "audit-events.ts")),
+    checkFile("adapter:integration-guide", path.join(packagePath, "docs", "integration_guide.md")),
+    checkFile("adapter:level2-record", path.join(packagePath, "level2_verification_record.md")),
+  ];
 }
 
 function sanitizeEnv(env: Record<string, string>): Record<string, string> {
@@ -753,6 +789,7 @@ function writeReports(
     sendStartCard: boolean;
     level2: boolean;
     targetBaseUrl: string;
+    mode?: string;
   },
 ): void {
   const summary = {
@@ -974,9 +1011,10 @@ function buildMarkdownReport(summary: {
     runtimeUrl: string;
     simulate: boolean;
     sendStartCard: boolean;
-    level2: boolean;
-    targetBaseUrl: string;
-  };
+      level2: boolean;
+      targetBaseUrl: string;
+      mode?: string;
+    };
   checks: CheckResult[];
 }): string {
   const rows = summary.checks
@@ -991,6 +1029,7 @@ function buildMarkdownReport(summary: {
 - Env file: ${summary.context.envPath}
 - Target base URL: ${summary.context.targetBaseUrl || "not provided"}
 - Runtime URL: ${summary.context.runtimeUrl || "not checked"}
+- Integration mode: ${summary.context.mode || "standalone-runtime"}
 - Simulation requested: ${summary.context.simulate ? "yes" : "no"}
 - Send start card requested: ${summary.context.sendStartCard ? "yes" : "no"}
 - Level 2 mode: ${summary.context.level2 ? "yes" : "no"}

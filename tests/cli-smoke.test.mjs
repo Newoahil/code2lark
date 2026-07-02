@@ -205,6 +205,29 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(contextReplyMarkdown, /sk-test-secret-should-not-leak/);
   const missingGenerated = path.join(temp, "generated-missing-context");
   run(["generate", workspace, "--out", missingGenerated]);
+  for (const relativePath of [
+    "adapter/cards.ts",
+    "adapter/handlers.ts",
+    "adapter/service-client.ts",
+    "adapter/validation.ts",
+    "adapter/types.ts",
+    "adapter/audit-events.ts",
+    "docs/integration_guide.md",
+    "bot-runtime/src/index.ts",
+  ]) {
+    assert.ok(fs.existsSync(path.join(missingGenerated, relativePath)), `${relativePath} should be generated`);
+  }
+  const generatedStartHere = fs.readFileSync(path.join(missingGenerated, "START_HERE.md"), "utf8");
+  assert.match(generatedStartHere, /adapter\//);
+  const generatedReadmeWithAdapter = fs.readFileSync(path.join(missingGenerated, "README.md"), "utf8");
+  assert.match(generatedReadmeWithAdapter, /Embedded adapter/);
+  const embeddedVerifyOutput = run(["verify", missingGenerated, "--mode", "embedded-adapter", "--strict"]);
+  assert.match(embeddedVerifyOutput, /adapter:handlers/);
+  const embeddedVerifyReport = JSON.parse(fs.readFileSync(path.join(missingGenerated, "verification_report.json"), "utf8"));
+  assert.equal(embeddedVerifyReport.status, "pass");
+  assert.equal(embeddedVerifyReport.context.mode, "embedded-adapter");
+  assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:integration-guide" && item.status === "pass"));
+  assert.equal(embeddedVerifyReport.checks.some((item) => item.name.startsWith("runtime:/debug/")), false);
   const missingStatusOutput = run(["status", missingGenerated]);
   assert.match(missingStatusOutput, /MVP status: external_context_missing/);
   assert.match(missingStatusOutput, /Context request: /);

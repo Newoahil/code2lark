@@ -30,9 +30,13 @@ export async function generateCommand(args: string[], options: Record<string, st
   const meta = readOptionalJson<ImageAgentMeta>(path.join(manifestDir, "image_agent_meta.snapshot.json"));
   const defaultOut = path.resolve("generated", `${slugify(service.service.name)}-lark`);
   const outDir = path.resolve(getStringOption(options, "out", defaultOut));
+  const adapterDir = path.join(outDir, "adapter");
+  const docsDir = path.join(outDir, "docs");
   const runtimeDir = path.join(outDir, "bot-runtime");
 
   ensureDir(outDir);
+  ensureDir(adapterDir);
+  ensureDir(docsDir);
   ensureDir(runtimeDir);
   ensureDir(path.join(outDir, "manifest"));
 
@@ -42,6 +46,7 @@ export async function generateCommand(args: string[], options: Record<string, st
     generated_at: new Date().toISOString(),
     source_workspace: workspace,
     service: service.service.name,
+    core_artifact: "adapter",
     runtime: "node-lark-bot-runtime",
     capability_ids: capabilities.capabilities.map((capability) => capability.id),
   });
@@ -50,9 +55,16 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service));
   writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions));
   writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions));
+  writeText(path.join(docsDir, "integration_guide.md"), buildEmbeddedIntegrationGuide(service, permissions));
   writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions));
   writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service));
   writePackageContext(workspace, outDir, service, permissions);
+  writeText(path.join(adapterDir, "types.ts"), adapterTypesTs());
+  writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
+  writeText(path.join(adapterDir, "validation.ts"), adapterValidationTs());
+  writeText(path.join(adapterDir, "service-client.ts"), adapterServiceClientTs());
+  writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs());
+  writeText(path.join(adapterDir, "handlers.ts"), adapterHandlersTs(service, capabilities, meta));
   writeText(path.join(runtimeDir, "package.json"), runtimePackageJson(service.service.name));
   writeText(path.join(runtimeDir, ".gitignore"), runtimeGitignore());
   writeText(path.join(runtimeDir, "tsconfig.json"), runtimeTsconfig());
@@ -354,7 +366,7 @@ function buildLevel2ManualEvidenceTemplate(service: ServiceManifest): Record<str
 function buildStartHere(service: ServiceManifest): string {
   return `# Start Here
 
-This generated package connects \`${service.service.name}\` to a Feishu/Lark bot for MVP-1A verification.
+This generated package connects \`${service.service.name}\` to a Feishu/Lark bot for MVP-1A verification. The core generated artifact is \`adapter/\`; \`bot-runtime/\` is the optional standalone reference host.
 
 ## Boundary
 
@@ -364,16 +376,17 @@ This generated package connects \`${service.service.name}\` to a Feishu/Lark bot
 
 ## First 10 Minutes
 
-1. Read \`doctor_report.md\` for the current blocker list.
-2. Send \`feishu_context.request.md\` to the Feishu app owner/FDE.
-3. Use \`feishu_context.reply.template.json\` or \`feishu_context.reply.template.md\` to record non-secret answers, then confirm who owns \`APP_ID\`, \`APP_SECRET\`, \`VERIFICATION_TOKEN\`, \`TEST_CHAT_ID\`, \`PUBLIC_CALLBACK_BASE_URL\`, and the reachable target URL.
-4. If this package was copied outside the Lark-deployer repo, set the CLI path:
+1. Review \`adapter/\` and \`docs/integration_guide.md\` if you already have a Feishu SDK service.
+2. Read \`doctor_report.md\` for the current blocker list.
+3. Send \`feishu_context.request.md\` to the Feishu app owner/FDE.
+4. Use \`feishu_context.reply.template.json\` or \`feishu_context.reply.template.md\` to record non-secret answers, then confirm who owns \`APP_ID\`, \`APP_SECRET\`, \`VERIFICATION_TOKEN\`, \`TEST_CHAT_ID\`, \`PUBLIC_CALLBACK_BASE_URL\`, and the reachable target URL.
+5. If this package was copied outside the Lark-deployer repo, set the CLI path:
 
 \`\`\`powershell
 $env:LARK_DEPLOYER_CLI="C:\\path\\to\\Lark-deployer\\dist\\index.js"
 \`\`\`
 
-5. From this package root, rerun the current gate:
+6. From this package root, rerun the current gate:
 
 \`\`\`powershell
 node $env:LARK_DEPLOYER_CLI status .
@@ -416,6 +429,253 @@ node $env:LARK_DEPLOYER_CLI doctor . --out doctor_report.json --probe-target --g
 `;
 }
 
+function adapterTypesTs(): string {
+  return `export interface GeneratePreset {
+  template_id: string;
+  size: string;
+  fields: Record<string, string>;
+  message?: string;
+}
+
+export interface AdapterActionContext {
+  action: string;
+  value?: Record<string, unknown>;
+  formValue?: Record<string, unknown>;
+  operatorOpenId?: string;
+  openMessageId?: string;
+  openChatId?: string;
+}
+
+export interface AdapterDependencies {
+  imageAgentBaseUrl: string;
+  timeoutMs?: number;
+  uploadImageToFeishu?: (imageUrl: string) => Promise<string>;
+  allowedOperatorOpenIds?: string[];
+}
+
+export interface AdapterAuditEvent {
+  event: string;
+  detail: Record<string, unknown>;
+}
+
+export interface AdapterResult {
+  ok: boolean;
+  card: Record<string, unknown>;
+  auditEvents: AdapterAuditEvent[];
+}
+`;
+}
+
+function adapterAuditEventsTs(): string {
+  return `import type { AdapterAuditEvent } from "./types.js";
+
+export function auditEvent(event: string, detail: Record<string, unknown> = {}): AdapterAuditEvent {
+  return { event, detail };
+}
+`;
+}
+
+function adapterValidationTs(): string {
+  return `import type { GeneratePreset } from "./types.js";
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export function assertAllowedOperator(operatorOpenId: string | undefined, allowedOperatorOpenIds: string[] | undefined): void {
+  if (!allowedOperatorOpenIds?.length) return;
+  if (!operatorOpenId || !allowedOperatorOpenIds.includes(operatorOpenId)) {
+    throw new Error("Operator is not allowed to execute this card action.");
+  }
+}
+
+export function validateSize(size: string): void {
+  if (!/^([1-9]\\d*)x([1-9]\\d*)$/i.test(size.trim())) {
+    throw new Error("Invalid image size: " + size);
+  }
+}
+
+export function mergeGeneratePresetWithFormValue(preset: GeneratePreset, formValue: Record<string, unknown> | undefined): GeneratePreset {
+  if (!formValue) return preset;
+  const fields = { ...preset.fields };
+  for (const [key, value] of Object.entries(formValue)) {
+    if (key.startsWith("field_") && typeof value === "string") {
+      fields[key.slice("field_".length)] = value;
+    }
+  }
+  const merged = {
+    ...preset,
+    template_id: stringValue(formValue.param_template_id) || preset.template_id,
+    size: stringValue(formValue.param_size) || preset.size,
+    message: stringValue(formValue.param_message) || preset.message,
+    fields,
+  };
+  validateSize(merged.size);
+  return merged;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+`;
+}
+
+function adapterServiceClientTs(): string {
+  return `import type { GeneratePreset } from "./types.js";
+
+export async function callImageGenerate(baseUrl: string, preset: GeneratePreset, timeoutMs = 120000): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const form = new FormData();
+    form.set("template_id", preset.template_id);
+    form.set("size", preset.size);
+    form.set("fields", JSON.stringify(preset.fields));
+    if (preset.message) form.set("message", preset.message);
+    const response = await fetch(baseUrl.replace(/\\/+$/, "") + "/api/generate", {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error("image-agent-web /api/generate returned HTTP " + response.status);
+    }
+    const body = await response.json();
+    return body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : {};
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+`;
+}
+
+function adapterCardsTs(): string {
+  return `export function buildSuccessCard(result: Record<string, unknown>): Record<string, unknown> {
+  const imageUrl = typeof result.image_url === "string" ? result.image_url : "";
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "green", title: { tag: "plain_text", content: "Image generation complete" } },
+    elements: [
+      { tag: "markdown", content: imageUrl ? "**Image:** " + imageUrl : "Image generation completed." },
+    ],
+  };
+}
+
+export function buildFailureCard(message: string): Record<string, unknown> {
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "red", title: { tag: "plain_text", content: "Image generation failed" } },
+    elements: [{ tag: "markdown", content: "**What happened:** " + message }],
+  };
+}
+`;
+}
+
+function adapterHandlersTs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
+  const generateCapability = capabilities.capabilities.find((capability) => capability.id === "image.generate") || capabilities.capabilities[0];
+  const properties = isJsonObject(generateCapability?.input_schema.properties) ? generateCapability.input_schema.properties : {};
+  const templateProperty = isJsonObject(properties.template_id) ? properties.template_id : {};
+  const defaultTemplate = typeof templateProperty.default === "string" ? templateProperty.default : meta?.templates?.[0]?.id || "product-image";
+  const fieldsProperty = isJsonObject(properties.fields) ? properties.fields : {};
+  const defaultSizeByTemplate = isJsonObject(fieldsProperty.default_size_by_template) ? fieldsProperty.default_size_by_template : {};
+  const defaultSize = typeof defaultSizeByTemplate[defaultTemplate] === "string" ? defaultSizeByTemplate[defaultTemplate] : "1024x1024";
+  const defaultPreset = {
+    template_id: defaultTemplate,
+    size: defaultSize,
+    fields: {},
+    message: "",
+  };
+  return `import { auditEvent } from "./audit-events.js";
+import { buildFailureCard, buildSuccessCard } from "./cards.js";
+import { callImageGenerate } from "./service-client.js";
+import type { AdapterActionContext, AdapterDependencies, AdapterResult, GeneratePreset } from "./types.js";
+import { assertAllowedOperator, mergeGeneratePresetWithFormValue } from "./validation.js";
+
+const defaultPreset: GeneratePreset = ${JSON.stringify(defaultPreset, null, 2)};
+
+export async function handleImageAgentCardAction(ctx: AdapterActionContext, deps: AdapterDependencies): Promise<AdapterResult> {
+  const auditEvents = [auditEvent("adapter_card_action_received", { action: ctx.action, service: ${JSON.stringify(service.service.name)} })];
+  try {
+    assertAllowedOperator(ctx.operatorOpenId, deps.allowedOperatorOpenIds);
+    if (ctx.action !== "image.generate.submit") {
+      throw new Error("Unsupported adapter action: " + ctx.action);
+    }
+    const preset = mergeGeneratePresetWithFormValue(defaultPreset, ctx.formValue);
+    const result = await callImageGenerate(deps.imageAgentBaseUrl, preset, deps.timeoutMs);
+    auditEvents.push(auditEvent("adapter_generation_succeeded", { imageUrl: result.image_url || "" }));
+    return { ok: true, card: buildSuccessCard(result), auditEvents };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    auditEvents.push(auditEvent("adapter_generation_failed", { message }));
+    return { ok: false, card: buildFailureCard(message), auditEvents };
+  }
+}
+`;
+}
+
+function buildEmbeddedIntegrationGuide(service: ServiceManifest, permissions: RequiredPermissions): string {
+  return `# Embedded Adapter Integration Guide
+
+This package is adapter-first. The core artifact is \`adapter/\`; \`bot-runtime/\` is a standalone reference host for teams that do not already have a Feishu SDK service.
+
+## Adapter Files
+
+- \`adapter/handlers.ts\`: entry point for card action handling.
+- \`adapter/cards.ts\`: card builders returned to the host service.
+- \`adapter/service-client.ts\`: calls \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}\`.
+- \`adapter/validation.ts\`: form parsing and business validation helpers.
+- \`adapter/audit-events.ts\`: structured audit event declarations.
+- \`adapter/types.ts\`: host-facing TypeScript interfaces.
+
+## Host Responsibilities
+
+Your existing Feishu SDK service owns SDK initialization, callback verification, route registration, image upload wrappers, audit log persistence, runtime config loading, deployment, and process lifecycle.
+
+## Handler Shape
+
+\`\`\`ts
+import { handleImageAgentCardAction } from "./adapter/handlers";
+
+const result = await handleImageAgentCardAction({
+  action: "image.generate.submit",
+  formValue,
+  operatorOpenId,
+  openMessageId,
+  openChatId,
+}, {
+  imageAgentBaseUrl,
+  timeoutMs,
+  uploadImageToFeishu,
+  allowedOperatorOpenIds,
+});
+
+for (const event of result.auditEvents) {
+  audit(event);
+}
+return result.card;
+\`\`\`
+
+## Feishu Capabilities To Confirm
+
+${permissions.scopes.map((scope) => `- \`${scope.scope}\`: ${scope.reason}`).join("\n")}
+${permissions.callbacks.map((callback) => `- Callback \`${callback.callback}\`: ${callback.reason}`).join("\n")}
+
+## Verification
+
+Run package validation without starting the standalone runtime:
+
+\`\`\`powershell
+node ..\\..\\dist\\index.js verify . --mode embedded-adapter --strict
+\`\`\`
+
+Real Level 2 still requires your host service to receive a real Feishu card callback, call the adapter, call \`${service.service.name}\`, return the result card, and record manual evidence in \`level2_verification_record.md\`.
+`;
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 function buildGeneratedReadme(service: ServiceManifest, permissions: RequiredPermissions): string {
   return `# ${service.service.name} Lark Integration Package
 
@@ -446,6 +706,18 @@ The start card includes Feishu form inputs for template id, size, optional messa
 ## Required Context
 
 ${permissions.context_requirements.map((item) => `- ${item}`).join("\n")}
+
+## Embedded adapter
+
+The strategic integration path is the generated \`adapter/\` directory. Use \`docs/integration_guide.md\` when you already have a Feishu SDK service and want to embed the generated card-action adapter without deploying the standalone reference runtime.
+
+Package-only validation for this path does not require \`bot-runtime/.env\` or a running runtime:
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict
+\`\`\`
+
+The \`bot-runtime/\` directory remains available as a standalone reference host for local verification or teams without an existing Feishu service.
 
 ## Runtime Config Boundaries
 
