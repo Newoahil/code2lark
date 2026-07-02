@@ -7,7 +7,9 @@
 
 ## 1. 项目定位
 
-Lark-deployer 是一个构建时（build-time）生成器：分析一个已有服务，推断其可调用能力，生成可审查的服务契约（manifest / capability_map / interaction_contract / required_permissions），再产出一个可独立运行的飞书/Lark 机器人运行时（TypeScript + 官方 `@larksuiteoapi/node-sdk`），并提供从本地模拟到真实飞书 Level 2 验证、再到 FDE 交接的完整校验链路。
+Lark-deployer 是一个构建时（build-time）生成器：分析一个已有服务或服务交互流程，生成可审查的服务契约（manifest / capability_map / interaction_contract / required_permissions）、飞书/Lark 交互设计、可嵌入适配器代码、权限说明、验证与交接材料。
+
+2026-07-02 的设计纠偏后，项目总方向以 `docs/development-charter.md` 为准：核心产物应是 `adapter/`，而不是必须独立部署的 `bot-runtime`。当前已有 `bot-runtime` 应被保留为 standalone/reference host，用于没有现成飞书服务的用户或本地验证；对已有飞书 SDK 服务的场景，应优先生成可嵌入 adapter。
 
 当前 MVP（MVP-1A）唯一目标服务：`C:\works\image-agent-web`（`docs/mvp-1a-image-agent-web.md`）。
 
