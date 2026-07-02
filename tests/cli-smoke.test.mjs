@@ -235,6 +235,14 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(runtimeClient, /export async function iterateImage\(/);
   assert.doesNotMatch(runtimeClient, /export async function createBatch\(/);
   assert.doesNotMatch(runtimeClient, /export async function getBatchStatus\(/);
+  const adapterCards = fs.readFileSync(path.join(missingGenerated, "adapter", "cards.ts"), "utf8");
+  assert.match(adapterCards, /name: "image_iterate_form"/);
+  assert.match(adapterCards, /name: "param_feedback"/);
+  assert.match(adapterCards, /content: "Feedback"/);
+  assert.match(adapterCards, /content: "Iterate image"/);
+  assert.match(adapterCards, /action: "image\.iterate\.submit"/);
+  const adapterTypes = fs.readFileSync(path.join(missingGenerated, "adapter", "types.ts"), "utf8");
+  assert.doesNotMatch(adapterTypes, /uploadImageToFeishu/);
   const generatedStartHere = fs.readFileSync(path.join(missingGenerated, "START_HERE.md"), "utf8");
   assert.match(generatedStartHere, /adapter\//);
   const generatedReadmeWithAdapter = fs.readFileSync(path.join(missingGenerated, "README.md"), "utf8");
@@ -267,6 +275,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.match(generatedIntegrationGuide, /\/health/);
   assert.match(generatedIntegrationGuide, /\/webhook\/card/);
   assert.match(generatedIntegrationGuide, /\/debug\/simulate-card-action/);
+  assert.doesNotMatch(generatedIntegrationGuide, /uploadImageToFeishu/);
   const embeddedOnlyGenerated = path.join(temp, "generated-embedded-only");
   run(["generate", workspace, "--out", embeddedOnlyGenerated, "--mode", "embedded-adapter"]);
   assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "adapter", "handlers.ts")));

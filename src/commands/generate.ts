@@ -508,7 +508,6 @@ export interface AdapterActionContext {
 export interface AdapterDependencies {
   imageAgentBaseUrl: string;
   timeoutMs?: number;
-  uploadImageToFeishu?: (imageUrl: string) => Promise<string>;
   allowedOperatorOpenIds?: string[];
 }
 
@@ -820,12 +819,41 @@ async function readJsonResponse(response, label) {
 function adapterCardsJs(): string {
   return `export function buildSuccessCard(result) {
   const imageUrl = typeof result.image_url === "string" ? result.image_url : "";
+  const sessionId = typeof result.session_id === "string" ? result.session_id : "";
+  const elements = [
+    { tag: "markdown", content: imageUrl ? "**Image:** " + imageUrl : "Image generation completed." },
+  ];
+  if (sessionId) {
+    elements.push({
+      tag: "form",
+      name: "image_iterate_form",
+      elements: [
+        {
+          tag: "input",
+          name: "param_feedback",
+          required: true,
+          width: "fill",
+          input_type: "multiline_text",
+          rows: 2,
+          auto_resize: true,
+          label: { tag: "plain_text", content: "Feedback" },
+          placeholder: { tag: "plain_text", content: "Describe what to refine in the next image" },
+        },
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "Iterate image" },
+          type: "primary",
+          action_type: "form_submit",
+          name: "submit_image_iterate",
+          value: { action: "image.iterate.submit", session_id: sessionId },
+        },
+      ],
+    });
+  }
   return {
     config: { wide_screen_mode: true },
     header: { template: "green", title: { tag: "plain_text", content: "Image generation complete" } },
-    elements: [
-      { tag: "markdown", content: imageUrl ? "**Image:** " + imageUrl : "Image generation completed." },
-    ],
+    elements,
   };
 }
 
@@ -898,12 +926,41 @@ export function buildFailureCard(message) {
 function adapterCardsTs(): string {
   return `export function buildSuccessCard(result: Record<string, unknown>): Record<string, unknown> {
   const imageUrl = typeof result.image_url === "string" ? result.image_url : "";
+  const sessionId = typeof result.session_id === "string" ? result.session_id : "";
+  const elements: unknown[] = [
+    { tag: "markdown", content: imageUrl ? "**Image:** " + imageUrl : "Image generation completed." },
+  ];
+  if (sessionId) {
+    elements.push({
+      tag: "form",
+      name: "image_iterate_form",
+      elements: [
+        {
+          tag: "input",
+          name: "param_feedback",
+          required: true,
+          width: "fill",
+          input_type: "multiline_text",
+          rows: 2,
+          auto_resize: true,
+          label: { tag: "plain_text", content: "Feedback" },
+          placeholder: { tag: "plain_text", content: "Describe what to refine in the next image" },
+        },
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "Iterate image" },
+          type: "primary",
+          action_type: "form_submit",
+          name: "submit_image_iterate",
+          value: { action: "image.iterate.submit", session_id: sessionId },
+        },
+      ],
+    });
+  }
   return {
     config: { wide_screen_mode: true },
     header: { template: "green", title: { tag: "plain_text", content: "Image generation complete" } },
-    elements: [
-      { tag: "markdown", content: imageUrl ? "**Image:** " + imageUrl : "Image generation completed." },
-    ],
+    elements,
   };
 }
 
@@ -1283,7 +1340,6 @@ const result = await handleImageAgentCardAction({
 }, {
   imageAgentBaseUrl,
   timeoutMs,
-  uploadImageToFeishu,
   allowedOperatorOpenIds,
 });
 
