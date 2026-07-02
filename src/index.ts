@@ -79,7 +79,7 @@ Usage:
   lark-deployer evidence <generated-package> [--env <file>] [--report <file>] [--audit <file>] [--runtime-url <url>] [--out <file>] [--update-record] [--manual-evidence <file>] [--start-message-id <id>] [--result-message-id <id>] [--result-screenshot <path-or-url>] [--generated-image-url <url>] [--generated-image-key <key>] [--batch-id <id>] [--batch-status-message-id <id>] [--batch-status-screenshot <path-or-url>] [--batch-download-url <url>] [--batch-download-screenshot <path-or-url>] [--trace-id <id>]
   lark-deployer handoff <generated-package> [--out <file>] [--copy-to <dir>] [--check]
   lark-deployer init-local <generated-package> [--context] [--reply] [--manual-evidence] [--all] [--force]
-  lark-deployer verify <generated-package> [--env <file>] [--mode embedded-adapter|standalone-runtime] [--runtime-url <url>] [--simulate] [--send-start-card] [--level2] [--strict] [--allow-local-callback]
+  lark-deployer verify <generated-package> [--env <file>] [--mode embedded-adapter|standalone-runtime] [--runtime-url <url>] [--host-runtime-url <url>] [--simulate] [--send-start-card] [--level2] [--strict] [--allow-local-callback]
 
 MVP target:
   image-agent-web /api/generate, /api/iterate, and /api/batch progress integration.
@@ -90,6 +90,7 @@ Boundary:
 
 Integration modes:
   embedded-adapter validates adapter/ for an existing Feishu SDK service.
+  --host-runtime-url validates an existing embedded host's /health and /webhook/card routes.
   standalone-runtime keeps bot-runtime as a reference host.
 
 Level 2:

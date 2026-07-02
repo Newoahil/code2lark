@@ -20,6 +20,12 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const workspace = path.join(temp, "out");
   const generated = path.join(temp, "generated");
 
+  const rootHelp = run(["--help"]);
+  assert.match(rootHelp, /--mode embedded-adapter\|standalone-runtime/);
+  assert.match(rootHelp, /--host-runtime-url <url>/);
+  const generateHelp = run(["generate", "--help"]);
+  assert.match(generateHelp, /--mode embedded-adapter\|standalone-runtime/);
+
   fs.mkdirSync(target, { recursive: true });
   fs.writeFileSync(
     path.join(target, "requirements.txt"),
@@ -266,6 +272,18 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "adapter", "handlers.ts")));
   assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "docs", "integration_guide.md")));
   assert.equal(fs.existsSync(path.join(embeddedOnlyGenerated, "bot-runtime")), false);
+  const embeddedOnlyStartHere = fs.readFileSync(path.join(embeddedOnlyGenerated, "START_HERE.md"), "utf8");
+  const embeddedOnlyReadme = fs.readFileSync(path.join(embeddedOnlyGenerated, "README.md"), "utf8");
+  assert.match(embeddedOnlyStartHere, /does not include `bot-runtime\/`/);
+  assert.match(embeddedOnlyStartHere, /--host-runtime-url/);
+  assert.doesNotMatch(embeddedOnlyStartHere, /cd bot-runtime/);
+  assert.doesNotMatch(embeddedOnlyStartHere, /npm start/);
+  assert.match(embeddedOnlyReadme, /does not include a standalone `bot-runtime\/` host/);
+  assert.match(embeddedOnlyReadme, /What The Embedded Adapter Does/);
+  assert.match(embeddedOnlyReadme, /--host-runtime-url/);
+  assert.doesNotMatch(embeddedOnlyReadme, /## What This Runtime Does/);
+  assert.doesNotMatch(embeddedOnlyReadme, /cd bot-runtime/);
+  assert.doesNotMatch(embeddedOnlyReadme, /npm start/);
   run(["verify", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--strict"]);
   const embeddedOnlyDoctorJson = JSON.parse(run(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--json"]));
   assert.equal(embeddedOnlyDoctorJson.integration_mode, "embedded-adapter");

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { getStringOption } from "../args.js";
+import { getStringOption, hasOption } from "../args.js";
 import { buildContextMarkdown, buildContextReplyMarkdown, buildContextReplyTemplate, buildContextRequestMarkdown, buildContextTemplate, type ContextTemplate } from "./context.js";
 import { copyFileIfExists, ensureDir, readJsonFile, slugify, writeJson, writeText } from "../fs-utils.js";
 import type { CapabilityMap, RequiredPermissions, ServiceManifest } from "../types.js";
@@ -16,10 +16,16 @@ interface ImageAgentMeta {
   }>;
 }
 
+type IntegrationMode = "embedded-adapter" | "standalone-runtime";
+
 export async function generateCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const workspaceArg = args[0];
+  if (hasOption(options, "help") || hasOption(options, "h")) {
+    console.log(generateUsage());
+    return;
+  }
   if (!workspaceArg) {
-    throw new Error("Usage: lark-deployer generate <analysis-workspace> [--out <generated-dir>]");
+    throw new Error(generateUsage());
   }
 
   const workspace = path.resolve(workspaceArg);
@@ -54,8 +60,8 @@ export async function generateCommand(args: string[], options: Record<string, st
   });
 
   writeText(path.join(outDir, ".gitignore"), generatedPackageGitignore());
-  writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service));
-  writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions));
+  writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode));
+  writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode));
   writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions));
   writeText(path.join(docsDir, "integration_guide.md"), buildEmbeddedIntegrationGuide(service, permissions));
   writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions));
@@ -86,7 +92,11 @@ export async function generateCommand(args: string[], options: Record<string, st
   console.log(`Next: review ${path.join(outDir, "README.md")}`);
 }
 
-function normalizeIntegrationMode(value: string): "embedded-adapter" | "standalone-runtime" {
+function generateUsage(): string {
+  return "Usage: lark-deployer generate <analysis-workspace> [--out <generated-dir>] [--mode embedded-adapter|standalone-runtime]";
+}
+
+function normalizeIntegrationMode(value: string): IntegrationMode {
   const normalized = value.trim() || "standalone-runtime";
   if (normalized === "embedded" || normalized === "embedded-adapter") return "embedded-adapter";
   if (normalized === "standalone" || normalized === "standalone-runtime") return "standalone-runtime";
@@ -393,15 +403,40 @@ function buildLevel2ManualEvidenceTemplate(service: ServiceManifest): Record<str
   };
 }
 
-function buildStartHere(service: ServiceManifest): string {
+function buildStartHere(service: ServiceManifest, integrationMode: IntegrationMode): string {
+  const afterContext = integrationMode === "standalone-runtime"
+    ? `\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI init-local . --context --reply
+# Fill feishu_context.local.json locally. Do not commit or share it.
+node $env:LARK_DEPLOYER_CLI configure . --strict --dry-run
+node $env:LARK_DEPLOYER_CLI configure . --strict
+cd bot-runtime
+npm install
+npm run build
+npm start
+\`\`\`
+
+In a second terminal from the package root:
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --runtime-url http://127.0.0.1:3978 --level2
+node $env:LARK_DEPLOYER_CLI evidence . --runtime-url http://127.0.0.1:3978 --update-record
+node $env:LARK_DEPLOYER_CLI doctor . --out doctor_report.json --probe-target --gate
+\`\`\``
+    : `\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict
+# After adapter/ is mounted in your existing Feishu SDK host:
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate
+node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter --gate
+\`\`\``;
   return `# Start Here
 
-This generated package connects \`${service.service.name}\` to a Feishu/Lark bot for MVP-1A verification. The core generated artifact is \`adapter/\`; \`bot-runtime/\` is the optional standalone reference host.
+This generated package connects \`${service.service.name}\` to Feishu/Lark card actions for MVP-1A verification. The core generated artifact is \`adapter/\`${integrationMode === "standalone-runtime" ? "; \`bot-runtime/\` is the optional standalone reference host." : ". This package was generated in embedded-adapter mode and does not include \`bot-runtime/\`."}
 
 ## Boundary
 
 - Lark-deployer built this package; it does not start or supervise \`${service.service.name}\`.
-- Keep real secrets out of shared Markdown. Use \`feishu_context.local.json\` or \`bot-runtime/.env\` locally.
+- Keep real secrets out of shared Markdown. Use \`feishu_context.local.json\`${integrationMode === "standalone-runtime" ? " or `bot-runtime/.env`" : " or the existing host service's secret store"} locally.
 - Real MVP completion still requires a Feishu app, a test chat, a public callback URL, and a real card click/result observation.
 
 ## First 10 Minutes
@@ -427,24 +462,7 @@ If this package still lives under the original Lark-deployer repository, the REA
 
 ## After Feishu Context Arrives
 
-\`\`\`powershell
-node $env:LARK_DEPLOYER_CLI init-local . --context --reply
-# Fill feishu_context.local.json locally. Do not commit or share it.
-node $env:LARK_DEPLOYER_CLI configure . --strict --dry-run
-node $env:LARK_DEPLOYER_CLI configure . --strict
-cd bot-runtime
-npm install
-npm run build
-npm start
-\`\`\`
-
-In a second terminal from the package root:
-
-\`\`\`powershell
-node $env:LARK_DEPLOYER_CLI verify . --runtime-url http://127.0.0.1:3978 --level2
-node $env:LARK_DEPLOYER_CLI evidence . --runtime-url http://127.0.0.1:3978 --update-record
-node $env:LARK_DEPLOYER_CLI doctor . --out doctor_report.json --probe-target --gate
-\`\`\`
+${afterContext}
 
 ## Evidence To Capture
 
@@ -1302,7 +1320,68 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function buildGeneratedReadme(service: ServiceManifest, permissions: RequiredPermissions): string {
+function buildGeneratedReadme(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode): string {
+  if (integrationMode === "embedded-adapter") {
+    return `# ${service.service.name} Lark Embedded Adapter Package
+
+This package was generated by Lark-deployer for the MVP-1A image generation, feedback-iteration, and batch-progress flow.
+
+## Boundary
+
+Lark-deployer generated an embeddable adapter package. It does not run or manage the target service lifecycle and this embedded-adapter package does not include a standalone \`bot-runtime/\` host.
+
+- Target service: ${service.service.name}
+- Target base URL: ${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}
+- Core artifact: \`adapter/\`
+- Integration mode: embedded-adapter
+- Managed by Lark-deployer: false
+
+## What The Embedded Adapter Does
+
+1. Exposes adapter handlers for Feishu/Lark card actions.
+2. Maps generate, iterate, batch submit, and batch refresh actions to \`${service.service.name}\` requests.
+3. Returns card JSON and audit events for your existing Feishu SDK host to send and persist.
+4. Leaves callback routing, Feishu SDK verification, secret storage, deployment, and Level 2 evidence collection to the existing host service.
+
+## Required Context
+
+${permissions.context_requirements.map((item) => `- ${item}`).join("\n")}
+
+## Package Validation
+
+Package-only validation does not require host secrets or a running generated runtime:
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict
+\`\`\`
+
+## Host Validation
+
+After \`adapter/\` is mounted in your existing Feishu SDK host, validate the host boundary:
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate
+\`\`\`
+
+This checks \`/health\` and \`/webhook/card\` on the existing host. If \`--simulate\` is provided and your host does not expose \`/debug/simulate-card-action\`, the report records a host-owned manual-check warning instead of assuming a generated debug API.
+
+## Real Level 2
+
+Real Level 2 still requires your host service to receive a real Feishu card callback, call the adapter, call \`${service.service.name}\`, return the result card, and record manual evidence in \`level2_verification_record.md\`.
+
+Use \`level2_manual_evidence.template.json\` as the safe template for local manual evidence intake. Keep filled evidence and secrets in ignored local files or your existing host service's secret store.
+
+## Handoff
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI status .
+node $env:LARK_DEPLOYER_CLI readiness .
+node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter
+node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter --gate
+node $env:LARK_DEPLOYER_CLI handoff .
+\`\`\`
+`;
+  }
   return `# ${service.service.name} Lark Integration Package
 
 This package was generated by Lark-deployer for the MVP-1A image generation, feedback-iteration, and batch-progress flow.
