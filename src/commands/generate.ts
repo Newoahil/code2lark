@@ -811,6 +811,62 @@ function adapterCardsJs(): string {
   };
 }
 
+export function buildBatchStatusCard(status, downloadUrl) {
+  const total = numberValue(status?.total);
+  const done = numberValue(status?.done);
+  const completedCount = Array.isArray(status?.completed) ? status.completed.length : 0;
+  const failedCount = Array.isArray(status?.failed) ? status.failed.length : 0;
+  const running = status?.running === true;
+  const finished = !running && total > 0 && done >= total;
+  const batchId = stringValue(status?.batch_id);
+  const elements = [
+    {
+      tag: "markdown",
+      content: [
+        "**Status:** " + (running ? "running" : finished ? "completed" : "not running"),
+        "**Batch ID:** " + batchId,
+        "**Done:** " + done + "/" + total,
+        "**Completed:** " + completedCount,
+        "**Failed:** " + failedCount,
+        stringValue(status?.template_id) ? "**Template:** " + stringValue(status.template_id) : "",
+        stringValue(status?.size) ? "**Size:** " + stringValue(status.size) : "",
+      ].filter(Boolean).join("\\n\\n"),
+    },
+  ];
+  if (finished && downloadUrl && completedCount > 0) {
+    elements.push({ tag: "markdown", content: "[Download completed images ZIP](" + downloadUrl + ")" });
+  }
+  if (batchId) {
+    elements.push({
+      tag: "action",
+      actions: [
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "Refresh status" },
+          type: "default",
+          value: { action: "image.batch.refresh", batch_id: batchId },
+        },
+      ],
+    });
+  }
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: running ? "blue" : failedCount > 0 ? "red" : "green",
+      title: { tag: "plain_text", content: running ? "Batch running" : failedCount > 0 ? "Batch finished with failures" : "Batch complete" },
+    },
+    elements,
+  };
+}
+
+function numberValue(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function stringValue(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export function buildFailureCard(message) {
   return {
     config: { wide_screen_mode: true },
@@ -831,6 +887,62 @@ function adapterCardsTs(): string {
       { tag: "markdown", content: imageUrl ? "**Image:** " + imageUrl : "Image generation completed." },
     ],
   };
+}
+
+export function buildBatchStatusCard(status: Record<string, unknown>, downloadUrl: string): Record<string, unknown> {
+  const total = numberValue(status.total);
+  const done = numberValue(status.done);
+  const completedCount = Array.isArray(status.completed) ? status.completed.length : 0;
+  const failedCount = Array.isArray(status.failed) ? status.failed.length : 0;
+  const running = status.running === true;
+  const finished = !running && total > 0 && done >= total;
+  const batchId = stringValue(status.batch_id);
+  const elements: unknown[] = [
+    {
+      tag: "markdown",
+      content: [
+        "**Status:** " + (running ? "running" : finished ? "completed" : "not running"),
+        "**Batch ID:** " + batchId,
+        "**Done:** " + done + "/" + total,
+        "**Completed:** " + completedCount,
+        "**Failed:** " + failedCount,
+        stringValue(status.template_id) ? "**Template:** " + stringValue(status.template_id) : "",
+        stringValue(status.size) ? "**Size:** " + stringValue(status.size) : "",
+      ].filter(Boolean).join("\\n\\n"),
+    },
+  ];
+  if (finished && downloadUrl && completedCount > 0) {
+    elements.push({ tag: "markdown", content: "[Download completed images ZIP](" + downloadUrl + ")" });
+  }
+  if (batchId) {
+    elements.push({
+      tag: "action",
+      actions: [
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "Refresh status" },
+          type: "default",
+          value: { action: "image.batch.refresh", batch_id: batchId },
+        },
+      ],
+    });
+  }
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: running ? "blue" : failedCount > 0 ? "red" : "green",
+      title: { tag: "plain_text", content: running ? "Batch running" : failedCount > 0 ? "Batch finished with failures" : "Batch complete" },
+    },
+    elements,
+  };
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 export function buildFailureCard(message: string): Record<string, unknown> {
@@ -865,7 +977,7 @@ function adapterHandlersTs(service: ServiceManifest, capabilities: CapabilityMap
     template.fields || []
   ).map((field) => [field.key, field.label || humanizeKey(field.key)])));
   return `import { auditEvent } from "./audit-events.js";
-import { buildFailureCard, buildSuccessCard } from "./cards.js";
+import { buildBatchStatusCard, buildFailureCard, buildSuccessCard } from "./cards.js";
 import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
 import type { AdapterActionContext, AdapterDependencies, AdapterResult, BatchRequest, GeneratePreset, IterateRequest } from "./types.js";
 import { assertAllowedOperator, mergeGeneratePresetWithFormValue } from "./validation.js";
@@ -900,7 +1012,7 @@ export async function handleImageAgentCardAction(ctx: AdapterActionContext, deps
       const downloadUrl = batchDownloadUrl(deps.imageAgentBaseUrl, status);
       auditEvents.push(auditEvent("adapter_batch_submitted", { batchId: created.batch_id, template_id: request.template_id, size: request.size, total: request.items.length, downloadUrl }));
       auditEvents.push(auditEvent("adapter_batch_status_checked", summarizeBatchStatus(status, downloadUrl)));
-      return { ok: true, card: buildSuccessCard(status), batchId: created.batch_id, batchStatus: status, downloadUrl, auditEvents };
+      return { ok: true, card: buildBatchStatusCard(status, downloadUrl), batchId: created.batch_id, batchStatus: status, downloadUrl, auditEvents };
     }
     if (ctx.action === "image.batch.refresh") {
       const batchId = stringValue(ctx.value?.batch_id || ctx.value?.batchId || ctx.formValue?.param_batch_id);
@@ -908,7 +1020,7 @@ export async function handleImageAgentCardAction(ctx: AdapterActionContext, deps
       const status = await callImageBatchStatus(deps.imageAgentBaseUrl, batchId, deps.timeoutMs);
       const downloadUrl = batchDownloadUrl(deps.imageAgentBaseUrl, status);
       auditEvents.push(auditEvent("adapter_batch_status_checked", summarizeBatchStatus(status, downloadUrl)));
-      return { ok: true, card: buildSuccessCard(status), batchId, batchStatus: status, downloadUrl, auditEvents };
+      return { ok: true, card: buildBatchStatusCard(status, downloadUrl), batchId, batchStatus: status, downloadUrl, auditEvents };
     }
     throw new Error("Unsupported adapter action: " + ctx.action);
   } catch (error) {
@@ -1005,7 +1117,7 @@ function adapterHandlersJs(service: ServiceManifest, capabilities: CapabilityMap
     template.fields || []
   ).map((field) => [field.key, field.label || humanizeKey(field.key)])));
   return `import { auditEvent } from "./audit-events.js";
-import { buildFailureCard, buildSuccessCard } from "./cards.js";
+import { buildBatchStatusCard, buildFailureCard, buildSuccessCard } from "./cards.js";
 import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
 import { assertAllowedOperator, mergeGeneratePresetWithFormValue } from "./validation.js";
 
@@ -1040,7 +1152,7 @@ export async function handleImageAgentCardAction(ctx, deps) {
       const downloadUrl = batchDownloadUrl(String(deps?.imageAgentBaseUrl || ""), status);
       auditEvents.push(auditEvent("adapter_batch_submitted", { batchId: created.batch_id, template_id: request.template_id, size: request.size, total: request.items.length, downloadUrl }));
       auditEvents.push(auditEvent("adapter_batch_status_checked", summarizeBatchStatus(status, downloadUrl)));
-      return { ok: true, card: buildSuccessCard(status), batchId: created.batch_id, batchStatus: status, downloadUrl, auditEvents };
+      return { ok: true, card: buildBatchStatusCard(status, downloadUrl), batchId: created.batch_id, batchStatus: status, downloadUrl, auditEvents };
     }
     if (action === "image.batch.refresh") {
       const batchId = stringValue(ctx?.value?.batch_id || ctx?.value?.batchId || ctx?.formValue?.param_batch_id);
@@ -1048,7 +1160,7 @@ export async function handleImageAgentCardAction(ctx, deps) {
       const status = await callImageBatchStatus(String(deps?.imageAgentBaseUrl || ""), batchId, Number(deps?.timeoutMs || 120000));
       const downloadUrl = batchDownloadUrl(String(deps?.imageAgentBaseUrl || ""), status);
       auditEvents.push(auditEvent("adapter_batch_status_checked", summarizeBatchStatus(status, downloadUrl)));
-      return { ok: true, card: buildSuccessCard(status), batchId, batchStatus: status, downloadUrl, auditEvents };
+      return { ok: true, card: buildBatchStatusCard(status, downloadUrl), batchId, batchStatus: status, downloadUrl, auditEvents };
     }
     throw new Error("Unsupported adapter action: " + action);
   } catch (error) {

@@ -260,6 +260,12 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     assert.equal(batchSimulation.card.header.template, "green");
     assert.equal(batchSimulation.batchId, "batch-local-e2e-1");
     assert.match(batchSimulation.downloadUrl, /\/api\/batch\/batch-local-e2e-1\/download$/);
+    const batchCardJson = JSON.stringify(batchSimulation.card);
+    assert.match(batchCardJson, /batch-local-e2e-1/);
+    assert.match(batchCardJson, /Done:\*\* 1\/1/);
+    assert.match(batchCardJson, /Completed:\*\* 1/);
+    assert.match(batchCardJson, /\/api\/batch\/batch-local-e2e-1\/download/);
+    assert.match(batchCardJson, /image\.batch\.refresh/);
     assert.equal(mockTarget.batchCalls, 1);
     assert.equal(mockTarget.batchStatusCalls, 1);
     assert.match(mockTarget.batchBodies.at(-1), /product-image/);
@@ -277,6 +283,12 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     assert.equal(batchRefreshSimulation.ok, true);
     assert.equal(batchRefreshSimulation.card.header.template, "green");
     assert.equal(batchRefreshSimulation.batchId, "batch-local-e2e-1");
+    const batchRefreshCardJson = JSON.stringify(batchRefreshSimulation.card);
+    assert.match(batchRefreshCardJson, /batch-local-e2e-1/);
+    assert.match(batchRefreshCardJson, /Done:\*\* 1\/1/);
+    assert.match(batchRefreshCardJson, /Completed:\*\* 1/);
+    assert.match(batchRefreshCardJson, /\/api\/batch\/batch-local-e2e-1\/download/);
+    assert.match(batchRefreshCardJson, /image\.batch\.refresh/);
     assert.equal(mockTarget.batchStatusCalls, 2);
 
     const dedupePayload = {
