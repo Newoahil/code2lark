@@ -62,9 +62,9 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(outDir, ".gitignore"), generatedPackageGitignore());
   writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode));
   writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode));
-  writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions));
+  writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions, integrationMode));
   writeText(path.join(docsDir, "integration_guide.md"), buildEmbeddedIntegrationGuide(service, permissions));
-  writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions));
+  writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode));
   writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service));
   writePackageContext(workspace, outDir, service, permissions);
   writeText(path.join(adapterDir, "types.ts"), adapterTypesTs());
@@ -1254,7 +1254,7 @@ function stringValue(value) {
 function buildEmbeddedIntegrationGuide(service: ServiceManifest, permissions: RequiredPermissions): string {
   return `# Embedded Adapter Integration Guide
 
-This package is adapter-first. The core artifact is \`adapter/\`; \`bot-runtime/\` is a standalone reference host for teams that do not already have a Feishu SDK service.
+This package is adapter-first. The core artifact is \`adapter/\`. In embedded-adapter mode, this package is intended for an existing Feishu SDK host and does not include a generated \`bot-runtime/\` directory. If a standalone reference host is needed, regenerate with \`--mode standalone-runtime\`.
 
 ## Adapter Files
 
@@ -1596,13 +1596,126 @@ When a runtime check fails, \`verification_report.md\` includes a short response
 `;
 }
 
-function buildLevel2VerificationRecord(service: ServiceManifest, permissions: RequiredPermissions): string {
+function buildLevel2VerificationRecord(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode): string {
   const scopes = permissions.scopes.length
     ? permissions.scopes.map((scope) => `  - [ ] \`${scope.scope}\` - ${scope.reason}`).join("\n")
     : "  - [ ] No explicit scopes were generated.";
   const callbacks = permissions.callbacks.length
     ? permissions.callbacks.map((callback) => `  - [ ] \`${callback.callback}\` - ${callback.reason}`).join("\n")
     : "  - [ ] No explicit callbacks were generated.";
+
+  if (integrationMode === "embedded-adapter") {
+    return `# Level 2 Verification Record
+
+Use this file to record the real Feishu/Lark verification for this embedded adapter package.
+
+## Environment
+
+- Date:
+- Operator:
+- Target service: ${service.service.name}
+- Target base URL: ${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}
+- Generated package path:
+- Existing host service URL:
+- Public callback URL: <PUBLIC_CALLBACK_BASE_URL>/webhook/card
+- Feishu app name:
+- Test chat:
+
+## Required Feishu Setup
+
+- [ ] Bot capability is enabled.
+- [ ] Bot is added to the test chat.
+- [ ] App credentials are stored in the existing host service's secret/config system: \`APP_ID\`, \`APP_SECRET\`.
+- [ ] Callback token is stored in the existing host service's secret/config system: \`VERIFICATION_TOKEN\`.
+- [ ] \`ENCRYPT_KEY\` is stored if encrypted callbacks are enabled.
+- [ ] \`TEST_CHAT_ID\` is configured in the existing host.
+- [ ] \`PUBLIC_CALLBACK_BASE_URL\` is configured and publicly reachable by Feishu.
+- [ ] \`DEBUG_ACCESS_TOKEN\` or equivalent protection is set before host-owned debug endpoints are exposed through a public callback URL.
+- [ ] \`ALLOWED_OPERATOR_OPEN_IDS\` or equivalent host guard is set for real group use, or the operator explicitly accepts that any valid card click can run the service.
+- [ ] Card callback URL is configured as \`<PUBLIC_CALLBACK_BASE_URL>/webhook/card\` on the existing host.
+
+## Required Scopes
+
+${scopes}
+
+## Required Callbacks
+
+${callbacks}
+
+## CLI Command Style
+
+- If this package still lives under the original Lark-deployer repository, run commands as \`node ..\\..\\dist\\index.js <command> .\`.
+- If this package was copied elsewhere, set \`$env:LARK_DEPLOYER_CLI="C:\\path\\to\\Lark-deployer\\dist\\index.js"\` and run commands as \`node $env:LARK_DEPLOYER_CLI <command> .\`.
+
+## Preflight Evidence
+
+- [ ] \`GET <target_base_url>/api/meta\` succeeds from the existing host environment.
+- [ ] \`GET <host_runtime_url>/health\` succeeds on the existing host.
+- [ ] \`POST <host_runtime_url>/webhook/card\` answers a local \`url_verification\` challenge.
+- [ ] \`POST <PUBLIC_CALLBACK_BASE_URL>/webhook/card\` answers a public \`url_verification\` challenge.
+- [ ] Signed card-action payloads to local and public \`/webhook/card\` return success cards when \`VERIFICATION_TOKEN\` is set.
+- [ ] If \`ENCRYPT_KEY\` is enabled, local and public encrypted \`url_verification\` challenges both succeed.
+- [ ] \`verify . --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate\` records host health/callback checks and either passes host-owned simulation or records the manual-check warning for the host debug surface.
+- [ ] \`verification_report.md\` has no unexpected FAIL checks.
+
+## Interaction Evidence
+
+- [ ] Existing host sends the start card or equivalent entry card.
+- [ ] Test chat receives the start card.
+- [ ] Start card shows expected template fields from \`manifest/image_agent_meta.snapshot.json\`.
+- [ ] Start card shows \`Template ID\`, \`Size\`, optional \`Message\`, and batch items JSON inputs.
+- [ ] Operator submits a valid card form in Feishu.
+- [ ] Existing host receives the card callback.
+- [ ] Existing host calls \`adapter/handlers.ts\` and records a \`card_action_received\` or equivalent adapter audit event.
+- [ ] If \`ALLOWED_OPERATOR_OPEN_IDS\` is set, an unlisted operator gets a red failure card and the target service is not called.
+- [ ] Repeating the same card action immediately is deduplicated by the host or documented as a host-owned behavior.
+- [ ] Existing host calls \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/generate\` through the adapter.
+- [ ] Submitted template id, field, size, and message values appear in the target request or output behavior.
+- [ ] Target service returns \`image_url\`.
+- [ ] Existing host uploads image to Feishu or records fallback URL.
+- [ ] Test chat card updates to success.
+- [ ] Success card shows \`Feedback\` input and \`Iterate image\` action when the target returns \`session_id\`.
+- [ ] Operator submits feedback from the success card in Feishu.
+- [ ] Existing host calls \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/iterate\` through the adapter.
+- [ ] Test chat receives an iterated result card with trace ID and result summary.
+- [ ] Operator submits a batch job from Feishu.
+- [ ] Existing host calls \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/batch\` through the adapter.
+- [ ] Batch progress card shows batch id, done/total, completed count, failed count, and refresh action.
+- [ ] Operator refreshes the batch progress card from Feishu.
+- [ ] Existing host calls \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/batch/{batch_id}/status\` through the adapter.
+- [ ] Completed batch card shows a download link for \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/batch/{batch_id}/download\` when completed images exist.
+- [ ] Success card includes trace ID and result summary.
+
+## Failure-Path Evidence
+
+At least one failure path should be observed before considering this package stable:
+
+- [ ] Invalid card input returns a red failure card and does not call the target service.
+- [ ] Missing or invalid target base URL returns a readable failure card.
+- [ ] Slow or stuck target response returns a readable timeout failure card.
+- [ ] Missing Feishu host configuration is caught before accepting real non-challenge callbacks.
+- [ ] Image upload failure falls back to target output URL when available.
+
+## Artifacts
+
+- \`verification_report.md\` path:
+- Existing host audit/log evidence path:
+- Start card message ID:
+- Result card message ID or screenshot:
+- Generated image URL or image key:
+- Batch ID:
+- Batch status card message ID or screenshot:
+- Batch download URL or screenshot:
+- Trace ID:
+- Notes:
+
+## Completion Decision
+
+- [ ] Level 2 verified.
+- [ ] Remaining issues documented.
+- [ ] This generated package can be handed to another FDE using \`README.md\`, \`deployment_checklist.md\`, and this file.
+`;
+  }
 
   return `# Level 2 Verification Record
 

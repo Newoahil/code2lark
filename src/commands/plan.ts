@@ -78,7 +78,51 @@ ${permissions.review_flags.map((item) => `- ${item}`).join("\n") || "- None"}
 `;
 }
 
-export function buildDeploymentChecklist(service: ServiceManifest, permissions: RequiredPermissions): string {
+export function buildDeploymentChecklist(
+  service: ServiceManifest,
+  permissions: RequiredPermissions,
+  integrationMode: "embedded-adapter" | "standalone-runtime" = "standalone-runtime",
+): string {
+  if (integrationMode === "embedded-adapter") {
+    return `# Deployment Checklist
+
+## Target Service
+
+- [ ] Confirm ${service.service.name} is running outside Lark-deployer.
+- [ ] Confirm the existing Feishu SDK host can reach ${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}.
+- [ ] Confirm GET /api/meta returns template metadata.
+
+## Feishu/Lark App
+
+${permissions.manual_steps.map((item) => `- [ ] ${item}`).join("\n")}
+
+## Embedded Host Environment
+
+- [ ] Mount generated \`adapter/\` in the existing Feishu SDK service.
+- [ ] Store APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, and target base URL in the existing host service's secret/config system.
+- [ ] Fill ENCRYPT_KEY only if encrypted callbacks are enabled in Feishu.
+- [ ] Set DEBUG_ACCESS_TOKEN before any host-owned debug endpoints are exposed through a public callback URL.
+- [ ] Decide whether ALLOWED_OPERATOR_OPEN_IDS should restrict who can execute card actions in the test chat.
+- [ ] Choose the correct Lark-deployer CLI command style for this package:
+  - If the package still lives under the original Lark-deployer repository, use \`node ..\\..\\dist\\index.js <command> .\`.
+  - If the package was copied elsewhere, set \`$env:LARK_DEPLOYER_CLI="C:\\path\\to\\Lark-deployer\\dist\\index.js"\` and use \`node $env:LARK_DEPLOYER_CLI <command> .\`.
+- [ ] Run \`node ..\\..\\dist\\index.js verify . --mode embedded-adapter --strict\` or \`node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict\` from the generated package root.
+- [ ] Run \`node ..\\..\\dist\\index.js verify . --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate\` or \`node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate\` after adapter/ is mounted in the existing host.
+- [ ] Configure callback URL to \`<PUBLIC_CALLBACK_BASE_URL>/webhook/card\` on the existing host.
+- [ ] Run \`node ..\\..\\dist\\index.js evidence .\` or \`node $env:LARK_DEPLOYER_CLI evidence .\` after verification and review \`level2_evidence_draft.md\`.
+- [ ] Run \`node ..\\..\\dist\\index.js doctor . --mode embedded-adapter --gate\` or \`node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter --gate\` and confirm remaining blockers are external host/Level 2 evidence only.
+- [ ] Run \`node ..\\..\\dist\\index.js handoff .\` or \`node $env:LARK_DEPLOYER_CLI handoff .\` and exclude local secrets before copying the package.
+
+## Done
+
+- [ ] A real Feishu test chat receives the start card from the existing host.
+- [ ] Clicking the preset generate button makes the existing host call adapter/ and ${service.service.name} /api/generate.
+- [ ] The result card appears with analysis and generated image or fallback image URL.
+- [ ] Batch submit and refresh call adapter/ and ${service.service.name} /api/batch endpoints.
+- [ ] Failure paths show readable error cards.
+- [ ] level2_verification_record.md contains the final operator, message id or screenshot, trace id, and completion decision.
+`;
+  }
   return `# Deployment Checklist
 
 ## Target Service
