@@ -249,8 +249,7 @@ import { handleImageAgentCardAction } from "./adapter/handlers";
 cardActionHandler.onAction(async (ctx) => {
   return await handleImageAgentCardAction(ctx, {
     imageAgentBaseUrl,
-    uploadImageToFeishu,
-    audit,
+    timeoutMs,
     allowedOperatorOpenIds,
   });
 });

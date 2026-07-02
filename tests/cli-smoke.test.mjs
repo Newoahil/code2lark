@@ -258,6 +258,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:action:image.iterate.submit" && item.status === "pass"));
   assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:action:image.batch.submit" && item.status === "pass"));
   assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:action:image.batch.refresh" && item.status === "pass"));
+  assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:permissions-interactions" && item.status === "pass"));
   assert.equal(embeddedVerifyReport.checks.some((item) => item.name.startsWith("runtime:/debug/")), false);
   const embeddedHostVerifyOutput = runExpectFailure(["verify", missingGenerated, "--mode", "embedded-adapter", "--host-runtime-url", "http://127.0.0.1:3978", "--simulate", "--strict"]);
   assert.match(embeddedHostVerifyOutput, /embedded:host:\/health/);
@@ -312,6 +313,16 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.match(embeddedOnlyIntegrationGuide, /--mode standalone-runtime/);
   assert.doesNotMatch(embeddedOnlyIntegrationGuide, /`bot-runtime\/` is a standalone reference host/);
   run(["verify", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--strict"]);
+  const permissionMismatchGenerated = path.join(temp, "generated-permission-mismatch");
+  fs.cpSync(embeddedOnlyGenerated, permissionMismatchGenerated, { recursive: true });
+  const permissionMismatchPath = path.join(permissionMismatchGenerated, "manifest", "required_permissions.json");
+  const permissionMismatch = JSON.parse(fs.readFileSync(permissionMismatchPath, "utf8"));
+  permissionMismatch.callbacks[0].required_by.push("missing.card");
+  fs.writeFileSync(permissionMismatchPath, `${JSON.stringify(permissionMismatch, null, 2)}\n`, "utf8");
+  const permissionMismatchOutput = runExpectFailure(["verify", permissionMismatchGenerated, "--mode", "embedded-adapter", "--strict"]);
+  assert.match(permissionMismatchOutput, /adapter:permissions-interactions/);
+  const permissionMismatchReport = JSON.parse(fs.readFileSync(path.join(permissionMismatchGenerated, "verification_report.json"), "utf8"));
+  assert.ok(permissionMismatchReport.checks.some((item) => item.name === "adapter:permissions-interactions" && item.status === "fail" && item.detail.includes("missing.card")));
   const embeddedOnlyDoctorJson = JSON.parse(run(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--json"]));
   assert.equal(embeddedOnlyDoctorJson.integration_mode, "embedded-adapter");
   assert.equal(embeddedOnlyDoctorJson.package_validation.status, "pass");

@@ -62,7 +62,7 @@ export async function verifyCommand(args: string[], options: Record<string, stri
   }
 
   if (mode === "embedded-adapter" || mode === "embedded") {
-    checks.push(...buildEmbeddedAdapterChecks(packagePath, interactions));
+    checks.push(...buildEmbeddedAdapterChecks(packagePath, interactions, permissions));
     checks.push(...await buildEmbeddedHostValidationChecks({ hostRuntimeUrl: runtimeUrl, simulate, sendStartCard, level2 }));
     printChecks(checks);
     writeReports(reportDir, checks, {
@@ -469,7 +469,7 @@ function checkFile(name: string, filePath: string): CheckResult {
     : { name, status: "fail", detail: `Missing ${filePath}` };
 }
 
-function buildEmbeddedAdapterChecks(packagePath: string, interactions: InteractionContract | undefined): CheckResult[] {
+function buildEmbeddedAdapterChecks(packagePath: string, interactions: InteractionContract | undefined, permissions: RequiredPermissions | undefined): CheckResult[] {
   const handlerPath = path.join(packagePath, "adapter", "handlers.ts");
   const handlerSource = fs.existsSync(handlerPath) ? fs.readFileSync(handlerPath, "utf8") : "";
   const checks = [
@@ -495,7 +495,47 @@ function buildEmbeddedAdapterChecks(packagePath: string, interactions: Interacti
         : `adapter/handlers.ts does not support ${actionId} for ${interaction.capability_id}.`,
     });
   }
+  checks.push(checkRequiredPermissionsMatchInteractions(interactions, permissions));
   return checks;
+}
+
+function checkRequiredPermissionsMatchInteractions(interactions: InteractionContract | undefined, permissions: RequiredPermissions | undefined): CheckResult {
+  if (!interactions || !permissions) {
+    return {
+      name: "adapter:permissions-interactions",
+      status: "fail",
+      detail: "Cannot compare required_permissions.json with interaction_contract.json because one or both did not parse.",
+    };
+  }
+
+  const interactionIds = new Set(interactions.interactions.map((interaction) => interaction.id));
+  const capabilityIds = new Set(interactions.interactions.map((interaction) => interaction.capability_id));
+  const validRequiredBy = new Set<string>();
+  for (const id of interactionIds) {
+    validRequiredBy.add(id);
+    validRequiredBy.add(`${id}.async`);
+  }
+  for (const capabilityId of capabilityIds) validRequiredBy.add(capabilityId);
+
+  const unknownRefs: string[] = [];
+  for (const scope of permissions.scopes) {
+    for (const ref of scope.required_by) {
+      if (!validRequiredBy.has(ref)) unknownRefs.push(`scope ${scope.scope}: ${ref}`);
+    }
+  }
+  for (const callback of permissions.callbacks) {
+    for (const ref of callback.required_by) {
+      if (!validRequiredBy.has(ref)) unknownRefs.push(`callback ${callback.callback}: ${ref}`);
+    }
+  }
+
+  return {
+    name: "adapter:permissions-interactions",
+    status: unknownRefs.length ? "fail" : "pass",
+    detail: unknownRefs.length
+      ? `required_permissions.json references entries not present in interaction_contract.json: ${unknownRefs.join(", ")}.`
+      : "required_permissions.json required_by entries match interaction_contract.json interactions or capabilities.",
+  };
 }
 
 async function buildEmbeddedHostValidationChecks(context: {
