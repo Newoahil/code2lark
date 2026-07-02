@@ -1288,6 +1288,12 @@ Run package validation without starting the standalone runtime:
 node ..\\..\\dist\\index.js verify . --mode embedded-adapter --strict
 \`\`\`
 
+After the adapter is mounted in your existing Feishu SDK host, run host validation against that host. This probes the host-owned \`/health\` endpoint and Feishu-style \`/webhook/card\` URL verification route; with \`--simulate\`, it also tries a conventional \`/debug/simulate-card-action\` endpoint and reports a manual-check warning if your host uses a different debug surface:
+
+\`\`\`powershell
+node ..\\..\\dist\\index.js verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate
+\`\`\`
+
 Real Level 2 still requires your host service to receive a real Feishu card callback, call the adapter, call \`${service.service.name}\`, return the result card, and record manual evidence in \`level2_verification_record.md\`.
 `;
 }
@@ -1336,6 +1342,14 @@ Package-only validation for this path does not require \`bot-runtime/.env\` or a
 \`\`\`powershell
 node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict
 \`\`\`
+
+Once the adapter is mounted in your existing Feishu SDK host, validate the host boundary with:
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate
+\`\`\`
+
+This embedded host validation checks \`/health\` and \`/webhook/card\` on the existing host. If \`--simulate\` is provided and your host does not expose \`/debug/simulate-card-action\`, the report records a host-owned manual-check warning instead of assuming a generated \`bot-runtime\` debug API.
 
 The \`bot-runtime/\` directory remains available as a standalone reference host for local verification or teams without an existing Feishu service.
 

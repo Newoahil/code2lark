@@ -19,7 +19,7 @@ interface CheckResult {
 export async function verifyCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const packageArg = args[0];
   if (!packageArg) {
-    throw new Error("Usage: lark-deployer verify <generated-package-or-analysis-workspace> [--env <file>] [--runtime-url <url>] [--simulate] [--send-start-card] [--level2] [--strict] [--allow-local-callback]");
+    throw new Error("Usage: lark-deployer verify <generated-package-or-analysis-workspace> [--env <file>] [--runtime-url <url>] [--host-runtime-url <url>] [--simulate] [--send-start-card] [--level2] [--strict] [--allow-local-callback]");
   }
 
   const packagePath = path.resolve(packageArg);
@@ -27,7 +27,8 @@ export async function verifyCommand(args: string[], options: Record<string, stri
   const level2 = hasOption(options, "level2");
   const strict = hasOption(options, "strict") || level2;
   const envPath = getStringOption(options, "env", path.join(packagePath, "bot-runtime", ".env"));
-  const runtimeUrl = normalizeBaseUrl(getStringOption(options, "runtime-url", ""));
+  const hostRuntimeUrl = normalizeBaseUrl(getStringOption(options, "host-runtime-url", getStringOption(options, "hostRuntimeUrl", "")));
+  const runtimeUrl = normalizeBaseUrl(getStringOption(options, "runtime-url", hostRuntimeUrl));
   const simulate = hasOption(options, "simulate") || level2;
   const sendStartCard = hasOption(options, "send-start-card") || hasOption(options, "sendStartCard") || level2;
   const allowLocalCallback = hasOption(options, "allow-local-callback") || hasOption(options, "allowLocalCallback");
@@ -62,12 +63,13 @@ export async function verifyCommand(args: string[], options: Record<string, stri
 
   if (mode === "embedded-adapter" || mode === "embedded") {
     checks.push(...buildEmbeddedAdapterChecks(packagePath, interactions));
-    checks.push(...buildEmbeddedHostBoundaryChecks({ runtimeUrl, simulate, sendStartCard, level2 }));
+    checks.push(...await buildEmbeddedHostValidationChecks({ hostRuntimeUrl: runtimeUrl, simulate, sendStartCard, level2 }));
     printChecks(checks);
     writeReports(reportDir, checks, {
       packagePath,
       envPath,
       runtimeUrl,
+      hostRuntimeUrl: runtimeUrl,
       simulate,
       sendStartCard,
       level2,
@@ -496,32 +498,67 @@ function buildEmbeddedAdapterChecks(packagePath: string, interactions: Interacti
   return checks;
 }
 
-function buildEmbeddedHostBoundaryChecks(context: {
-  runtimeUrl: string;
+async function buildEmbeddedHostValidationChecks(context: {
+  hostRuntimeUrl: string;
   simulate: boolean;
   sendStartCard: boolean;
   level2: boolean;
-}): CheckResult[] {
+}): Promise<CheckResult[]> {
   const checks: CheckResult[] = [];
-  if (context.runtimeUrl) {
-    checks.push({
-      name: "embedded:host-runtime-url",
-      status: "warn",
-      detail: "Embedded adapter mode validates package boundaries only. Run host-owned integration checks in the existing Feishu SDK service, or use standalone-runtime mode for generated bot-runtime probes.",
-    });
+  if (!context.hostRuntimeUrl) {
+    if (context.simulate || context.sendStartCard || context.level2) {
+      checks.push({
+        name: "embedded:host-runtime-url",
+        status: "warn",
+        detail: "Provide --host-runtime-url to run embedded host health and callback probes; package validation still does not require a generated bot-runtime.",
+      });
+    }
+    return checks;
   }
+
+  const healthProbe = await getJsonWithTimeout(`${context.hostRuntimeUrl}/health`, 3000);
+  checks.push({
+    name: "embedded:host:/health",
+    status: healthProbe.status === "available" ? "pass" : "fail",
+    detail: healthProbe.status === "available"
+      ? `Embedded host /health responded at ${context.hostRuntimeUrl}/health.`
+      : formatProbeDetail(healthProbe),
+  });
+
+  const challenge = "lark-deployer-embedded-host-challenge";
+  const callbackProbe = await postJsonWithTimeout(
+    `${context.hostRuntimeUrl}/webhook/card`,
+    { type: "url_verification", challenge },
+    3000,
+  );
+  checks.push({
+    name: "embedded:host:/webhook/card:challenge",
+    status: isExpectedChallenge(callbackProbe.data, challenge) ? "pass" : "fail",
+    detail: isExpectedChallenge(callbackProbe.data, challenge)
+      ? "Embedded host answered a Feishu-style URL verification challenge."
+      : formatProbeDetail(callbackProbe),
+  });
+
   if (context.simulate) {
+    const debugProbe = await postJsonWithTimeout(
+      `${context.hostRuntimeUrl}/debug/simulate-card-action`,
+      {},
+      5000,
+    );
     checks.push({
-      name: "embedded:simulate",
-      status: "warn",
-      detail: "--simulate is host-owned in embedded adapter mode; this command does not call a generated bot-runtime debug endpoint.",
+      name: "embedded:host:/debug/simulate-card-action",
+      status: isExpectedSimulation(debugProbe.data) ? "pass" : "warn",
+      detail: isExpectedSimulation(debugProbe.data)
+        ? "Embedded host debug simulation accepted an adapter-backed card action."
+        : "Embedded host debug simulation endpoint is unavailable or non-standard; run the host-owned manual card-action checklist. " + formatProbeDetail(debugProbe),
     });
   }
+
   if (context.sendStartCard) {
     checks.push({
-      name: "embedded:send-start-card",
+      name: "embedded:host:start-card",
       status: "warn",
-      detail: "--send-start-card is host-owned in embedded adapter mode; send the first card from the existing Feishu SDK service.",
+      detail: "Embedded adapter mode cannot know the existing host's send-card endpoint. Send the first card from the existing Feishu SDK service and record evidence.",
     });
   }
   if (context.level2) {
@@ -532,6 +569,11 @@ function buildEmbeddedHostBoundaryChecks(context: {
     });
   }
   return checks;
+}
+
+function isExpectedSimulation(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return value.ok === true || isExpectedAcceptedActionCard(value.card);
 }
 
 function adapterActionIdForInteraction(inputMode: string): string {
@@ -850,6 +892,7 @@ function writeReports(
     packagePath: string;
     envPath: string;
     runtimeUrl: string;
+    hostRuntimeUrl?: string;
     simulate: boolean;
     sendStartCard: boolean;
     level2: boolean;
