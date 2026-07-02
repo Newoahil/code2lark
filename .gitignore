@@ -4,3 +4,4 @@ out/
 generated/
 .env
 *.log
+.omo/
