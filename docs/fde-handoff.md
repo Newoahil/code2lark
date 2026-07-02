@@ -14,12 +14,12 @@ This project should be usable by a teammate without relying on a specific Codex 
 - Machine-readable service and interaction contracts.
 - Human-readable permission review.
 - Deployment checklist.
-- A generated Node bot runtime package.
+- An embeddable `adapter/` package as the primary artifact, plus an optional standalone Node runtime reference host.
 - Verification checks that explain missing context.
 - A package-local `level2_verification_record.md` for real Feishu evidence collection.
 - Static `templates.py` fallback for `image-agent-web` template ids, sizes, and fields when `/api/meta` is not available during analysis.
 - A generated start-card preset based on the discovered template metadata rather than a fixed hard-coded payload.
-- A generated Feishu form with `size`, optional `message`, and one input per discovered template field, with submitted values merged into the target `/api/generate` request.
+- Generated Feishu card-action handlers for generate, iterate, batch submit, and batch refresh, with submitted values mapped into the target service requests.
 
 ## What Lark-deployer does not do
 
@@ -45,16 +45,16 @@ This project should be usable by a teammate without relying on a specific Codex 
 2. Review `out/image-agent-web/permission_review.md`.
 3. Run `node dist/index.js context out\image-agent-web`, send `feishu_context.request.md` to the Feishu app owner or FDE to confirm who can provide each value, permission, callback, and test-chat setup, then use `feishu_context.reply.template.json/md` as the non-secret intake form for the reply. Run `node dist/index.js init-local generated\image-agent-web-lark --context --reply` to create ignored local intake files, then fill the local context including `runtime_config` if the runtime should use async card updates, a non-default port, or a Feishu OpenAPI override.
 4. Generate `generated/image-agent-web-lark`.
-5. Optionally run `node dist/index.js configure generated\image-agent-web-lark --strict --dry-run` to validate the context and write only `configure_report.*` before touching `bot-runtime/.env`.
+5. For an existing Feishu SDK service, integrate `generated/image-agent-web-lark/adapter/` using `docs/integration_guide.md`, then run `node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter --strict` and `node dist/index.js doctor generated\image-agent-web-lark --mode embedded-adapter`.
    If `feishu_context.reply.local.json` exists, this strict dry run also fails when the owner reply is invalid, contains blockers, has blocked/unknown/missing permission confirmations, has negative answers, or omits `secure_secret_channel`.
-6. Run `node dist/index.js configure generated\image-agent-web-lark --strict` to validate the context and write `bot-runtime/.env`. Blank context fields preserve existing non-empty `.env` values; strict mode fails if required Level 2 values are still missing.
+6. If you do not already have a Feishu SDK host, use the optional standalone reference runtime: run `node dist/index.js configure generated\image-agent-web-lark --strict` to validate the context and write `bot-runtime/.env`. Blank context fields preserve existing non-empty `.env` values; strict mode fails if required Level 2 values are still missing.
    If `feishu_context.local.json` leaves public fields blank, non-secret owner reply values may fill `TEST_CHAT_ID`, `PUBLIC_CALLBACK_BASE_URL`, and `IMAGE_AGENT_BASE_URL`; `configure_report.*` marks those rows as `context_reply` and prints only field names.
    Placeholder-shaped values such as `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, or `${TEST_CHAT_ID}` are treated as missing, so replace them completely before real Level 2 verification.
    Generated `feishu_context.template.json` is intended to stay secret-free; filled values belong in `feishu_context.local.json` or `.env`. If the owner reply includes internal contacts, blocked-by notes, or handoff comments, use `init-local --reply` or copy `feishu_context.reply.template.json/md` to `feishu_context.reply.local.json/md` first.
    If `status` or `readiness` still reports `external_context_missing`, send the package-local `feishu_context.request.md` to the owner listed in the file before changing runtime settings.
    If `feishu_context.reply.local.json` exists, `status`, `readiness`, and `doctor` summarize only answer counts, blocked counts, permission status counts, and filled field names; they do not print owner reply values.
-7. Start the generated runtime.
-8. If Feishu credentials are not ready yet, call `/debug/simulate-generate` to test target-service integration locally.
+7. If using the optional standalone runtime, start it after configuration.
+8. If Feishu credentials are not ready yet and you are using the optional standalone runtime, call `/debug/simulate-generate` to test target-service integration locally.
    Call `/debug/simulate-card-action` to test the same action parsing, form-value merge, and audit path used by a real Feishu card click.
    You can also run `node dist/index.js verify generated\image-agent-web-lark --runtime-url http://127.0.0.1:3978 --simulate`.
    The same verify command checks the `/webhook/card` URL verification response, simulated card-action path, Feishu 2.0-shaped card-action path, and invalid-input failure card locally.
