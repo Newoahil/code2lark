@@ -236,6 +236,11 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(runtimeClient, /export async function createBatch\(/);
   assert.doesNotMatch(runtimeClient, /export async function getBatchStatus\(/);
   const adapterCards = fs.readFileSync(path.join(missingGenerated, "adapter", "cards.ts"), "utf8");
+  assert.match(adapterCards, /export function buildStartCard/);
+  assert.match(adapterCards, /name: "image_generate_form"/);
+  assert.match(adapterCards, /name: "image_batch_form"/);
+  assert.match(adapterCards, /name: "param_batch_items_json"/);
+  assert.match(adapterCards, /action: "image\.batch\.submit"/);
   assert.match(adapterCards, /name: "image_iterate_form"/);
   assert.match(adapterCards, /name: "param_feedback"/);
   assert.match(adapterCards, /content: "Feedback"/);
@@ -259,6 +264,10 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:action:image.batch.submit" && item.status === "pass"));
   assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:action:image.batch.refresh" && item.status === "pass"));
   assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:permissions-interactions" && item.status === "pass"));
+  assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:start-card-builder" && item.status === "pass"));
+  assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:typescript-compile" && item.status === "pass"));
+  assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:start-card-execution" && item.status === "pass"));
+  assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:handler-execution" && item.status === "pass"));
   assert.equal(embeddedVerifyReport.checks.some((item) => item.name.startsWith("runtime:/debug/")), false);
   const embeddedHostVerifyOutput = runExpectFailure(["verify", missingGenerated, "--mode", "embedded-adapter", "--host-runtime-url", "http://127.0.0.1:3978", "--simulate", "--strict"]);
   assert.match(embeddedHostVerifyOutput, /embedded:host:\/health/);
@@ -273,6 +282,12 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(embeddedHostVerifyReport.checks.some((item) => item.name === "embedded:host:/debug/simulate-card-action" && item.status === "warn"));
   const generatedIntegrationGuide = fs.readFileSync(path.join(missingGenerated, "docs", "integration_guide.md"), "utf8");
   assert.match(generatedIntegrationGuide, /--host-runtime-url/);
+  assert.match(generatedIntegrationGuide, /buildStartCard/);
+  assert.match(generatedIntegrationGuide, /param_template_id/);
+  assert.match(generatedIntegrationGuide, /param_feedback/);
+  assert.match(generatedIntegrationGuide, /param_batch_items_json/);
+  assert.match(generatedIntegrationGuide, /image\.batch\.refresh/);
+  assert.match(generatedIntegrationGuide, /failure card/);
   assert.match(generatedIntegrationGuide, /\/health/);
   assert.match(generatedIntegrationGuide, /\/webhook\/card/);
   assert.match(generatedIntegrationGuide, /\/debug\/simulate-card-action/);
@@ -311,6 +326,12 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const embeddedOnlyIntegrationGuide = fs.readFileSync(path.join(embeddedOnlyGenerated, "docs", "integration_guide.md"), "utf8");
   assert.match(embeddedOnlyIntegrationGuide, /does not include a generated `bot-runtime\/` directory/);
   assert.match(embeddedOnlyIntegrationGuide, /--mode standalone-runtime/);
+  assert.match(embeddedOnlyIntegrationGuide, /buildStartCard/);
+  assert.match(embeddedOnlyIntegrationGuide, /param_template_id/);
+  assert.match(embeddedOnlyIntegrationGuide, /param_feedback/);
+  assert.match(embeddedOnlyIntegrationGuide, /param_batch_items_json/);
+  assert.match(embeddedOnlyIntegrationGuide, /image\.batch\.refresh/);
+  assert.match(embeddedOnlyIntegrationGuide, /failure card/);
   assert.doesNotMatch(embeddedOnlyIntegrationGuide, /`bot-runtime\/` is a standalone reference host/);
   run(["verify", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--strict"]);
   const permissionMismatchGenerated = path.join(temp, "generated-permission-mismatch");

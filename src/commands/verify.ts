@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { getStringOption, hasOption } from "../args.js";
 import { readEnvFileIfExists } from "../env-utils.js";
 import { readJsonFile, writeJson, writeText } from "../fs-utils.js";
@@ -496,7 +498,82 @@ function buildEmbeddedAdapterChecks(packagePath: string, interactions: Interacti
     });
   }
   checks.push(checkRequiredPermissionsMatchInteractions(interactions, permissions));
+  checks.push(checkAdapterStartCardBuilder(packagePath));
+  checks.push(checkAdapterTypeScriptCompile(packagePath));
+  checks.push(...executeEmbeddedAdapterSmoke(packagePath));
   return checks;
+}
+
+function checkAdapterStartCardBuilder(packagePath: string): CheckResult {
+  const cardsPath = path.join(packagePath, "adapter", "cards.ts");
+  const source = fs.existsSync(cardsPath) ? fs.readFileSync(cardsPath, "utf8") : "";
+  const hasBuilder = source.includes("export function buildStartCard")
+    && source.includes("image_generate_form")
+    && source.includes("image.batch.submit")
+    && source.includes("param_batch_items_json");
+  return {
+    name: "adapter:start-card-builder",
+    status: hasBuilder ? "pass" : "fail",
+    detail: hasBuilder
+      ? "adapter/cards.ts exports buildStartCard with generate and batch form actions."
+      : "adapter/cards.ts does not export a complete buildStartCard generate/batch form builder.",
+  };
+}
+
+function checkAdapterTypeScriptCompile(packagePath: string): CheckResult {
+  const tscPath = path.resolve("node_modules", "typescript", "bin", "tsc");
+  if (!fs.existsSync(tscPath)) {
+    return { name: "adapter:typescript-compile", status: "warn", detail: "typescript is not installed; cannot compile generated adapter." };
+  }
+  const files = ["audit-events.ts", "cards.ts", "service-client.ts", "validation.ts", "types.ts", "handlers.ts"]
+    .map((file) => path.join(packagePath, "adapter", file));
+  try {
+    execFileSync(process.execPath, [
+      tscPath,
+      "--noEmit",
+      "--target", "ES2022",
+      "--module", "NodeNext",
+      "--moduleResolution", "NodeNext",
+      "--strict",
+      "--skipLibCheck",
+      ...files,
+    ], { cwd: packagePath, stdio: "pipe" });
+    return { name: "adapter:typescript-compile", status: "pass", detail: "Generated adapter TypeScript compiles with tsc --noEmit." };
+  } catch (error) {
+    const detail = error && typeof error === "object" && "stderr" in error
+      ? String((error as { stderr?: Buffer }).stderr || "").trim()
+      : error instanceof Error ? error.message : String(error);
+    return { name: "adapter:typescript-compile", status: "fail", detail: detail || "Generated adapter TypeScript compilation failed." };
+  }
+}
+
+function executeEmbeddedAdapterSmoke(packagePath: string): CheckResult[] {
+  try {
+    const cardsUrl = pathToFileURL(path.join(packagePath, "adapter", "cards.js")).href;
+    const handlersUrl = pathToFileURL(path.join(packagePath, "adapter", "handlers.js")).href;
+    const script = `
+      const cards = await import(${JSON.stringify(cardsUrl)});
+      const handlers = await import(${JSON.stringify(handlersUrl)});
+      const startCard = cards.buildStartCard();
+      if (!startCard?.elements?.some((item) => item?.name === "image_generate_form")) throw new Error("missing image_generate_form");
+      if (!JSON.stringify(startCard).includes("image.batch.submit")) throw new Error("missing image.batch.submit");
+      const result = await handlers.handleImageAgentCardAction({ action: "unsupported.action" }, { imageAgentBaseUrl: "http://127.0.0.1:1" });
+      if (result?.ok !== false || !result?.card) throw new Error("handler did not return a failure card for unsupported action");
+    `;
+    execFileSync(process.execPath, ["--input-type=module", "--eval", script], { cwd: packagePath, stdio: "pipe" });
+    return [
+      { name: "adapter:start-card-execution", status: "pass", detail: "Generated adapter JS buildStartCard executes and returns generate/batch forms." },
+      { name: "adapter:handler-execution", status: "pass", detail: "Generated adapter JS handler executes and returns failure cards for unsupported actions." },
+    ];
+  } catch (error) {
+    const detail = error && typeof error === "object" && "stderr" in error
+      ? String((error as { stderr?: Buffer }).stderr || "").trim()
+      : error instanceof Error ? error.message : String(error);
+    return [
+      { name: "adapter:start-card-execution", status: "fail", detail: detail || "Generated adapter JS start-card execution failed." },
+      { name: "adapter:handler-execution", status: "fail", detail: detail || "Generated adapter JS handler execution failed." },
+    ];
+  }
 }
 
 function checkRequiredPermissionsMatchInteractions(interactions: InteractionContract | undefined, permissions: RequiredPermissions | undefined): CheckResult {

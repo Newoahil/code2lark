@@ -60,6 +60,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   });
 
   writeText(path.join(outDir, ".gitignore"), generatedPackageGitignore());
+  writeText(path.join(outDir, "package.json"), generatedPackageJson(service.service.name));
   writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode));
   writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode));
   writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions, integrationMode));
@@ -71,7 +72,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
   writeText(path.join(adapterDir, "validation.ts"), adapterValidationTs());
   writeText(path.join(adapterDir, "service-client.ts"), adapterServiceClientTs());
-  writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs());
+  writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs(service, capabilities, meta));
   writeText(path.join(adapterDir, "handlers.ts"), adapterHandlersTs(service, capabilities, meta));
   writeRuntimeAdapterJs(adapterDir, service, capabilities, meta);
   if (integrationMode === "standalone-runtime") {
@@ -105,7 +106,7 @@ function normalizeIntegrationMode(value: string): IntegrationMode {
 
 function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): void {
   writeText(path.join(adapterDir, "audit-events.js"), adapterAuditEventsJs());
-  writeText(path.join(adapterDir, "cards.js"), adapterCardsJs());
+  writeText(path.join(adapterDir, "cards.js"), adapterCardsJs(service, capabilities, meta));
   writeText(path.join(adapterDir, "validation.js"), adapterValidationJs());
   writeText(path.join(adapterDir, "service-client.js"), adapterServiceClientJs());
   writeText(path.join(adapterDir, "handlers.js"), adapterHandlersJs(service, capabilities, meta));
@@ -353,6 +354,14 @@ verification_report.md
 configure_report.json
 configure_report.md
 `;
+}
+
+function generatedPackageJson(serviceName: string): string {
+  return `${JSON.stringify({
+    name: `${slugify(serviceName)}-lark-adapter`,
+    private: true,
+    type: "module",
+  }, null, 2)}\n`;
 }
 
 function runtimeGitignore(): string {
@@ -611,7 +620,7 @@ export async function callImageGenerate(baseUrl: string, preset: GeneratePreset,
 }
 
 export async function callImageIterate(baseUrl: string, request: IterateRequest, timeoutMs = 120000): Promise<Record<string, unknown>> {
-  const response = await fetchWithTimeout(baseUrl.replace(/\/+$/, "") + "/api/iterate", {
+  const response = await fetchWithTimeout(baseUrl.replace(/\\/+$/, "") + "/api/iterate", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify({ session_id: request.session_id, feedback: request.feedback }),
@@ -625,7 +634,7 @@ export async function callImageBatchCreate(baseUrl: string, request: BatchReques
   form.set("size", request.size);
   form.set("items_json", JSON.stringify(request.items));
   form.set("reference_types_json", "[]");
-  const response = await fetchWithTimeout(baseUrl.replace(/\/+$/, "") + "/api/batch", { method: "POST", body: form }, timeoutMs, "image-agent-web /api/batch");
+  const response = await fetchWithTimeout(baseUrl.replace(/\\/+$/, "") + "/api/batch", { method: "POST", body: form }, timeoutMs, "image-agent-web /api/batch");
   const parsed = await readJsonResponse(response, "image-agent-web /api/batch");
   const batchId = typeof parsed.batch_id === "string" ? parsed.batch_id : "";
   if (!batchId) throw new Error("image-agent-web /api/batch response did not include batch_id: " + JSON.stringify(parsed));
@@ -633,12 +642,12 @@ export async function callImageBatchCreate(baseUrl: string, request: BatchReques
 }
 
 export async function callImageBatchStatus(baseUrl: string, batchId: string, timeoutMs = 120000): Promise<Record<string, unknown>> {
-  const response = await fetchWithTimeout(baseUrl.replace(/\/+$/, "") + "/api/batch/" + encodeURIComponent(batchId) + "/status", {}, timeoutMs, "image-agent-web /api/batch/{batch_id}/status");
+  const response = await fetchWithTimeout(baseUrl.replace(/\\/+$/, "") + "/api/batch/" + encodeURIComponent(batchId) + "/status", {}, timeoutMs, "image-agent-web /api/batch/{batch_id}/status");
   return readJsonResponse(response, "image-agent-web /api/batch/{batch_id}/status");
 }
 
 export function resolveBatchDownloadUrl(baseUrl: string, batchId: string): string {
-  return baseUrl.replace(/\/+$/, "") + "/api/batch/" + encodeURIComponent(batchId) + "/download";
+  return baseUrl.replace(/\\/+$/, "") + "/api/batch/" + encodeURIComponent(batchId) + "/download";
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
@@ -816,8 +825,53 @@ async function readJsonResponse(response, label) {
 `;
 }
 
-function adapterCardsJs(): string {
-  return `export function buildSuccessCard(result) {
+function adapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
+  const defaultPreset = buildDefaultPreset(capabilities, meta);
+  const templateSpecs = buildTemplateSpecs(defaultPreset, meta);
+  const fieldSpecs = buildFieldSpecs(defaultPreset, meta);
+  return `export const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
+
+export const templateSpecs = ${JSON.stringify(templateSpecs, null, 2)};
+
+export const fieldSpecs = ${JSON.stringify(fieldSpecs, null, 2)};
+
+export function buildStartCard() {
+  const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: "Image Agent MVP" } },
+    elements: [
+      { tag: "markdown", content: "**Target service:** " + ${JSON.stringify(service.service.name)} + "\\n\\n**Templates:** " + templateSpecs.map((template) => template.id).join(", ") + "\\n\\nFill the parameters and submit to run /api/generate." },
+      {
+        tag: "form",
+        name: "image_generate_form",
+        elements: [
+          { tag: "input", name: "param_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          ...fieldSpecs.map((field) => ({ tag: "input", name: field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
+          { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
+          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", action_type: "form_submit", name: "submit_image_generate", value: { action: "image.generate.submit", preset: defaultPreset } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_generate" },
+        ],
+      },
+      { tag: "hr" },
+      { tag: "markdown", content: "Use batch mode for long-running /api/batch jobs. Submit a JSON array of items, then refresh the returned progress card when needed." },
+      {
+        tag: "form",
+        name: "image_batch_form",
+        elements: [
+          { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\\"fields\\\": { ... } }]" } },
+          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", action_type: "form_submit", name: "submit_image_batch", value: { action: "image.batch.submit" } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_batch" },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildSuccessCard(result) {
   const imageUrl = typeof result.image_url === "string" ? result.image_url : "";
   const sessionId = typeof result.session_id === "string" ? result.session_id : "";
   const elements = [
@@ -923,8 +977,53 @@ export function buildFailureCard(message) {
 `;
 }
 
-function adapterCardsTs(): string {
-  return `export function buildSuccessCard(result: Record<string, unknown>): Record<string, unknown> {
+function adapterCardsTs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
+  const defaultPreset = buildDefaultPreset(capabilities, meta);
+  const templateSpecs = buildTemplateSpecs(defaultPreset, meta);
+  const fieldSpecs = buildFieldSpecs(defaultPreset, meta);
+  return `export const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
+
+export const templateSpecs = ${JSON.stringify(templateSpecs, null, 2)};
+
+export const fieldSpecs = ${JSON.stringify(fieldSpecs, null, 2)};
+
+export function buildStartCard(): Record<string, unknown> {
+  const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: "Image Agent MVP" } },
+    elements: [
+      { tag: "markdown", content: "**Target service:** " + ${JSON.stringify(service.service.name)} + "\\n\\n**Templates:** " + templateSpecs.map((template) => template.id).join(", ") + "\\n\\nFill the parameters and submit to run /api/generate." },
+      {
+        tag: "form",
+        name: "image_generate_form",
+        elements: [
+          { tag: "input", name: "param_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          ...fieldSpecs.map((field) => ({ tag: "input", name: field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
+          { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
+          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", action_type: "form_submit", name: "submit_image_generate", value: { action: "image.generate.submit", preset: defaultPreset } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_generate" },
+        ],
+      },
+      { tag: "hr" },
+      { tag: "markdown", content: "Use batch mode for long-running /api/batch jobs. Submit a JSON array of items, then refresh the returned progress card when needed." },
+      {
+        tag: "form",
+        name: "image_batch_form",
+        elements: [
+          { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\\"fields\\\": { ... } }]" } },
+          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", action_type: "form_submit", name: "submit_image_batch", value: { action: "image.batch.submit" } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_batch" },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildSuccessCard(result: Record<string, unknown>): Record<string, unknown> {
   const imageUrl = typeof result.image_url === "string" ? result.image_url : "";
   const sessionId = typeof result.session_id === "string" ? result.session_id : "";
   const elements: unknown[] = [
@@ -1326,6 +1425,53 @@ This package is adapter-first. The core artifact is \`adapter/\`. In embedded-ad
 
 Your existing Feishu SDK service owns SDK initialization, callback verification, route registration, image upload wrappers, audit log persistence, runtime config loading, deployment, and process lifecycle.
 
+## Send The Initial Card
+
+Use the generated \`buildStartCard()\` builder when your host sends the first interactive card. The embedded host should not recreate the card schema by hand.
+
+\`\`\`ts
+import { buildStartCard } from "./adapter/cards";
+
+await feishuClient.im.message.create({
+  params: { receive_id_type: "chat_id" },
+  data: {
+    receive_id: testChatId,
+    msg_type: "interactive",
+    content: JSON.stringify(buildStartCard()),
+  },
+});
+\`\`\`
+
+The start card contains two forms:
+
+- \`image_generate_form\` submits \`image.generate.submit\`.
+- \`image_batch_form\` submits \`image.batch.submit\`.
+
+## Form Fields And Actions
+
+For single-image generation, pass the card callback action and Feishu form fields directly into \`handleImageAgentCardAction()\`:
+
+- \`action\`: \`image.generate.submit\`.
+- \`param_template_id\`: target template id.
+- \`param_size\`: target image size such as \`1024x1024\`.
+- \`field_*\`: generated target template fields from \`adapter/cards.ts\`.
+- \`param_message\`: optional extra instruction.
+
+When the target returns a \`session_id\`, the adapter success card includes \`image_iterate_form\`. Submit that form back to the same handler with:
+
+- \`action\`: \`image.iterate.submit\`.
+- \`value.session_id\`: session id from the Iterate image button payload.
+- \`param_feedback\`: operator feedback from the form.
+
+For batch generation, submit:
+
+- \`action\`: \`image.batch.submit\`.
+- \`param_batch_template_id\`: target template id for batch items.
+- \`param_batch_size\`: target image size.
+- \`param_batch_items_json\`: JSON array such as \`[{ "fields": { "theme": "launch visual" } }]\`.
+
+The returned batch status card includes a refresh button. Route that callback to the same handler with \`action: "image.batch.refresh"\` and the button \`value.batch_id\`; the adapter calls the target status endpoint and returns a fresh status/download card.
+
 ## Handler Shape
 
 \`\`\`ts
@@ -1346,8 +1492,14 @@ const result = await handleImageAgentCardAction({
 for (const event of result.auditEvents) {
   audit(event);
 }
+if (!result.ok) {
+  // result.card is already a red adapter failure card; return or patch it to Feishu.
+  return result.card;
+}
 return result.card;
 \`\`\`
+
+The host should extract the callback action from the Feishu card value, preserve the button \`value\` object, pass Feishu form values as \`formValue\`, and then return or patch \`result.card\`. Adapter errors are represented as \`ok: false\` with a failure card, so the host does not need to build its own business error card.
 
 ## Feishu Capabilities To Confirm
 
@@ -2382,171 +2534,33 @@ export function buildStartCard() {
   const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
   return {
     config: { wide_screen_mode: true },
-    header: {
-      template: "blue",
-      title: { tag: "plain_text", content: "Image Agent MVP" },
-    },
+    header: { template: "blue", title: { tag: "plain_text", content: "Image Agent MVP" } },
     elements: [
-      {
-        tag: "markdown",
-        content: \`**Target service:** ${service.service.name}\\n\\n**Templates:** \${templateSpecs.map((template) => template.id).join(", ")}\\n\\nFill the parameters and submit to run /api/generate.\`,
-      },
+      { tag: "markdown", content: "**Target service:** ${service.service.name}\\n\\n**Templates:** " + templateSpecs.map((template) => template.id).join(", ") + "\\n\\nFill the parameters and submit to run /api/generate." },
       {
         tag: "form",
         name: "image_generate_form",
         elements: [
-          {
-            tag: "input",
-            name: "param_template_id",
-            required: true,
-            default_value: defaultPreset.template_id,
-            width: "fill",
-            label: { tag: "plain_text", content: "Template ID" },
-            placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") },
-            fallback: {
-              tag: "fallback_text",
-              text: { tag: "plain_text", content: "Input requires Feishu 6.8 or later." },
-            },
-          },
-          {
-            tag: "input",
-            name: "param_size",
-            required: true,
-            default_value: defaultPreset.size,
-            width: "fill",
-            label: { tag: "plain_text", content: "Size" },
-            placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" },
-            fallback: {
-              tag: "fallback_text",
-              text: { tag: "plain_text", content: "Input requires Feishu 6.8 or later." },
-            },
-          },
-          ...fieldSpecs.map((field) => ({
-            tag: "input",
-            name: field.name,
-            required: field.required,
-            default_value: field.defaultValue,
-            width: "fill",
-            label: { tag: "plain_text", content: field.label },
-            placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" },
-            fallback: {
-              tag: "fallback_text",
-              text: { tag: "plain_text", content: "Input requires Feishu 6.8 or later." },
-            },
-          })),
-          {
-            tag: "input",
-            name: "param_message",
-            required: false,
-            default_value: defaultPreset.message || "",
-            width: "fill",
-            input_type: "multiline_text",
-            rows: 2,
-            auto_resize: true,
-            label: { tag: "plain_text", content: "Message" },
-            placeholder: { tag: "plain_text", content: "Optional extra instruction" },
-            fallback: {
-              tag: "fallback_text",
-              text: { tag: "plain_text", content: "Input requires Feishu 6.8 or later." },
-            },
-          },
-          {
-            tag: "button",
-            text: { tag: "plain_text", content: "Generate image" },
-            type: "primary",
-            action_type: "form_submit",
-            name: "submit_image_generate",
-            value: {
-              action: "image.generate.submit",
-              preset: defaultPreset,
-            },
-          },
-          {
-            tag: "button",
-            text: { tag: "plain_text", content: "Reset" },
-            type: "default",
-            action_type: "form_reset",
-            name: "reset_image_generate",
-          },
+          { tag: "input", name: "param_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          ...fieldSpecs.map((field) => ({ tag: "input", name: field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
+          { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
+          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", action_type: "form_submit", name: "submit_image_generate", value: { action: "image.generate.submit", preset: defaultPreset } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_generate" },
         ],
-        fallback: {
-          tag: "fallback_text",
-          text: { tag: "plain_text", content: "Form input requires Feishu 6.6 or later." },
-        },
       },
       { tag: "hr" },
-      {
-        tag: "markdown",
-        content: "Use batch mode for long-running /api/batch jobs. Submit a JSON array of items, then refresh the returned progress card when needed.",
-      },
+      { tag: "markdown", content: "Use batch mode for long-running /api/batch jobs. Submit a JSON array of items, then refresh the returned progress card when needed." },
       {
         tag: "form",
         name: "image_batch_form",
         elements: [
-          {
-            tag: "input",
-            name: "param_batch_template_id",
-            required: true,
-            default_value: defaultPreset.template_id,
-            width: "fill",
-            label: { tag: "plain_text", content: "Batch template ID" },
-            placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") },
-            fallback: {
-              tag: "fallback_text",
-              text: { tag: "plain_text", content: "Input requires Feishu 6.8 or later." },
-            },
-          },
-          {
-            tag: "input",
-            name: "param_batch_size",
-            required: true,
-            default_value: defaultPreset.size,
-            width: "fill",
-            label: { tag: "plain_text", content: "Batch size" },
-            placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" },
-            fallback: {
-              tag: "fallback_text",
-              text: { tag: "plain_text", content: "Input requires Feishu 6.8 or later." },
-            },
-          },
-          {
-            tag: "input",
-            name: "param_batch_items_json",
-            required: true,
-            default_value: defaultBatchItemsJson,
-            width: "fill",
-            input_type: "multiline_text",
-            rows: 5,
-            auto_resize: true,
-            label: { tag: "plain_text", content: "Batch items JSON" },
-            placeholder: { tag: "plain_text", content: "[{ \\"fields\\": { ... } }]" },
-            fallback: {
-              tag: "fallback_text",
-              text: { tag: "plain_text", content: "Input requires Feishu 6.8 or later." },
-            },
-          },
-          {
-            tag: "button",
-            text: { tag: "plain_text", content: "Start batch" },
-            type: "primary",
-            action_type: "form_submit",
-            name: "submit_image_batch",
-            value: {
-              action: "image.batch.submit",
-            },
-          },
-          {
-            tag: "button",
-            text: { tag: "plain_text", content: "Reset" },
-            type: "default",
-            action_type: "form_reset",
-            name: "reset_image_batch",
-          },
+          { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\"fields\\": { ... } }]" } },
+          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", action_type: "form_submit", name: "submit_image_batch", value: { action: "image.batch.submit" } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_batch" },
         ],
-        fallback: {
-          tag: "fallback_text",
-          text: { tag: "plain_text", content: "Form input requires Feishu 6.6 or later." },
-        },
       },
     ],
   };
