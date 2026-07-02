@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 export interface PublicCallbackAssessment {
   normalizedBaseUrl: string;
   status: "pass" | "warn" | "fail";
@@ -112,10 +114,18 @@ function classifyHost(hostname: string): "public" | "local" | "private" {
     return "local";
   }
   if (host.endsWith(".local")) return "local";
-  if (isPrivateIpv4(host) || host.startsWith("fc") || host.startsWith("fd")) {
+  if (isPrivateIpv4(host) || isPrivateIpv6(host)) {
     return "private";
   }
   return "public";
+}
+
+function isPrivateIpv6(host: string): boolean {
+  if (isIP(host) !== 6) return false;
+  const firstHextet = Number.parseInt(host.split(":", 1)[0] || "", 16);
+  if (!Number.isInteger(firstHextet)) return false;
+  return (firstHextet >= 0xfc00 && firstHextet <= 0xfdff)
+    || (firstHextet >= 0xfe80 && firstHextet <= 0xfebf);
 }
 
 function isPrivateIpv4(host: string): boolean {
