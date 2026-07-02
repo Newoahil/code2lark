@@ -62,14 +62,15 @@ export async function verifyCommand(args: string[], options: Record<string, stri
 
   if (mode === "embedded-adapter" || mode === "embedded") {
     checks.push(...buildEmbeddedAdapterChecks(packagePath, interactions));
+    checks.push(...buildEmbeddedHostBoundaryChecks({ runtimeUrl, simulate, sendStartCard, level2 }));
     printChecks(checks);
     writeReports(reportDir, checks, {
       packagePath,
       envPath,
       runtimeUrl,
-      simulate: false,
-      sendStartCard: false,
-      level2: false,
+      simulate,
+      sendStartCard,
+      level2,
       targetBaseUrl: "",
       mode: "embedded-adapter",
     });
@@ -490,6 +491,44 @@ function buildEmbeddedAdapterChecks(packagePath: string, interactions: Interacti
       detail: supportsAction
         ? `adapter/handlers.ts supports ${actionId} for ${interaction.capability_id}.`
         : `adapter/handlers.ts does not support ${actionId} for ${interaction.capability_id}.`,
+    });
+  }
+  return checks;
+}
+
+function buildEmbeddedHostBoundaryChecks(context: {
+  runtimeUrl: string;
+  simulate: boolean;
+  sendStartCard: boolean;
+  level2: boolean;
+}): CheckResult[] {
+  const checks: CheckResult[] = [];
+  if (context.runtimeUrl) {
+    checks.push({
+      name: "embedded:host-runtime-url",
+      status: "warn",
+      detail: "Embedded adapter mode validates package boundaries only. Run host-owned integration checks in the existing Feishu SDK service, or use standalone-runtime mode for generated bot-runtime probes.",
+    });
+  }
+  if (context.simulate) {
+    checks.push({
+      name: "embedded:simulate",
+      status: "warn",
+      detail: "--simulate is host-owned in embedded adapter mode; this command does not call a generated bot-runtime debug endpoint.",
+    });
+  }
+  if (context.sendStartCard) {
+    checks.push({
+      name: "embedded:send-start-card",
+      status: "warn",
+      detail: "--send-start-card is host-owned in embedded adapter mode; send the first card from the existing Feishu SDK service.",
+    });
+  }
+  if (context.level2) {
+    checks.push({
+      name: "embedded:level2",
+      status: "warn",
+      detail: "Real Level 2 for embedded adapter mode requires the existing Feishu SDK host, public callback, target reachability, and manual Feishu evidence.",
     });
   }
   return checks;

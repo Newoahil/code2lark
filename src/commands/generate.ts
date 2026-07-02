@@ -1880,21 +1880,6 @@ export interface GeneratePreset {
   message?: string;
 }
 
-export interface IterateRequest {
-  session_id: string;
-  feedback: string;
-}
-
-export interface BatchItem {
-  fields: Record<string, string>;
-}
-
-export interface BatchRequest {
-  template_id: string;
-  size: string;
-  items: BatchItem[];
-}
-
 export interface BatchStatus {
   batch_id: string;
   template_id?: string;
@@ -1922,108 +1907,6 @@ export async function getMeta(baseUrl: string, timeoutMs = 5000): Promise<unknow
     throw new Error(\`image-agent-web /api/meta returned HTTP \${response.status}\`);
   }
   return response.json();
-}
-
-export async function generateImage(baseUrl: string, preset: GeneratePreset, timeoutMs: number): Promise<ImageAgentResult> {
-  const form = new FormData();
-  form.set("template_id", preset.template_id);
-  form.set("size", preset.size);
-  form.set("fields_json", JSON.stringify(preset.fields));
-  form.set("message", preset.message || "");
-  form.set("reference_types_json", "[]");
-
-  const response = await fetchWithTimeout(\`\${baseUrl}/api/generate\`, {
-    method: "POST",
-    body: form,
-  }, timeoutMs, "image-agent-web /api/generate");
-  const text = await response.text();
-  let parsed: unknown;
-  try {
-    parsed = text ? JSON.parse(text) : {};
-  } catch {
-    parsed = { raw: text };
-  }
-
-  if (!response.ok) {
-    const message = typeof parsed === "object" && parsed && "detail" in parsed
-      ? String((parsed as { detail?: unknown }).detail)
-      : text;
-    throw new Error(\`image-agent-web /api/generate returned HTTP \${response.status}: \${message}\`);
-  }
-
-  return parsed as ImageAgentResult;
-}
-
-export async function createBatch(baseUrl: string, request: BatchRequest, timeoutMs: number): Promise<{ batch_id: string }> {
-  const form = new FormData();
-  form.set("template_id", request.template_id);
-  form.set("size", request.size);
-  form.set("items_json", JSON.stringify(request.items));
-  form.set("reference_types_json", "[]");
-
-  const response = await fetchWithTimeout(\`\${baseUrl}/api/batch\`, {
-    method: "POST",
-    body: form,
-  }, timeoutMs, "image-agent-web /api/batch");
-  const parsed = await readJsonResponse(response, "image-agent-web /api/batch");
-  const batchId = typeof parsed.batch_id === "string" ? parsed.batch_id : "";
-  if (!batchId) {
-    throw new Error(\`image-agent-web /api/batch response did not include batch_id: \${JSON.stringify(parsed)}\`);
-  }
-  return { batch_id: batchId };
-}
-
-export async function getBatchStatus(baseUrl: string, batchId: string, timeoutMs: number): Promise<BatchStatus> {
-  const response = await fetchWithTimeout(\`\${baseUrl}/api/batch/\${encodeURIComponent(batchId)}/status\`, {}, timeoutMs, "image-agent-web /api/batch/{batch_id}/status");
-  return await readJsonResponse(response, "image-agent-web /api/batch/{batch_id}/status") as unknown as BatchStatus;
-}
-
-export function resolveBatchDownloadUrl(baseUrl: string, batchId: string): string {
-  return \`\${baseUrl}/api/batch/\${encodeURIComponent(batchId)}/download\`;
-}
-
-export async function iterateImage(baseUrl: string, request: IterateRequest, timeoutMs: number): Promise<ImageAgentResult> {
-  const response = await fetchWithTimeout(\`\${baseUrl}/api/iterate\`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({
-      session_id: request.session_id,
-      feedback: request.feedback,
-    }),
-  }, timeoutMs, "image-agent-web /api/iterate");
-  const text = await response.text();
-  let parsed: unknown;
-  try {
-    parsed = text ? JSON.parse(text) : {};
-  } catch {
-    parsed = { raw: text };
-  }
-
-  if (!response.ok) {
-    const message = typeof parsed === "object" && parsed && "detail" in parsed
-      ? String((parsed as { detail?: unknown }).detail)
-      : text;
-    throw new Error(\`image-agent-web /api/iterate returned HTTP \${response.status}: \${message}\`);
-  }
-
-  return parsed as ImageAgentResult;
-}
-
-async function readJsonResponse(response: Response, label: string): Promise<Record<string, unknown>> {
-  const text = await response.text();
-  let parsed: unknown;
-  try {
-    parsed = text ? JSON.parse(text) : {};
-  } catch {
-    parsed = { raw: text };
-  }
-  if (!response.ok) {
-    const message = typeof parsed === "object" && parsed && "detail" in parsed
-      ? String((parsed as { detail?: unknown }).detail)
-      : text;
-    throw new Error(\`\${label} returned HTTP \${response.status}: \${message}\`);
-  }
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
 }
 
 export function resolveImageUrl(baseUrl: string, imageUrl: string | undefined): string {

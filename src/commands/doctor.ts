@@ -102,6 +102,7 @@ interface EmbeddedAdapterDoctorReport {
   generated_at: string;
   package_path: string;
   integration_mode: "embedded-adapter";
+  gate_passed: boolean;
   package_validation: {
     status: "pass" | "fail";
     checks: Array<{ name: string; status: "pass" | "fail"; detail: string }>;
@@ -127,22 +128,31 @@ function buildEmbeddedAdapterDoctorReport(packagePath: string): EmbeddedAdapterD
   ];
   checks.push(...embeddedActionChecks(packagePath));
   const failed = checks.filter((check) => check.status === "fail");
+  const packageValid = failed.length === 0;
+  const externalBlockers = packageValid
+    ? [
+      "Embedded adapter gate still requires integration into the existing Feishu SDK host and real Feishu Level 2 evidence.",
+      "Confirm the existing host receives real card callbacks, calls adapter/handlers.ts, reaches the target service, and records manual Feishu result evidence.",
+    ]
+    : [];
   return {
     schema_version: "0.1",
     generated_at: new Date().toISOString(),
     package_path: packagePath,
     integration_mode: "embedded-adapter",
+    gate_passed: false,
     package_validation: {
-      status: failed.length ? "fail" : "pass",
+      status: packageValid ? "pass" : "fail",
       checks,
     },
-    blockers: failed.map((check) => check.detail),
-    next_actions: failed.length
+    blockers: [...failed.map((check) => check.detail), ...externalBlockers],
+    next_actions: !packageValid
       ? ["Regenerate the package, then rerun `verify --mode embedded-adapter --strict`." ]
       : [
         "Integrate adapter/handlers.ts into the existing Feishu SDK service.",
+        "Run host-owned callback, simulation, and Level 2 checks against the existing Feishu SDK service.",
         "Run `verify --mode embedded-adapter --strict` after any package regeneration.",
-        "Use the existing host service and real Feishu evidence to complete Level 2; standalone bot-runtime is not required for embedded mode.",
+        "Record real Feishu result and batch evidence in level2_verification_record.md before final handoff.",
       ],
   };
 }
@@ -206,7 +216,7 @@ function embeddedFileCheck(name: string, filePath: string): { name: string; stat
 function printEmbeddedAdapterDoctorReport(report: EmbeddedAdapterDoctorReport, gateMode: boolean): void {
   console.log("Embedded adapter doctor: " + (report.package_validation.status === "pass" ? "PACKAGE VALID" : "NOT READY"));
   console.log(`Package: ${report.package_path}`);
-  console.log(`Gate passed: ${report.package_validation.status === "pass" ? "yes" : "no"}`);
+  console.log(`Gate passed: ${report.gate_passed ? "yes" : "no"}`);
   console.log("Integration mode: embedded-adapter");
   if (report.blockers.length) {
     console.log("Blockers:");
@@ -215,7 +225,7 @@ function printEmbeddedAdapterDoctorReport(report: EmbeddedAdapterDoctorReport, g
   console.log("Next actions:");
   for (const action of report.next_actions) console.log(`- ${action}`);
   if (!gateMode) {
-    console.log("Gate mode: rerun with --gate to exit non-zero when package validation fails.");
+    console.log("Gate mode: rerun with --gate to exit non-zero until host integration and real Level 2 evidence are complete.");
   }
 }
 
@@ -229,6 +239,11 @@ function buildEmbeddedAdapterDoctorMarkdown(report: EmbeddedAdapterDoctorReport)
 - Package: ${report.package_path}
 - Integration mode: embedded-adapter
 - Package validation: ${report.package_validation.status}
+- Gate passed: ${report.gate_passed ? "yes" : "no"}
+
+## Blockers
+
+${report.blockers.map((blocker) => `- ${blocker}`).join("\n") || "- None"}
 
 ## Checks
 
@@ -267,8 +282,8 @@ export async function doctorCommand(args: string[], options: Record<string, stri
     } else {
       printEmbeddedAdapterDoctorReport(report, gateMode);
     }
-    if (gateMode && report.package_validation.status !== "pass") {
-      console.error(`Embedded adapter gate failed: ${report.blockers[0] || "package validation failed"}`);
+    if (gateMode && !report.gate_passed) {
+      console.error(`Embedded adapter gate failed: ${report.blockers[0] || "host integration and Level 2 evidence are incomplete"}`);
       process.exitCode = 1;
     }
     return;
