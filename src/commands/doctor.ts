@@ -125,6 +125,7 @@ function buildEmbeddedAdapterDoctorReport(packagePath: string): EmbeddedAdapterD
     embeddedFileCheck("adapter:integration-guide", path.join(packagePath, "docs", "integration_guide.md")),
     embeddedFileCheck("adapter:level2-record", path.join(packagePath, "level2_verification_record.md")),
   ];
+  checks.push(...embeddedActionChecks(packagePath));
   const failed = checks.filter((check) => check.status === "fail");
   return {
     schema_version: "0.1",
@@ -144,6 +145,56 @@ function buildEmbeddedAdapterDoctorReport(packagePath: string): EmbeddedAdapterD
         "Use the existing host service and real Feishu evidence to complete Level 2; standalone bot-runtime is not required for embedded mode.",
       ],
   };
+}
+
+function embeddedActionChecks(packagePath: string): Array<{ name: string; status: "pass" | "fail"; detail: string }> {
+  const interactionPath = path.join(packagePath, "manifest", "interaction_contract.json");
+  const handlerPath = path.join(packagePath, "adapter", "handlers.ts");
+  if (!fs.existsSync(interactionPath) || !fs.existsSync(handlerPath)) return [];
+  const interactions = readEmbeddedInteractions(interactionPath);
+  const handlerSource = fs.readFileSync(handlerPath, "utf8");
+  return interactions
+    .map((interaction) => ({ interaction, actionId: embeddedActionIdForInputMode(interaction.input_mode) }))
+    .filter((item): item is { interaction: EmbeddedInteraction; actionId: string } => Boolean(item.actionId))
+    .map(({ interaction, actionId }) => {
+      const supportsAction = handlerSource.includes(actionId);
+      return {
+        name: `adapter:action:${actionId}`,
+        status: supportsAction ? "pass" : "fail",
+        detail: supportsAction
+          ? `adapter/handlers.ts supports ${actionId} for ${interaction.capability_id}.`
+          : `adapter/handlers.ts does not support ${actionId} for ${interaction.capability_id}.`,
+      };
+    });
+}
+
+interface EmbeddedInteraction {
+  trigger: string;
+  input_mode: string;
+  capability_id: string;
+}
+
+function readEmbeddedInteractions(filePath: string): EmbeddedInteraction[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.interactions)) return [];
+    return parsed.interactions.filter((item: unknown): item is EmbeddedInteraction => {
+      return Boolean(item && typeof item === "object" && !Array.isArray(item)
+        && (item as { trigger?: unknown }).trigger === "card_action"
+        && typeof (item as { input_mode?: unknown }).input_mode === "string"
+        && typeof (item as { capability_id?: unknown }).capability_id === "string");
+    });
+  } catch {
+    return [];
+  }
+}
+
+function embeddedActionIdForInputMode(inputMode: string): string {
+  if (inputMode === "preset_card_action") return "image.generate.submit";
+  if (inputMode === "feedback_card_action") return "image.iterate.submit";
+  if (inputMode === "batch_form_action") return "image.batch.submit";
+  if (inputMode === "batch_status_action") return "image.batch.refresh";
+  return "";
 }
 
 function embeddedFileCheck(name: string, filePath: string): { name: string; status: "pass" | "fail"; detail: string } {

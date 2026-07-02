@@ -467,6 +467,17 @@ function adapterTypesTs(): string {
   message?: string;
 }
 
+export interface IterateRequest {
+  session_id: string;
+  feedback: string;
+}
+
+export interface BatchRequest {
+  template_id: string;
+  size: string;
+  items: Array<{ fields: Record<string, string> }>;
+}
+
 export interface AdapterActionContext {
   action: string;
   value?: Record<string, unknown>;
@@ -492,6 +503,9 @@ export interface AdapterResult {
   ok: boolean;
   card: Record<string, unknown>;
   result?: Record<string, unknown>;
+  batchId?: string;
+  batchStatus?: Record<string, unknown>;
+  downloadUrl?: string;
   auditEvents: AdapterAuditEvent[];
 }
 `;
@@ -516,7 +530,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function assertAllowedOperator(operatorOpenId: string | undefined, allowedOperatorOpenIds: string[] | undefined): void {
   if (!allowedOperatorOpenIds?.length) return;
   if (!operatorOpenId || !allowedOperatorOpenIds.includes(operatorOpenId)) {
-    throw new Error("Operator is not allowed to execute this card action.");
+    throw new Error("Operator is not authorized to execute this card action.");
   }
 }
 
@@ -552,7 +566,7 @@ function stringValue(value: unknown): string {
 }
 
 function adapterServiceClientTs(): string {
-  return `import type { GeneratePreset } from "./types.js";
+  return `import type { BatchRequest, GeneratePreset, IterateRequest } from "./types.js";
 
 export async function callImageGenerate(baseUrl: string, preset: GeneratePreset, timeoutMs = 120000): Promise<Record<string, unknown>> {
   const controller = new AbortController();
@@ -578,6 +592,67 @@ export async function callImageGenerate(baseUrl: string, preset: GeneratePreset,
     clearTimeout(timeout);
   }
 }
+
+export async function callImageIterate(baseUrl: string, request: IterateRequest, timeoutMs = 120000): Promise<Record<string, unknown>> {
+  const response = await fetchWithTimeout(baseUrl.replace(/\/+$/, "") + "/api/iterate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ session_id: request.session_id, feedback: request.feedback }),
+  }, timeoutMs, "image-agent-web /api/iterate");
+  return readJsonResponse(response, "image-agent-web /api/iterate");
+}
+
+export async function callImageBatchCreate(baseUrl: string, request: BatchRequest, timeoutMs = 120000): Promise<{ batch_id: string }> {
+  const form = new FormData();
+  form.set("template_id", request.template_id);
+  form.set("size", request.size);
+  form.set("items_json", JSON.stringify(request.items));
+  form.set("reference_types_json", "[]");
+  const response = await fetchWithTimeout(baseUrl.replace(/\/+$/, "") + "/api/batch", { method: "POST", body: form }, timeoutMs, "image-agent-web /api/batch");
+  const parsed = await readJsonResponse(response, "image-agent-web /api/batch");
+  const batchId = typeof parsed.batch_id === "string" ? parsed.batch_id : "";
+  if (!batchId) throw new Error("image-agent-web /api/batch response did not include batch_id: " + JSON.stringify(parsed));
+  return { batch_id: batchId };
+}
+
+export async function callImageBatchStatus(baseUrl: string, batchId: string, timeoutMs = 120000): Promise<Record<string, unknown>> {
+  const response = await fetchWithTimeout(baseUrl.replace(/\/+$/, "") + "/api/batch/" + encodeURIComponent(batchId) + "/status", {}, timeoutMs, "image-agent-web /api/batch/{batch_id}/status");
+  return readJsonResponse(response, "image-agent-web /api/batch/{batch_id}/status");
+}
+
+export function resolveBatchDownloadUrl(baseUrl: string, batchId: string): string {
+  return baseUrl.replace(/\/+$/, "") + "/api/batch/" + encodeURIComponent(batchId) + "/download";
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(label + " timed out after " + timeoutMs + "ms.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readJsonResponse(response: Response, label: string): Promise<Record<string, unknown>> {
+  const text = await response.text();
+  let parsed: unknown;
+  try {
+    parsed = text ? JSON.parse(text) : {};
+  } catch {
+    parsed = { raw: text };
+  }
+  if (!response.ok) {
+    const message = parsed && typeof parsed === "object" && !Array.isArray(parsed) && "detail" in parsed ? String((parsed as { detail?: unknown }).detail) : text;
+    throw new Error(label + " returned HTTP " + response.status + ": " + message);
+  }
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+}
 `;
 }
 
@@ -592,7 +667,7 @@ function adapterValidationJs(): string {
   return `export function assertAllowedOperator(operatorOpenId, allowedOperatorOpenIds) {
   if (!Array.isArray(allowedOperatorOpenIds) || allowedOperatorOpenIds.length === 0) return;
   if (!operatorOpenId || !allowedOperatorOpenIds.includes(operatorOpenId)) {
-    throw new Error("Operator is not allowed to execute this card action.");
+    throw new Error("Operator is not authorized to execute this card action.");
   }
 }
 
@@ -782,30 +857,128 @@ function adapterHandlersTs(service: ServiceManifest, capabilities: CapabilityMap
     fields: {},
     message: "",
   };
+  const requiredFieldsByTemplate = Object.fromEntries((meta?.templates || []).map((template) => [
+    template.id,
+    (template.fields || []).filter((field) => field.required).map((field) => field.key),
+  ]));
+  const fieldLabels = Object.fromEntries((meta?.templates || []).flatMap((template) => (
+    template.fields || []
+  ).map((field) => [field.key, field.label || humanizeKey(field.key)])));
   return `import { auditEvent } from "./audit-events.js";
 import { buildFailureCard, buildSuccessCard } from "./cards.js";
-import { callImageGenerate } from "./service-client.js";
-import type { AdapterActionContext, AdapterDependencies, AdapterResult, GeneratePreset } from "./types.js";
+import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
+import type { AdapterActionContext, AdapterDependencies, AdapterResult, BatchRequest, GeneratePreset, IterateRequest } from "./types.js";
 import { assertAllowedOperator, mergeGeneratePresetWithFormValue } from "./validation.js";
 
 const defaultPreset: GeneratePreset = ${JSON.stringify(defaultPreset, null, 2)};
+const requiredFieldsByTemplate: Record<string, string[]> = ${JSON.stringify(requiredFieldsByTemplate, null, 2)};
+const fieldLabels: Record<string, string> = ${JSON.stringify(fieldLabels, null, 2)};
 
 export async function handleImageAgentCardAction(ctx: AdapterActionContext, deps: AdapterDependencies): Promise<AdapterResult> {
   const auditEvents = [auditEvent("adapter_card_action_received", { action: ctx.action, service: ${JSON.stringify(service.service.name)} })];
   try {
     assertAllowedOperator(ctx.operatorOpenId, deps.allowedOperatorOpenIds);
-    if (ctx.action !== "image.generate.submit") {
-      throw new Error("Unsupported adapter action: " + ctx.action);
+    if (ctx.action === "image.generate.submit") {
+      const actionValue = ctx.value && typeof ctx.value === "object" ? ctx.value : {};
+      const basePreset = isGeneratePreset((actionValue as { preset?: unknown }).preset) ? (actionValue as { preset: GeneratePreset }).preset : defaultPreset;
+      const preset = mergeGeneratePresetWithFormValue(basePreset, ctx.formValue);
+      validateGeneratePreset(preset);
+      const result = await callImageGenerate(deps.imageAgentBaseUrl, preset, deps.timeoutMs);
+      auditEvents.push(auditEvent("adapter_generation_succeeded", { imageUrl: result.image_url || "" }));
+      return { ok: true, card: buildSuccessCard(result), result, auditEvents };
     }
-    const preset = mergeGeneratePresetWithFormValue(defaultPreset, ctx.formValue);
-    const result = await callImageGenerate(deps.imageAgentBaseUrl, preset, deps.timeoutMs);
-    auditEvents.push(auditEvent("adapter_generation_succeeded", { imageUrl: result.image_url || "" }));
-    return { ok: true, card: buildSuccessCard(result), result, auditEvents };
+    if (ctx.action === "image.iterate.submit") {
+      const request = buildIterateRequest(ctx.value, ctx.formValue);
+      const result = await callImageIterate(deps.imageAgentBaseUrl, request, deps.timeoutMs);
+      auditEvents.push(auditEvent("adapter_iteration_succeeded", { session_id: result.session_id || request.session_id }));
+      return { ok: true, card: buildSuccessCard(result), result, auditEvents };
+    }
+    if (ctx.action === "image.batch.submit") {
+      const request = buildBatchRequest(ctx.value, ctx.formValue);
+      const created = await callImageBatchCreate(deps.imageAgentBaseUrl, request, deps.timeoutMs);
+      const status = await callImageBatchStatus(deps.imageAgentBaseUrl, created.batch_id, deps.timeoutMs);
+      const downloadUrl = batchDownloadUrl(deps.imageAgentBaseUrl, status);
+      auditEvents.push(auditEvent("adapter_batch_submitted", { batchId: created.batch_id, template_id: request.template_id, size: request.size, total: request.items.length, downloadUrl }));
+      auditEvents.push(auditEvent("adapter_batch_status_checked", summarizeBatchStatus(status, downloadUrl)));
+      return { ok: true, card: buildSuccessCard(status), batchId: created.batch_id, batchStatus: status, downloadUrl, auditEvents };
+    }
+    if (ctx.action === "image.batch.refresh") {
+      const batchId = stringValue(ctx.value?.batch_id || ctx.value?.batchId || ctx.formValue?.param_batch_id);
+      if (!batchId) throw new Error("batch_id is required.");
+      const status = await callImageBatchStatus(deps.imageAgentBaseUrl, batchId, deps.timeoutMs);
+      const downloadUrl = batchDownloadUrl(deps.imageAgentBaseUrl, status);
+      auditEvents.push(auditEvent("adapter_batch_status_checked", summarizeBatchStatus(status, downloadUrl)));
+      return { ok: true, card: buildSuccessCard(status), batchId, batchStatus: status, downloadUrl, auditEvents };
+    }
+    throw new Error("Unsupported adapter action: " + ctx.action);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     auditEvents.push(auditEvent("adapter_generation_failed", { message }));
     return { ok: false, card: buildFailureCard(message), auditEvents };
   }
+}
+
+function buildIterateRequest(value: Record<string, unknown> | undefined, formValue: Record<string, unknown> | undefined): IterateRequest {
+  const sessionId = stringValue(value?.session_id || value?.sessionId || formValue?.param_session_id);
+  const feedback = stringValue(formValue?.param_feedback || value?.feedback);
+  if (!sessionId || !feedback) throw new Error("session_id and feedback are required.");
+  return { session_id: sessionId, feedback };
+}
+
+function buildBatchRequest(value: Record<string, unknown> | undefined, formValue: Record<string, unknown> | undefined): BatchRequest {
+  const templateId = stringValue(formValue?.param_batch_template_id || value?.template_id || value?.templateId || defaultPreset.template_id);
+  const size = stringValue(formValue?.param_batch_size || value?.size || defaultPreset.size);
+  const itemsJson = stringValue(formValue?.param_batch_items_json || value?.items_json || value?.itemsJson);
+  const rawItems = itemsJson ? JSON.parse(itemsJson) : Array.isArray(value?.items) ? value.items : [];
+  if (!Array.isArray(rawItems) || rawItems.length === 0) throw new Error("Batch items JSON must include at least one item.");
+  return { template_id: templateId, size, items: rawItems as BatchRequest["items"] };
+}
+
+function batchDownloadUrl(baseUrl: string, status: Record<string, unknown>): string {
+  const batchId = stringValue(status.batch_id);
+  const completed = Array.isArray(status.completed) ? status.completed.length : 0;
+  return batchId && status.running !== true && completed > 0 ? resolveBatchDownloadUrl(baseUrl, batchId) : "";
+}
+
+function validateGeneratePreset(preset: GeneratePreset): void {
+  const requiredFields = requiredFieldsByTemplate[preset.template_id] || [];
+  for (const key of requiredFields) {
+    const value = preset.fields[key];
+    if (typeof value !== "string" || !value.trim()) {
+      throw new Error((fieldLabels[key] || key) + " is required.");
+    }
+  }
+}
+
+function summarizeBatchStatus(status: Record<string, unknown>, downloadUrl: string): Record<string, unknown> {
+  return {
+    batchId: stringValue(status.batch_id),
+    template_id: status.template_id,
+    size: status.size,
+    total: numberValue(status.total),
+    done: numberValue(status.done),
+    running: status.running === true,
+    completed: Array.isArray(status.completed) ? status.completed.length : 0,
+    failed: Array.isArray(status.failed) ? status.failed.length : 0,
+    downloadUrl: downloadUrl || undefined,
+  };
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function isGeneratePreset(value: unknown): value is GeneratePreset {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value)
+    && typeof (value as { template_id?: unknown }).template_id === "string"
+    && typeof (value as { size?: unknown }).size === "string"
+    && (value as { fields?: unknown }).fields
+    && typeof (value as { fields?: unknown }).fields === "object"
+    && !Array.isArray((value as { fields?: unknown }).fields));
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 `;
 }
@@ -824,27 +997,60 @@ function adapterHandlersJs(service: ServiceManifest, capabilities: CapabilityMap
     fields: {},
     message: "",
   };
+  const requiredFieldsByTemplate = Object.fromEntries((meta?.templates || []).map((template) => [
+    template.id,
+    (template.fields || []).filter((field) => field.required).map((field) => field.key),
+  ]));
+  const fieldLabels = Object.fromEntries((meta?.templates || []).flatMap((template) => (
+    template.fields || []
+  ).map((field) => [field.key, field.label || humanizeKey(field.key)])));
   return `import { auditEvent } from "./audit-events.js";
 import { buildFailureCard, buildSuccessCard } from "./cards.js";
-import { callImageGenerate } from "./service-client.js";
+import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
 import { assertAllowedOperator, mergeGeneratePresetWithFormValue } from "./validation.js";
 
 const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
+const requiredFieldsByTemplate = ${JSON.stringify(requiredFieldsByTemplate, null, 2)};
+const fieldLabels = ${JSON.stringify(fieldLabels, null, 2)};
 
 export async function handleImageAgentCardAction(ctx, deps) {
   const action = typeof ctx?.action === "string" ? ctx.action : "";
   const auditEvents = [auditEvent("adapter_card_action_received", { action, service: ${JSON.stringify(service.service.name)} })];
   try {
     assertAllowedOperator(ctx?.operatorOpenId, deps?.allowedOperatorOpenIds);
-    if (action !== "image.generate.submit") {
-      throw new Error("Unsupported adapter action: " + action);
+    if (action === "image.generate.submit") {
+      const actionValue = ctx?.value && typeof ctx.value === "object" ? ctx.value : {};
+      const basePreset = isGeneratePreset(actionValue.preset) ? actionValue.preset : defaultPreset;
+      const preset = mergeGeneratePresetWithFormValue(basePreset, ctx?.formValue);
+      validateGeneratePreset(preset);
+      const result = await callImageGenerate(String(deps?.imageAgentBaseUrl || ""), preset, Number(deps?.timeoutMs || 120000));
+      auditEvents.push(auditEvent("adapter_generation_succeeded", { imageUrl: result.image_url || "" }));
+      return { ok: true, card: buildSuccessCard(result), result, auditEvents };
     }
-    const actionValue = ctx?.value && typeof ctx.value === "object" ? ctx.value : {};
-    const basePreset = isGeneratePreset(actionValue.preset) ? actionValue.preset : defaultPreset;
-    const preset = mergeGeneratePresetWithFormValue(basePreset, ctx?.formValue);
-    const result = await callImageGenerate(String(deps?.imageAgentBaseUrl || ""), preset, Number(deps?.timeoutMs || 120000));
-    auditEvents.push(auditEvent("adapter_generation_succeeded", { imageUrl: result.image_url || "" }));
-    return { ok: true, card: buildSuccessCard(result), result, auditEvents };
+    if (action === "image.iterate.submit") {
+      const request = buildIterateRequest(ctx?.value, ctx?.formValue);
+      const result = await callImageIterate(String(deps?.imageAgentBaseUrl || ""), request, Number(deps?.timeoutMs || 120000));
+      auditEvents.push(auditEvent("adapter_iteration_succeeded", { session_id: result.session_id || request.session_id }));
+      return { ok: true, card: buildSuccessCard(result), result, auditEvents };
+    }
+    if (action === "image.batch.submit") {
+      const request = buildBatchRequest(ctx?.value, ctx?.formValue);
+      const created = await callImageBatchCreate(String(deps?.imageAgentBaseUrl || ""), request, Number(deps?.timeoutMs || 120000));
+      const status = await callImageBatchStatus(String(deps?.imageAgentBaseUrl || ""), created.batch_id, Number(deps?.timeoutMs || 120000));
+      const downloadUrl = batchDownloadUrl(String(deps?.imageAgentBaseUrl || ""), status);
+      auditEvents.push(auditEvent("adapter_batch_submitted", { batchId: created.batch_id, template_id: request.template_id, size: request.size, total: request.items.length, downloadUrl }));
+      auditEvents.push(auditEvent("adapter_batch_status_checked", summarizeBatchStatus(status, downloadUrl)));
+      return { ok: true, card: buildSuccessCard(status), batchId: created.batch_id, batchStatus: status, downloadUrl, auditEvents };
+    }
+    if (action === "image.batch.refresh") {
+      const batchId = stringValue(ctx?.value?.batch_id || ctx?.value?.batchId || ctx?.formValue?.param_batch_id);
+      if (!batchId) throw new Error("batch_id is required.");
+      const status = await callImageBatchStatus(String(deps?.imageAgentBaseUrl || ""), batchId, Number(deps?.timeoutMs || 120000));
+      const downloadUrl = batchDownloadUrl(String(deps?.imageAgentBaseUrl || ""), status);
+      auditEvents.push(auditEvent("adapter_batch_status_checked", summarizeBatchStatus(status, downloadUrl)));
+      return { ok: true, card: buildSuccessCard(status), batchId, batchStatus: status, downloadUrl, auditEvents };
+    }
+    throw new Error("Unsupported adapter action: " + action);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     auditEvents.push(auditEvent("adapter_generation_failed", { message }));
@@ -852,11 +1058,65 @@ export async function handleImageAgentCardAction(ctx, deps) {
   }
 }
 
+function buildIterateRequest(value, formValue) {
+  const sessionId = stringValue(value?.session_id || value?.sessionId || formValue?.param_session_id);
+  const feedback = stringValue(formValue?.param_feedback || value?.feedback);
+  if (!sessionId || !feedback) throw new Error("session_id and feedback are required.");
+  return { session_id: sessionId, feedback };
+}
+
+function buildBatchRequest(value, formValue) {
+  const templateId = stringValue(formValue?.param_batch_template_id || value?.template_id || value?.templateId || defaultPreset.template_id);
+  const size = stringValue(formValue?.param_batch_size || value?.size || defaultPreset.size);
+  const itemsJson = stringValue(formValue?.param_batch_items_json || value?.items_json || value?.itemsJson);
+  const rawItems = itemsJson ? JSON.parse(itemsJson) : Array.isArray(value?.items) ? value.items : [];
+  if (!Array.isArray(rawItems) || rawItems.length === 0) throw new Error("Batch items JSON must include at least one item.");
+  return { template_id: templateId, size, items: rawItems };
+}
+
+function batchDownloadUrl(baseUrl, status) {
+  const batchId = stringValue(status?.batch_id);
+  const completed = Array.isArray(status?.completed) ? status.completed.length : 0;
+  return batchId && status?.running !== true && completed > 0 ? resolveBatchDownloadUrl(baseUrl, batchId) : "";
+}
+
+function validateGeneratePreset(preset) {
+  const requiredFields = requiredFieldsByTemplate[preset.template_id] || [];
+  for (const key of requiredFields) {
+    const value = preset.fields[key];
+    if (typeof value !== "string" || !value.trim()) {
+      throw new Error((fieldLabels[key] || key) + " is required.");
+    }
+  }
+}
+
+function summarizeBatchStatus(status, downloadUrl) {
+  return {
+    batchId: stringValue(status?.batch_id),
+    template_id: status?.template_id,
+    size: status?.size,
+    total: numberValue(status?.total),
+    done: numberValue(status?.done),
+    running: status?.running === true,
+    completed: Array.isArray(status?.completed) ? status.completed.length : 0,
+    failed: Array.isArray(status?.failed) ? status.failed.length : 0,
+    downloadUrl: downloadUrl || undefined,
+  };
+}
+
+function numberValue(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function isGeneratePreset(value) {
   return value && typeof value === "object"
     && typeof value.template_id === "string"
     && typeof value.size === "string"
     && value.fields && typeof value.fields === "object";
+}
+
+function stringValue(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 `;
 }
@@ -2319,15 +2579,14 @@ function runtimeIndexTs(): string {
 import fs from "node:fs";
 import * as lark from "@larksuiteoapi/node-sdk";
 import { audit, makeTraceId, readAuditTail } from "./audit.js";
-import { buildBatchRunningCard, buildBatchStatusCard, buildFailureCard, buildInfoCard, buildIterationRunningCard, buildRunningCard, buildStartCard, buildSuccessCard, defaultPreset, fieldSpecs, templateSpecs } from "./cards.js";
+import { buildFailureCard, buildInfoCard, buildRunningCard, buildStartCard, buildSuccessCard, defaultPreset, fieldSpecs, templateSpecs } from "./cards.js";
 import { loadConfig } from "./config.js";
 import { downloadImageToTemp, resolveImageUrl } from "./image-agent-client.js";
-import type { BatchRequest, BatchStatus, GeneratePreset, ImageAgentResult, IterateRequest } from "./image-agent-client.js";
+import type { BatchStatus, GeneratePreset, ImageAgentResult } from "./image-agent-client.js";
 
 const config = loadConfig();
 let cachedClient: lark.Client | undefined;
 const adapterHandlersModule = "../../adapter/handlers.js";
-const adapterServiceClientModule = "../../adapter/service-client.js";
 const CARD_ACTION_DEDUPE_TTL_MS = 120_000;
 const cardActionDedupe = new Map<string, CardActionDedupeEntry>();
 
@@ -2335,18 +2594,14 @@ interface AdapterResult {
   ok?: boolean;
   card?: unknown;
   result?: unknown;
+  batchId?: string;
+  batchStatus?: unknown;
+  downloadUrl?: string;
   auditEvents?: Array<{ event: string; detail: Record<string, unknown> }>;
 }
 
 interface AdapterHandlersModule {
   handleImageAgentCardAction(ctx: Record<string, unknown>, deps: Record<string, unknown>): Promise<AdapterResult>;
-}
-
-interface AdapterServiceClientModule {
-  callImageIterate(baseUrl: string, request: IterateRequest, timeoutMs: number): Promise<unknown>;
-  callImageBatchCreate(baseUrl: string, request: BatchRequest, timeoutMs: number): Promise<{ batch_id: string }>;
-  callImageBatchStatus(baseUrl: string, batchId: string, timeoutMs: number): Promise<unknown>;
-  resolveBatchDownloadUrl(baseUrl: string, batchId: string): string;
 }
 
 interface CardActionDedupeEntry {
@@ -2532,129 +2787,8 @@ async function runGeneration(preset: GeneratePreset, uploadToLark: boolean, trac
   };
 }
 
-async function runIteration(request: IterateRequest, uploadToLark: boolean, traceId = makeTraceId()): Promise<GenerationRun> {
-  audit({ trace_id: traceId, event: "iteration_started", detail: { session_id: request.session_id, feedback: request.feedback, uploadToLark } });
-  const running = buildIterationRunningCard(traceId, request.session_id);
-  audit({ trace_id: traceId, event: "iteration_running_card_built", detail: { running } });
-
-  const adapter = await loadAdapterServiceClient();
-  const result = normalizeImageAgentResult(await adapter.callImageIterate(config.imageAgentBaseUrl, request, config.imageAgentTimeoutMs));
-  const imageUrl = resolveImageUrl(config.imageAgentBaseUrl, result.image_url);
-  let imageKey = "";
-  if (uploadToLark && config.feishuApiConfigured) {
-    try {
-      imageKey = await uploadImage(imageUrl, traceId);
-    } catch (error) {
-      audit({
-        trace_id: traceId,
-        event: "image_upload_failed",
-        detail: { message: error instanceof Error ? error.message : String(error), imageUrl },
-      });
-    }
-  }
-
-  audit({ trace_id: traceId, event: "iteration_succeeded", detail: { session_id: result.session_id || request.session_id, imageUrl, imageKey } });
-  return {
-    traceId,
-    result,
-    imageUrl,
-    imageKey,
-    card: buildSuccessCard(traceId, result, imageKey, imageUrl),
-  };
-}
-
-interface BatchRun {
-  traceId: string;
-  batchId: string;
-  status: BatchStatus;
-  downloadUrl: string;
-  card: unknown;
-}
-
-async function runBatchSubmission(request: BatchRequest, traceId = makeTraceId()): Promise<BatchRun> {
-  audit({
-    trace_id: traceId,
-    event: "batch_started",
-    detail: {
-      template_id: request.template_id,
-      size: request.size,
-      total: request.items.length,
-    },
-  });
-
-  const adapter = await loadAdapterServiceClient();
-  const created = await adapter.callImageBatchCreate(config.imageAgentBaseUrl, request, config.imageAgentTimeoutMs);
-  audit({
-    trace_id: traceId,
-    event: "batch_created",
-    detail: {
-      batchId: created.batch_id,
-      template_id: request.template_id,
-      size: request.size,
-      total: request.items.length,
-    },
-  });
-
-  return runBatchStatus(created.batch_id, traceId);
-}
-
-async function runBatchStatus(batchId: string, traceId = makeTraceId()): Promise<BatchRun> {
-  const adapter = await loadAdapterServiceClient();
-  const status = await adapter.callImageBatchStatus(config.imageAgentBaseUrl, batchId, config.imageAgentTimeoutMs) as BatchStatus;
-  const normalizedStatus = {
-    ...status,
-    batch_id: status.batch_id || batchId,
-  };
-  const downloadUrl = batchDownloadUrl(normalizedStatus);
-  audit({
-    trace_id: traceId,
-    event: "batch_status_checked",
-    detail: summarizeBatchStatus(normalizedStatus, downloadUrl),
-  });
-  if (normalizedStatus.running !== true && batchFailedCount(normalizedStatus) > 0) {
-    audit({
-      trace_id: traceId,
-      event: "batch_failed",
-      detail: summarizeBatchStatus(normalizedStatus, downloadUrl),
-    });
-  } else if (isBatchFinished(normalizedStatus)) {
-    audit({
-      trace_id: traceId,
-      event: "batch_completed",
-      detail: summarizeBatchStatus(normalizedStatus, downloadUrl),
-    });
-  }
-
-  return {
-    traceId,
-    batchId: normalizedStatus.batch_id,
-    status: normalizedStatus,
-    downloadUrl,
-    card: buildBatchStatusCard(traceId, normalizedStatus, downloadUrl),
-  };
-}
-
-function batchDownloadUrl(status: BatchStatus): string {
-  const completedCount = Array.isArray(status.completed) ? status.completed.length : 0;
-  return status.batch_id && status.running !== true && completedCount > 0
-    ? loadAdapterBatchDownloadUrl(config.imageAgentBaseUrl, status.batch_id)
-    : "";
-}
-
 async function loadAdapterHandlers(): Promise<AdapterHandlersModule> {
   return await import(adapterHandlersModule) as AdapterHandlersModule;
-}
-
-async function loadAdapterServiceClient(): Promise<AdapterServiceClientModule> {
-  return await import(adapterServiceClientModule) as AdapterServiceClientModule;
-}
-
-function loadAdapterBatchDownloadUrl(baseUrl: string, batchId: string): string {
-  return stripTrailingSlash(baseUrl) + "/api/batch/" + encodeURIComponent(batchId) + "/download";
-}
-
-function stripTrailingSlash(value: string): string {
-  return value.endsWith("/") ? stripTrailingSlash(value.slice(0, -1)) : value;
 }
 
 function normalizeImageAgentResult(value: unknown): ImageAgentResult {
@@ -2671,34 +2805,6 @@ function adapterFailureMessage(adapterResult: unknown): string {
     if (typeof message === "string" && message.trim()) return message;
   }
   return "Adapter action failed.";
-}
-
-function summarizeBatchStatus(status: BatchStatus, downloadUrl: string): Record<string, unknown> {
-  return {
-    batchId: status.batch_id,
-    template_id: status.template_id,
-    size: status.size,
-    total: numberFromUnknown(status.total),
-    done: numberFromUnknown(status.done),
-    running: status.running === true,
-    completed: Array.isArray(status.completed) ? status.completed.length : 0,
-    failed: batchFailedCount(status),
-    downloadUrl: downloadUrl || undefined,
-  };
-}
-
-function isBatchFinished(status: BatchStatus): boolean {
-  const total = numberFromUnknown(status.total);
-  const done = numberFromUnknown(status.done);
-  return status.running !== true && total > 0 && done >= total;
-}
-
-function batchFailedCount(status: BatchStatus): number {
-  return Array.isArray(status.failed) ? status.failed.length : 0;
-}
-
-function numberFromUnknown(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 interface CardActionRun {
@@ -2728,16 +2834,7 @@ async function runCardAction(data: any, options: { requireCallbackConfig: boolea
     },
   });
 
-  if (action !== "image.generate.submit" || !preset) {
-    if (action === "image.iterate.submit") {
-      return runIterateCardAction(traceId, action, actionValue, formValue, callbackContext, options);
-    }
-    if (action === "image.batch.submit") {
-      return runBatchSubmitCardAction(traceId, action, actionValue, formValue, callbackContext, options);
-    }
-    if (action === "image.batch.refresh") {
-      return runBatchRefreshCardAction(traceId, actionValue, formValue, callbackContext, options);
-    }
+  if (!isSupportedCardAction(action)) {
     return {
       ok: false,
       traceId,
@@ -2746,48 +2843,7 @@ async function runCardAction(data: any, options: { requireCallbackConfig: boolea
     };
   }
 
-  const validationErrors = validatePreset(preset);
-  if (validationErrors.length) {
-    const message = "Invalid card input: " + validationErrors.join(" ");
-    audit({
-      trace_id: traceId,
-      event: "card_action_validation_failed",
-      detail: {
-        errors: validationErrors,
-        preset,
-        ...callbackContext,
-      },
-    });
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  if (!isOperatorAllowed(callbackContext)) {
-    const operatorOpenId = typeof callbackContext.operator_open_id === "string" ? callbackContext.operator_open_id : "";
-    const message = operatorOpenId
-      ? "Operator is not authorized to run this card action."
-      : "Card action is missing operator_open_id; cannot authorize this request.";
-    audit({
-      trace_id: traceId,
-      event: "card_action_unauthorized",
-      detail: {
-        allowed_operator_count: config.allowedOperatorOpenIds.length,
-        ...callbackContext,
-      },
-    });
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  const dedupeKey = options.dedupe ? buildCardActionDedupeKey(action, preset, formValue, callbackContext) : "";
+  const dedupeKey = options.dedupe ? buildCardActionDedupeKey(action, actionValue, formValue, callbackContext) : "";
   if (dedupeKey) {
     const duplicate = findDuplicateCardAction(dedupeKey, traceId, callbackContext);
     if (duplicate) {
@@ -2797,14 +2853,14 @@ async function runCardAction(data: any, options: { requireCallbackConfig: boolea
         card: duplicate.card,
       };
     }
-    rememberCardAction(dedupeKey, traceId, buildInfoCard(traceId, "Image generation already queued", "This card action is already being processed. The original request will update the card when it finishes."));
+    rememberCardAction(dedupeKey, traceId, buildInfoCard(traceId, "Card action already queued", "This card action is already being processed. The original request will update the card when it finishes."));
   }
 
   try {
     if (options.requireCallbackConfig) {
       requireCallbackConfig();
     }
-    if (options.asyncUpdate) {
+    if (options.asyncUpdate && action === "image.generate.submit" && preset) {
       requireFeishuApiConfig();
       const messageId = typeof callbackContext.open_message_id === "string" ? callbackContext.open_message_id : "";
       if (!messageId) {
@@ -2820,12 +2876,33 @@ async function runCardAction(data: any, options: { requireCallbackConfig: boolea
         card: runningCard,
       };
     }
-    const run = await runGeneration(preset, options.uploadToLark, traceId);
-    rememberCardAction(dedupeKey, traceId, run.card);
+    const adapter = await loadAdapterHandlers();
+    const adapterResult = await adapter.handleImageAgentCardAction({
+      action,
+      value: actionValue,
+      formValue: isRecord(formValue) ? formValue : {},
+      operatorOpenId: typeof callbackContext.operator_open_id === "string" ? callbackContext.operator_open_id : undefined,
+      openMessageId: typeof callbackContext.open_message_id === "string" ? callbackContext.open_message_id : undefined,
+      openChatId: typeof callbackContext.open_chat_id === "string" ? callbackContext.open_chat_id : undefined,
+    }, {
+      imageAgentBaseUrl: config.imageAgentBaseUrl,
+      timeoutMs: config.imageAgentTimeoutMs,
+      allowedOperatorOpenIds: config.allowedOperatorOpenIds,
+    });
+    for (const event of adapterResult.auditEvents || []) {
+      const translated = translateAdapterAuditEvent(event, callbackContext);
+      audit({ trace_id: traceId, event: translated.event, detail: translated.detail });
+    }
+    const card = adapterResult.ok ? decorateAdapterCard(adapterResult.card, traceId) : buildFailureCard(traceId, adapterFailureMessage(adapterResult));
+    rememberCardAction(dedupeKey, traceId, card);
     return {
-      ok: true,
+      ok: Boolean(adapterResult.ok),
       traceId,
-      card: run.card,
+      card,
+      batchId: adapterResult.batchId,
+      batchStatus: normalizeBatchStatus(adapterResult.batchStatus, adapterResult.batchId),
+      downloadUrl: adapterResult.downloadUrl,
+      error: adapterResult.ok ? undefined : adapterFailureMessage(adapterResult),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -2841,291 +2918,62 @@ async function runCardAction(data: any, options: { requireCallbackConfig: boolea
   }
 }
 
-async function runIterateCardAction(
-  traceId: string,
-  action: string,
-  actionValue: Record<string, unknown>,
-  formValue: unknown,
-  callbackContext: Record<string, unknown>,
-  options: { requireCallbackConfig: boolean; uploadToLark: boolean; asyncUpdate: boolean; dedupe: boolean },
-): Promise<CardActionRun> {
-  const request = buildIterateRequest(actionValue, formValue);
-  const validationErrors = validateIterateRequest(request);
-  if (validationErrors.length) {
-    const message = "Invalid iteration input: " + validationErrors.join(" ");
-    audit({
-      trace_id: traceId,
-      event: "iteration_validation_failed",
-      detail: {
-        errors: validationErrors,
-        ...callbackContext,
-      },
-    });
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  if (!request) {
-    const message = "Invalid iteration input: session_id and feedback are required.";
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  if (!isOperatorAllowed(callbackContext)) {
-    const operatorOpenId = typeof callbackContext.operator_open_id === "string" ? callbackContext.operator_open_id : "";
-    const message = operatorOpenId
-      ? "Operator is not authorized to run this card action."
-      : "Card action is missing operator_open_id; cannot authorize this request.";
-    audit({
-      trace_id: traceId,
-      event: "card_action_unauthorized",
-      detail: {
-        allowed_operator_count: config.allowedOperatorOpenIds.length,
-        ...callbackContext,
-      },
-    });
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  const dedupeKey = options.dedupe ? buildCardActionDedupeKey(action, request, formValue, callbackContext) : "";
-  if (dedupeKey) {
-    const duplicate = findDuplicateCardAction(dedupeKey, traceId, callbackContext);
-    if (duplicate) {
-      return {
-        ok: true,
-        traceId,
-        card: duplicate.card,
-      };
-    }
-    rememberCardAction(dedupeKey, traceId, buildInfoCard(traceId, "Image iteration already queued", "This feedback is already being processed. The original request will update the card when it finishes."));
-  }
-
-  try {
-    if (options.requireCallbackConfig) {
-      requireCallbackConfig();
-    }
-    if (options.asyncUpdate) {
-      requireFeishuApiConfig();
-      const messageId = typeof callbackContext.open_message_id === "string" ? callbackContext.open_message_id : "";
-      if (!messageId) {
-        throw new Error("Async card action requires open_message_id in the callback context.");
-      }
-      const runningCard = buildIterationRunningCard(traceId, request.session_id);
-      audit({ trace_id: traceId, event: "async_iteration_queued", detail: { messageId, session_id: request.session_id } });
-      rememberCardAction(dedupeKey, traceId, runningCard);
-      void completeAsyncIteration(messageId, request, options.uploadToLark, traceId, callbackContext, dedupeKey);
-      return {
-        ok: true,
-        traceId,
-        card: runningCard,
-      };
-    }
-    const run = await runIteration(request, options.uploadToLark, traceId);
-    rememberCardAction(dedupeKey, traceId, run.card);
-    return {
-      ok: true,
-      traceId,
-      card: run.card,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failureCard = buildFailureCard(traceId, message);
-    rememberCardAction(dedupeKey, traceId, failureCard);
-    audit({ trace_id: traceId, event: "iteration_failed", detail: { message, ...callbackContext } });
-    return {
-      ok: false,
-      traceId,
-      card: failureCard,
-      error: message,
-    };
-  }
+function isSupportedCardAction(action: string): boolean {
+  return action === "image.generate.submit"
+    || action === "image.iterate.submit"
+    || action === "image.batch.submit"
+    || action === "image.batch.refresh";
 }
 
-async function runBatchSubmitCardAction(
-  traceId: string,
-  action: string,
-  actionValue: Record<string, unknown>,
-  formValue: unknown,
-  callbackContext: Record<string, unknown>,
-  options: { requireCallbackConfig: boolean; uploadToLark: boolean; asyncUpdate: boolean; dedupe: boolean },
-): Promise<CardActionRun> {
-  const built = buildBatchRequest(actionValue, formValue);
-  const validationErrors = validateBatchRequest(built.request, built.errors);
-  if (validationErrors.length) {
-    const message = "Invalid batch input: " + validationErrors.join(" ");
-    audit({
-      trace_id: traceId,
-      event: "batch_validation_failed",
-      detail: {
-        errors: validationErrors,
-        ...callbackContext,
-      },
-    });
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  const request = built.request;
-  if (!request) {
-    const message = "Invalid batch input: template_id, size, and items_json are required.";
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  if (!isOperatorAllowed(callbackContext)) {
-    const operatorOpenId = typeof callbackContext.operator_open_id === "string" ? callbackContext.operator_open_id : "";
-    const message = operatorOpenId
-      ? "Operator is not authorized to run this card action."
-      : "Card action is missing operator_open_id; cannot authorize this request.";
-    audit({
-      trace_id: traceId,
-      event: "card_action_unauthorized",
-      detail: {
-        allowed_operator_count: config.allowedOperatorOpenIds.length,
-        ...callbackContext,
-      },
-    });
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  const dedupeKey = options.dedupe ? buildCardActionDedupeKey(action, request, formValue, callbackContext) : "";
-  if (dedupeKey) {
-    const duplicate = findDuplicateCardAction(dedupeKey, traceId, callbackContext);
-    if (duplicate) {
-      return {
-        ok: true,
-        traceId,
-        card: duplicate.card,
-      };
-    }
-    rememberCardAction(dedupeKey, traceId, buildBatchRunningCard(traceId, "", request.template_id, request.size, request.items.length));
-  }
-
-  try {
-    if (options.requireCallbackConfig) {
-      requireCallbackConfig();
-    }
-    const run = await runBatchSubmission(request, traceId);
-    rememberCardAction(dedupeKey, traceId, run.card);
-    return {
-      ok: true,
-      traceId,
-      batchId: run.batchId,
-      batchStatus: run.status,
-      downloadUrl: run.downloadUrl,
-      card: run.card,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failureCard = buildFailureCard(traceId, message);
-    rememberCardAction(dedupeKey, traceId, failureCard);
-    audit({ trace_id: traceId, event: "batch_failed", detail: { message, ...callbackContext } });
-    return {
-      ok: false,
-      traceId,
-      card: failureCard,
-      error: message,
-    };
-  }
+function decorateAdapterCard(card: unknown, traceId: string): unknown {
+  if (!isRecord(card) || !Array.isArray(card.elements)) return card;
+  const elements = card.elements.map((element) => isRecord(element) ? { ...element } : element);
+  elements.push({ tag: "markdown", content: "**Trace ID:** " + traceId });
+  return { ...card, elements };
 }
 
-async function runBatchRefreshCardAction(
-  traceId: string,
-  actionValue: Record<string, unknown>,
-  formValue: unknown,
+function normalizeBatchStatus(value: unknown, batchId: string | undefined): BatchStatus | undefined {
+  if (!isRecord(value)) return undefined;
+  return { ...value, batch_id: typeof value.batch_id === "string" ? value.batch_id : batchId || "" } as BatchStatus;
+}
+
+function translateAdapterAuditEvent(
+  event: { event: string; detail: Record<string, unknown> },
   callbackContext: Record<string, unknown>,
-  options: { requireCallbackConfig: boolean; uploadToLark: boolean; asyncUpdate: boolean; dedupe: boolean },
-): Promise<CardActionRun> {
-  const batchId = buildBatchRefreshBatchId(actionValue, formValue);
-  if (!batchId) {
-    const message = "Invalid batch refresh input: batch_id is required.";
-    audit({
-      trace_id: traceId,
-      event: "batch_refresh_validation_failed",
-      detail: {
-        errors: ["batch_id is required."],
-        ...callbackContext,
-      },
-    });
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  if (!isOperatorAllowed(callbackContext)) {
-    const operatorOpenId = typeof callbackContext.operator_open_id === "string" ? callbackContext.operator_open_id : "";
-    const message = operatorOpenId
-      ? "Operator is not authorized to run this card action."
-      : "Card action is missing operator_open_id; cannot authorize this request.";
-    audit({
-      trace_id: traceId,
-      event: "card_action_unauthorized",
-      detail: {
-        allowed_operator_count: config.allowedOperatorOpenIds.length,
-        ...callbackContext,
-      },
-    });
-    return {
-      ok: false,
-      traceId,
-      card: buildFailureCard(traceId, message),
-      error: message,
-    };
-  }
-
-  try {
-    if (options.requireCallbackConfig) {
-      requireCallbackConfig();
+): { event: string; detail: Record<string, unknown> } {
+  if (event.event === "adapter_generation_failed") {
+    const message = typeof event.detail.message === "string" ? event.detail.message : "Adapter action failed.";
+    const normalized = message.toLowerCase();
+    if (normalized.includes("not authorized") || normalized.includes("operator_open_id")) {
+      return {
+        event: "card_action_unauthorized",
+        detail: {
+          message,
+          allowed_operator_count: config.allowedOperatorOpenIds.length,
+          ...callbackContext,
+        },
+      };
     }
-    const run = await runBatchStatus(batchId, traceId);
+    if (normalized.includes("timed out")) {
+      return { event: "generation_failed", detail: { message, ...callbackContext } };
+    }
+    return { event: "card_action_validation_failed", detail: { errors: [message], ...callbackContext } };
+  }
+  if (event.event === "adapter_batch_submitted") {
     return {
-      ok: true,
-      traceId,
-      batchId: run.batchId,
-      batchStatus: run.status,
-      downloadUrl: run.downloadUrl,
-      card: run.card,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    audit({ trace_id: traceId, event: "batch_status_failed", detail: { message, batchId, ...callbackContext } });
-    return {
-      ok: false,
-      traceId,
-      batchId,
-      card: buildFailureCard(traceId, message),
-      error: message,
+      event: "batch_started",
+      detail: {
+        template_id: event.detail.template_id,
+        size: event.detail.size,
+        total: event.detail.total,
+        ...callbackContext,
+      },
     };
   }
+  if (event.event === "adapter_batch_status_checked") {
+    return { event: "batch_status_checked", detail: { ...event.detail, ...callbackContext } };
+  }
+  return event;
 }
 
 function buildCardActionDedupeKey(
@@ -3199,35 +3047,6 @@ async function completeAsyncCardAction(
     const failureCard = buildFailureCard(traceId, message);
     rememberCardAction(dedupeKey, traceId, failureCard);
     audit({ trace_id: traceId, event: "async_generation_failed", detail: { message, ...callbackContext } });
-    try {
-      await updateCardMessage(messageId, failureCard, traceId);
-    } catch (patchError) {
-      audit({
-        trace_id: traceId,
-        event: "message_patch_failed",
-        detail: { message: patchError instanceof Error ? patchError.message : String(patchError), originalError: message },
-      });
-    }
-  }
-}
-
-async function completeAsyncIteration(
-  messageId: string,
-  request: IterateRequest,
-  uploadToLark: boolean,
-  traceId: string,
-  callbackContext: Record<string, unknown>,
-  dedupeKey: string,
-): Promise<void> {
-  try {
-    const run = await runIteration(request, uploadToLark, traceId);
-    rememberCardAction(dedupeKey, traceId, run.card);
-    await updateCardMessage(messageId, run.card, traceId);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failureCard = buildFailureCard(traceId, message);
-    rememberCardAction(dedupeKey, traceId, failureCard);
-    audit({ trace_id: traceId, event: "async_iteration_failed", detail: { message, ...callbackContext } });
     try {
       await updateCardMessage(messageId, failureCard, traceId);
     } catch (patchError) {
@@ -3669,139 +3488,6 @@ function mergePresetWithFormValue(preset: GeneratePreset, formValue: unknown): G
     message,
     fields,
   };
-}
-
-function buildIterateRequest(actionValue: Record<string, unknown>, formValue: unknown): IterateRequest | undefined {
-  const submitted = isRecord(formValue) ? formValue : {};
-  const sessionId = stringFromUnknown(actionValue.session_id || actionValue.sessionId || submitted.param_session_id).trim();
-  const feedback = stringFromUnknown(submitted.param_feedback || actionValue.feedback).trim();
-  if (!sessionId && !feedback) return undefined;
-  return {
-    session_id: sessionId,
-    feedback,
-  };
-}
-
-function validateIterateRequest(request: IterateRequest | undefined): string[] {
-  if (!request) return ["session_id and feedback are required."];
-  const errors: string[] = [];
-  if (!request.session_id.trim()) {
-    errors.push("session_id is required.");
-  }
-  if (!request.feedback.trim()) {
-    errors.push("Feedback is required.");
-  }
-  if (request.feedback.length > 2000) {
-    errors.push("Feedback must be 2000 characters or fewer.");
-  }
-  return errors;
-}
-
-interface BatchRequestBuild {
-  request?: BatchRequest;
-  errors: string[];
-}
-
-function buildBatchRequest(actionValue: Record<string, unknown>, formValue: unknown): BatchRequestBuild {
-  const submitted = isRecord(formValue) ? formValue : {};
-  const errors: string[] = [];
-  const templateId = stringFromUnknown(
-    submitted.param_batch_template_id
-      || actionValue.template_id
-      || actionValue.templateId
-      || defaultPreset.template_id,
-  ).trim();
-  const size = stringFromUnknown(
-    submitted.param_batch_size
-      || actionValue.size
-      || defaultPreset.size,
-  ).trim();
-  const itemsJson = stringFromUnknown(
-    submitted.param_batch_items_json
-      || actionValue.items_json
-      || actionValue.itemsJson,
-  ).trim();
-  let rawItems: unknown = Array.isArray(actionValue.items) ? actionValue.items : undefined;
-  if (itemsJson) {
-    try {
-      rawItems = JSON.parse(itemsJson);
-    } catch {
-      errors.push("Batch items JSON must be valid JSON.");
-    }
-  }
-  const items = normalizeBatchItems(rawItems === undefined ? [] : rawItems, errors);
-  return {
-    request: {
-      template_id: templateId,
-      size,
-      items,
-    },
-    errors,
-  };
-}
-
-function normalizeBatchItems(value: unknown, errors: string[]): BatchRequest["items"] {
-  if (!Array.isArray(value)) {
-    errors.push("Batch items JSON must be an array.");
-    return [];
-  }
-  const items: BatchRequest["items"] = [];
-  value.forEach((item, index) => {
-    if (!isRecord(item) || !isRecord(item.fields)) {
-      errors.push(\`Batch item #\${index + 1} must include a fields object.\`);
-      items.push({ fields: {} });
-      return;
-    }
-    const fields: Record<string, string> = {};
-    for (const [key, rawValue] of Object.entries(item.fields)) {
-      fields[key] = rawValue === undefined || rawValue === null ? "" : String(rawValue).trim();
-    }
-    items.push({ fields });
-  });
-  return items;
-}
-
-function validateBatchRequest(request: BatchRequest | undefined, buildErrors: string[] = []): string[] {
-  const errors = [...buildErrors];
-  if (!request) return [...errors, "template_id, size, and items_json are required."];
-  const template = findTemplateSpec(request.template_id);
-  if (!template) {
-    errors.push(\`Template ID must be one of: \${templateSpecs.map((item) => item.id).join(", ")}.\`);
-  }
-  if (!/^([1-9]\\d*)x([1-9]\\d*)$/i.test(request.size.trim())) {
-    errors.push("Size must use WIDTHxHEIGHT, for example 1024x1024.");
-  }
-  if (!request.items.length) {
-    errors.push("Batch items JSON must include at least one item.");
-  }
-
-  const requiredKeys = template
-    ? new Set(template.requiredFieldKeys)
-    : new Set(fieldSpecs.filter((field) => field.required).map((field) => field.key));
-  request.items.forEach((item, index) => {
-    const fieldKeys = Object.keys(item.fields);
-    if (!fieldKeys.length) {
-      errors.push(\`Batch item #\${index + 1} fields object cannot be empty.\`);
-    }
-    for (const key of requiredKeys) {
-      const value = item.fields[key];
-      if (typeof value !== "string" || !value.trim()) {
-        const field = fieldSpecs.find((item) => item.key === key);
-        errors.push(\`Batch item #\${index + 1} \${field?.label || key} is required.\`);
-      }
-    }
-  });
-
-  return errors;
-}
-
-function buildBatchRefreshBatchId(actionValue: Record<string, unknown>, formValue: unknown): string {
-  const submitted = isRecord(formValue) ? formValue : {};
-  return stringFromUnknown(
-    actionValue.batch_id
-      || actionValue.batchId
-      || submitted.param_batch_id,
-  ).trim();
 }
 
 function validatePreset(preset: GeneratePreset): string[] {

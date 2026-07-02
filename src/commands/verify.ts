@@ -480,15 +480,27 @@ function buildEmbeddedAdapterChecks(packagePath: string, interactions: Interacti
     checkFile("adapter:level2-record", path.join(packagePath, "level2_verification_record.md")),
   ];
   const cardActionInteractions = interactions?.interactions.filter((item) => item.trigger === "card_action") || [];
-  const supportsGenerateAction = handlerSource.includes("image.generate.submit");
-  checks.push({
-    name: "adapter:action:image.generate.submit",
-    status: supportsGenerateAction && cardActionInteractions.some((item) => item.capability_id === "image.generate") ? "pass" : "fail",
-    detail: supportsGenerateAction
-      ? "adapter/handlers.ts supports image.generate.submit for the image.generate card interaction."
-      : "adapter/handlers.ts does not support image.generate.submit.",
-  });
+  for (const interaction of cardActionInteractions) {
+    const actionId = adapterActionIdForInteraction(interaction.input_mode);
+    if (!actionId) continue;
+    const supportsAction = handlerSource.includes(actionId);
+    checks.push({
+      name: `adapter:action:${actionId}`,
+      status: supportsAction ? "pass" : "fail",
+      detail: supportsAction
+        ? `adapter/handlers.ts supports ${actionId} for ${interaction.capability_id}.`
+        : `adapter/handlers.ts does not support ${actionId} for ${interaction.capability_id}.`,
+    });
+  }
   return checks;
+}
+
+function adapterActionIdForInteraction(inputMode: string): string {
+  if (inputMode === "preset_card_action") return "image.generate.submit";
+  if (inputMode === "feedback_card_action") return "image.iterate.submit";
+  if (inputMode === "batch_form_action") return "image.batch.submit";
+  if (inputMode === "batch_status_action") return "image.batch.refresh";
+  return "";
 }
 
 function sanitizeEnv(env: Record<string, string>): Record<string, string> {
