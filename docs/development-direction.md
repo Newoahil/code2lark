@@ -4,6 +4,8 @@
 
 本文档基于 `docs/project-status.md` 的审计结论，给出后续开发的优先级建议。这是方向性参考，不是排期承诺；具体顺序应随实际交接/验收进度调整。
 
+2026-07-02 adapter-first 纠偏后，最高优先级方向以 `docs/development-charter.md` 为准；可执行迁移计划见 `docs/next-stage-adapter-migration-plan.md`，详细设计说明见 `docs/development-direction-v2-adapter-first.md`。当前 `generate` 已能输出 `adapter/` 与 embedded 集成指南，并支持 `--mode embedded-adapter` 的包级验证；`bot-runtime` 仍保留为 standalone/reference host。
+
 ## P0：解锁 MVP-1A 正式结项
 
 1. **完成真实飞书 Level 2 验证**

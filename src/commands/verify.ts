@@ -7,7 +7,7 @@ import { readJsonFile, writeJson, writeText } from "../fs-utils.js";
 import { getJsonWithTimeout, normalizeBaseUrl, postJsonWithTimeout } from "../http-utils.js";
 import { configuredValue } from "../placeholder-utils.js";
 import type { ProbeResult } from "../http-utils.js";
-import type { CapabilityMap, RequiredPermissions, ServiceManifest } from "../types.js";
+import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
 import { assessPublicCallbackBaseUrl } from "../url-validation.js";
 
 interface CheckResult {
@@ -43,8 +43,25 @@ export async function verifyCommand(args: string[], options: Record<string, stri
   checks.push(checkFile("interaction_contract", path.join(manifestDir, "interaction_contract.json")));
   checks.push(checkFile("required_permissions", path.join(manifestDir, "required_permissions.json")));
 
+  let service: ServiceManifest | undefined;
+  let permissions: RequiredPermissions | undefined;
+  let capabilities: CapabilityMap | undefined;
+  let interactions: InteractionContract | undefined;
+  try {
+    service = readJsonFile<ServiceManifest>(path.join(manifestDir, "service_manifest.json"));
+    capabilities = readJsonFile<CapabilityMap>(path.join(manifestDir, "capability_map.json"));
+    interactions = readJsonFile<InteractionContract>(path.join(manifestDir, "interaction_contract.json"));
+    permissions = readJsonFile<RequiredPermissions>(path.join(manifestDir, "required_permissions.json"));
+  } catch (error) {
+    checks.push({
+      name: "manifest_parse",
+      status: "fail",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   if (mode === "embedded-adapter" || mode === "embedded") {
-    checks.push(...buildEmbeddedAdapterChecks(packagePath));
+    checks.push(...buildEmbeddedAdapterChecks(packagePath, interactions));
     printChecks(checks);
     writeReports(reportDir, checks, {
       packagePath,
@@ -62,21 +79,6 @@ export async function verifyCommand(args: string[], options: Record<string, stri
       process.exitCode = 1;
     }
     return;
-  }
-
-  let service: ServiceManifest | undefined;
-  let permissions: RequiredPermissions | undefined;
-  let capabilities: CapabilityMap | undefined;
-  try {
-    service = readJsonFile<ServiceManifest>(path.join(manifestDir, "service_manifest.json"));
-    capabilities = readJsonFile<CapabilityMap>(path.join(manifestDir, "capability_map.json"));
-    permissions = readJsonFile<RequiredPermissions>(path.join(manifestDir, "required_permissions.json"));
-  } catch (error) {
-    checks.push({
-      name: "manifest_parse",
-      status: "fail",
-      detail: error instanceof Error ? error.message : String(error),
-    });
   }
 
   const env = sanitizeEnv(readEnvFileIfExists(envPath));
@@ -464,8 +466,10 @@ function checkFile(name: string, filePath: string): CheckResult {
     : { name, status: "fail", detail: `Missing ${filePath}` };
 }
 
-function buildEmbeddedAdapterChecks(packagePath: string): CheckResult[] {
-  return [
+function buildEmbeddedAdapterChecks(packagePath: string, interactions: InteractionContract | undefined): CheckResult[] {
+  const handlerPath = path.join(packagePath, "adapter", "handlers.ts");
+  const handlerSource = fs.existsSync(handlerPath) ? fs.readFileSync(handlerPath, "utf8") : "";
+  const checks = [
     checkFile("adapter:handlers", path.join(packagePath, "adapter", "handlers.ts")),
     checkFile("adapter:cards", path.join(packagePath, "adapter", "cards.ts")),
     checkFile("adapter:service-client", path.join(packagePath, "adapter", "service-client.ts")),
@@ -475,6 +479,16 @@ function buildEmbeddedAdapterChecks(packagePath: string): CheckResult[] {
     checkFile("adapter:integration-guide", path.join(packagePath, "docs", "integration_guide.md")),
     checkFile("adapter:level2-record", path.join(packagePath, "level2_verification_record.md")),
   ];
+  const cardActionInteractions = interactions?.interactions.filter((item) => item.trigger === "card_action") || [];
+  const supportsGenerateAction = handlerSource.includes("image.generate.submit");
+  checks.push({
+    name: "adapter:action:image.generate.submit",
+    status: supportsGenerateAction && cardActionInteractions.some((item) => item.capability_id === "image.generate") ? "pass" : "fail",
+    detail: supportsGenerateAction
+      ? "adapter/handlers.ts supports image.generate.submit for the image.generate card interaction."
+      : "adapter/handlers.ts does not support image.generate.submit.",
+  });
+  return checks;
 }
 
 function sanitizeEnv(env: Record<string, string>): Record<string, string> {

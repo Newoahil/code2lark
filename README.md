@@ -1,8 +1,8 @@
 # Lark-deployer
 
-Lark-deployer is a build-time generator for connecting an existing service to a Lark/Feishu bot.
+Lark-deployer is a build-time generator for turning an existing service interaction flow into a Lark/Feishu adapter package.
 
-It does not own the target service lifecycle. It analyzes a target service, generates reviewable contracts, produces a bot runtime package, and provides verification checks for FDE-style handoff.
+It does not own the target service lifecycle. It analyzes a target service, generates reviewable contracts, produces an embeddable `adapter/` as the core artifact, keeps `bot-runtime/` as an optional standalone reference host, and provides verification checks for FDE-style handoff.
 
 ## MVP Scope
 
@@ -13,7 +13,7 @@ MVP-1A targets one real integration:
 - Runtime mode: external target service
 - Done level: real Feishu development app verification
 
-The generated bot runtime receives Feishu card actions, calls `image-agent-web`, uploads the generated or iterated image when possible, and updates the card with success or failure. The start card includes a Feishu form built from discovered template fields plus `size` and optional `message`, so the operator can override parameters before submitting. It also includes a batch form that submits items JSON to `/api/batch`, returns a progress card, supports manual refresh through `/api/batch/{batch_id}/status`, and shows a `/api/batch/{batch_id}/download` link when completed images exist.
+The generated `adapter/` maps Feishu card actions to `image-agent-web`, builds target-service requests, and returns card payloads plus audit events for a host service to persist. The generated `bot-runtime/` remains available as a standalone reference host: it receives Feishu card actions, calls `image-agent-web`, uploads the generated or iterated image when possible, and updates the card with success or failure. The start card includes a Feishu form built from discovered template fields plus `size` and optional `message`, so the operator can override parameters before submitting. It also includes a batch form that submits items JSON to `/api/batch`, returns a progress card, supports manual refresh through `/api/batch/{batch_id}/status`, and shows a `/api/batch/{batch_id}/download` link when completed images exist.
 
 For slow target services, the generated runtime can set `CARD_ACTION_MODE=async`: it returns a running card immediately, then patches the original Feishu message with the final success or failure card after the target service completes.
 
@@ -34,17 +34,28 @@ node dist/index.js analyze C:\works\image-agent-web --base-url http://127.0.0.1:
 node dist/index.js plan out\image-agent-web
 node dist/index.js context out\image-agent-web
 node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark
+node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark-embedded --mode embedded-adapter
 node dist/index.js configure generated\image-agent-web-lark --strict --dry-run
 node dist/index.js configure generated\image-agent-web-lark --strict
 node dist/index.js status generated\image-agent-web-lark
 node dist/index.js readiness generated\image-agent-web-lark
 node dist/index.js doctor generated\image-agent-web-lark
 node dist/index.js verify generated\image-agent-web-lark
+node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter --strict
 node dist/index.js evidence generated\image-agent-web-lark
 node dist/index.js handoff generated\image-agent-web-lark
 ```
 
 After generation:
+
+For an existing Feishu SDK service, start with `generated\image-agent-web-lark\adapter\` and `generated\image-agent-web-lark\docs\integration_guide.md`. Package validation for that embedded path is:
+
+```powershell
+node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter --strict
+node dist/index.js doctor generated\image-agent-web-lark --mode embedded-adapter
+```
+
+For the optional standalone reference host:
 
 ```powershell
 cd generated\image-agent-web-lark\bot-runtime
@@ -226,6 +237,15 @@ generated/image-agent-web-lark/
     capability_map.json
     interaction_contract.json
     required_permissions.json
+  adapter/
+    handlers.ts
+    cards.ts
+    service-client.ts
+    validation.ts
+    types.ts
+    audit-events.ts
+  docs/
+    integration_guide.md
   bot-runtime/
     src/
     package.json
@@ -254,6 +274,7 @@ Runtime check failures include a short response-body summary when available. For
 The automated test suite now covers both levels that can be proven without real Feishu credentials:
 
 - CLI smoke path: analyze -> plan -> context -> generate -> configure -> verify.
+- Embedded adapter package path: `generate` emits `adapter/` and `docs/integration_guide.md`; `verify --mode embedded-adapter --strict` validates the package without requiring `bot-runtime/.env` or runtime debug endpoints.
 - Local runtime e2e path: generate a runtime package, install/build it, start it, call `/debug/simulate-generate`, confirm the runtime calls an `image-agent-web`-compatible target and writes a passing simulation check.
 - Runtime callback path: `/webhook/card` answers URL verification challenges before full credentials are available.
 - Runtime public callback preflight path: `verify --level2` posts a URL verification challenge to `<PUBLIC_CALLBACK_BASE_URL>/webhook/card`, catching tunnel or reverse-proxy mistakes before the Feishu console is used.

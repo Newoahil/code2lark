@@ -30,6 +30,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   const meta = readOptionalJson<ImageAgentMeta>(path.join(manifestDir, "image_agent_meta.snapshot.json"));
   const defaultOut = path.resolve("generated", `${slugify(service.service.name)}-lark`);
   const outDir = path.resolve(getStringOption(options, "out", defaultOut));
+  const integrationMode = normalizeIntegrationMode(getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime"))));
   const adapterDir = path.join(outDir, "adapter");
   const docsDir = path.join(outDir, "docs");
   const runtimeDir = path.join(outDir, "bot-runtime");
@@ -37,7 +38,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   ensureDir(outDir);
   ensureDir(adapterDir);
   ensureDir(docsDir);
-  ensureDir(runtimeDir);
+  if (integrationMode === "standalone-runtime") ensureDir(runtimeDir);
   ensureDir(path.join(outDir, "manifest"));
 
   copyManifestArtifacts(workspace, outDir);
@@ -46,8 +47,9 @@ export async function generateCommand(args: string[], options: Record<string, st
     generated_at: new Date().toISOString(),
     source_workspace: workspace,
     service: service.service.name,
+    integration_mode: integrationMode,
     core_artifact: "adapter",
-    runtime: "node-lark-bot-runtime",
+    runtime: integrationMode === "standalone-runtime" ? "node-lark-bot-runtime" : "none",
     capability_ids: capabilities.capabilities.map((capability) => capability.id),
   });
 
@@ -65,18 +67,29 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(adapterDir, "service-client.ts"), adapterServiceClientTs());
   writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs());
   writeText(path.join(adapterDir, "handlers.ts"), adapterHandlersTs(service, capabilities, meta));
-  writeText(path.join(runtimeDir, "package.json"), runtimePackageJson(service.service.name));
-  writeText(path.join(runtimeDir, ".gitignore"), runtimeGitignore());
-  writeText(path.join(runtimeDir, "tsconfig.json"), runtimeTsconfig());
-  writeText(path.join(runtimeDir, ".env.example"), runtimeEnvExample(service));
-  writeText(path.join(runtimeDir, "src", "config.ts"), runtimeConfigTs());
-  writeText(path.join(runtimeDir, "src", "image-agent-client.ts"), runtimeImageAgentClientTs());
-  writeText(path.join(runtimeDir, "src", "cards.ts"), runtimeCardsTs(service, capabilities, meta));
-  writeText(path.join(runtimeDir, "src", "audit.ts"), runtimeAuditTs());
-  writeText(path.join(runtimeDir, "src", "index.ts"), runtimeIndexTs());
+  if (integrationMode === "standalone-runtime") {
+    writeText(path.join(runtimeDir, "package.json"), runtimePackageJson(service.service.name));
+    writeText(path.join(runtimeDir, ".gitignore"), runtimeGitignore());
+    writeText(path.join(runtimeDir, "tsconfig.json"), runtimeTsconfig());
+    writeText(path.join(runtimeDir, ".env.example"), runtimeEnvExample(service));
+    writeText(path.join(runtimeDir, "src", "config.ts"), runtimeConfigTs());
+    writeText(path.join(runtimeDir, "src", "image-agent-client.ts"), runtimeImageAgentClientTs());
+    writeText(path.join(runtimeDir, "src", "cards.ts"), runtimeCardsTs(service, capabilities, meta));
+    writeText(path.join(runtimeDir, "src", "audit.ts"), runtimeAuditTs());
+    writeText(path.join(runtimeDir, "src", "index.ts"), runtimeIndexTs());
+  } else if (fs.existsSync(runtimeDir)) {
+    fs.rmSync(runtimeDir, { recursive: true, force: true });
+  }
 
   console.log(`Generated Lark integration package at ${outDir}`);
   console.log(`Next: review ${path.join(outDir, "README.md")}`);
+}
+
+function normalizeIntegrationMode(value: string): "embedded-adapter" | "standalone-runtime" {
+  const normalized = value.trim() || "standalone-runtime";
+  if (normalized === "embedded" || normalized === "embedded-adapter") return "embedded-adapter";
+  if (normalized === "standalone" || normalized === "standalone-runtime") return "standalone-runtime";
+  throw new Error('--mode must be "embedded-adapter" or "standalone-runtime".');
 }
 
 function writeLevel2VerificationRecord(recordPath: string, content: string): void {

@@ -227,7 +227,18 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.equal(embeddedVerifyReport.status, "pass");
   assert.equal(embeddedVerifyReport.context.mode, "embedded-adapter");
   assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:integration-guide" && item.status === "pass"));
+  assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:action:image.generate.submit" && item.status === "pass"));
   assert.equal(embeddedVerifyReport.checks.some((item) => item.name.startsWith("runtime:/debug/")), false);
+  const embeddedOnlyGenerated = path.join(temp, "generated-embedded-only");
+  run(["generate", workspace, "--out", embeddedOnlyGenerated, "--mode", "embedded-adapter"]);
+  assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "adapter", "handlers.ts")));
+  assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "docs", "integration_guide.md")));
+  assert.equal(fs.existsSync(path.join(embeddedOnlyGenerated, "bot-runtime")), false);
+  run(["verify", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--strict"]);
+  const embeddedOnlyDoctorJson = JSON.parse(run(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--json"]));
+  assert.equal(embeddedOnlyDoctorJson.integration_mode, "embedded-adapter");
+  assert.equal(embeddedOnlyDoctorJson.package_validation.status, "pass");
+  assert.equal(embeddedOnlyDoctorJson.blockers.some((item) => item.includes("bot-runtime/.env")), false);
   const missingStatusOutput = run(["status", missingGenerated]);
   assert.match(missingStatusOutput, /MVP status: external_context_missing/);
   assert.match(missingStatusOutput, /Context request: /);

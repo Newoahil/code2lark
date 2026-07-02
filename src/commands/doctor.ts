@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { getStringOption, hasOption } from "../args.js";
 import { writeJson, writeText } from "../fs-utils.js";
@@ -96,6 +97,100 @@ export interface DoctorReport {
   next_actions: string[];
 }
 
+interface EmbeddedAdapterDoctorReport {
+  schema_version: "0.1";
+  generated_at: string;
+  package_path: string;
+  integration_mode: "embedded-adapter";
+  package_validation: {
+    status: "pass" | "fail";
+    checks: Array<{ name: string; status: "pass" | "fail"; detail: string }>;
+  };
+  blockers: string[];
+  next_actions: string[];
+}
+
+function buildEmbeddedAdapterDoctorReport(packagePath: string): EmbeddedAdapterDoctorReport {
+  const checks = [
+    embeddedFileCheck("manifest:service_manifest", path.join(packagePath, "manifest", "service_manifest.json")),
+    embeddedFileCheck("manifest:capability_map", path.join(packagePath, "manifest", "capability_map.json")),
+    embeddedFileCheck("manifest:interaction_contract", path.join(packagePath, "manifest", "interaction_contract.json")),
+    embeddedFileCheck("manifest:required_permissions", path.join(packagePath, "manifest", "required_permissions.json")),
+    embeddedFileCheck("adapter:handlers", path.join(packagePath, "adapter", "handlers.ts")),
+    embeddedFileCheck("adapter:cards", path.join(packagePath, "adapter", "cards.ts")),
+    embeddedFileCheck("adapter:service-client", path.join(packagePath, "adapter", "service-client.ts")),
+    embeddedFileCheck("adapter:validation", path.join(packagePath, "adapter", "validation.ts")),
+    embeddedFileCheck("adapter:types", path.join(packagePath, "adapter", "types.ts")),
+    embeddedFileCheck("adapter:audit-events", path.join(packagePath, "adapter", "audit-events.ts")),
+    embeddedFileCheck("adapter:integration-guide", path.join(packagePath, "docs", "integration_guide.md")),
+    embeddedFileCheck("adapter:level2-record", path.join(packagePath, "level2_verification_record.md")),
+  ];
+  const failed = checks.filter((check) => check.status === "fail");
+  return {
+    schema_version: "0.1",
+    generated_at: new Date().toISOString(),
+    package_path: packagePath,
+    integration_mode: "embedded-adapter",
+    package_validation: {
+      status: failed.length ? "fail" : "pass",
+      checks,
+    },
+    blockers: failed.map((check) => check.detail),
+    next_actions: failed.length
+      ? ["Regenerate the package, then rerun `verify --mode embedded-adapter --strict`." ]
+      : [
+        "Integrate adapter/handlers.ts into the existing Feishu SDK service.",
+        "Run `verify --mode embedded-adapter --strict` after any package regeneration.",
+        "Use the existing host service and real Feishu evidence to complete Level 2; standalone bot-runtime is not required for embedded mode.",
+      ],
+  };
+}
+
+function embeddedFileCheck(name: string, filePath: string): { name: string; status: "pass" | "fail"; detail: string } {
+  return fs.existsSync(filePath)
+    ? { name, status: "pass", detail: filePath }
+    : { name, status: "fail", detail: `Missing ${filePath}` };
+}
+
+function printEmbeddedAdapterDoctorReport(report: EmbeddedAdapterDoctorReport, gateMode: boolean): void {
+  console.log("Embedded adapter doctor: " + (report.package_validation.status === "pass" ? "PACKAGE VALID" : "NOT READY"));
+  console.log(`Package: ${report.package_path}`);
+  console.log(`Gate passed: ${report.package_validation.status === "pass" ? "yes" : "no"}`);
+  console.log("Integration mode: embedded-adapter");
+  if (report.blockers.length) {
+    console.log("Blockers:");
+    for (const blocker of report.blockers) console.log(`- ${blocker}`);
+  }
+  console.log("Next actions:");
+  for (const action of report.next_actions) console.log(`- ${action}`);
+  if (!gateMode) {
+    console.log("Gate mode: rerun with --gate to exit non-zero when package validation fails.");
+  }
+}
+
+function buildEmbeddedAdapterDoctorMarkdown(report: EmbeddedAdapterDoctorReport): string {
+  const rows = report.package_validation.checks
+    .map((check) => `| ${check.status.toUpperCase()} | ${check.name} | ${check.detail.replace(/\|/g, "\\|")} |`)
+    .join("\n");
+  return `# Embedded Adapter Doctor Report
+
+- Generated at: ${report.generated_at}
+- Package: ${report.package_path}
+- Integration mode: embedded-adapter
+- Package validation: ${report.package_validation.status}
+
+## Checks
+
+| Status | Check | Detail |
+| --- | --- | --- |
+${rows}
+
+## Next Actions
+
+${report.next_actions.map((action) => `- ${action}`).join("\n")}
+`;
+}
+
 export async function doctorCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const packageArg = args[0];
   if (!packageArg) {
@@ -103,6 +198,30 @@ export async function doctorCommand(args: string[], options: Record<string, stri
   }
 
   const packagePath = path.resolve(packageArg);
+  const mode = getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime")));
+  if (mode === "embedded-adapter" || mode === "embedded") {
+    const report = buildEmbeddedAdapterDoctorReport(packagePath);
+    const gateMode = hasOption(options, "gate") || hasOption(options, "check");
+    const outFile = getStringOption(options, "out", "");
+    if (outFile) {
+      const jsonPath = path.resolve(outFile);
+      const markdownPath = jsonPath.replace(/\.json$/i, ".md") === jsonPath ? `${jsonPath}.md` : jsonPath.replace(/\.json$/i, ".md");
+      writeJson(jsonPath, report);
+      writeText(markdownPath, buildEmbeddedAdapterDoctorMarkdown(report));
+      console.log(`Doctor report written to ${jsonPath}`);
+      console.log(`Doctor checklist written to ${markdownPath}`);
+    }
+    if (hasOption(options, "json")) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      printEmbeddedAdapterDoctorReport(report, gateMode);
+    }
+    if (gateMode && report.package_validation.status !== "pass") {
+      console.error(`Embedded adapter gate failed: ${report.blockers[0] || "package validation failed"}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
   const report = await buildDoctorReportFromPackageForCommand(packagePath, options);
   const gateMode = hasOption(options, "gate") || hasOption(options, "check");
   const outFile = getStringOption(options, "out", "");

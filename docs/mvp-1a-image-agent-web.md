@@ -26,8 +26,8 @@ The MVP is considered functionally proven when a real Feishu development app can
 6. Run `lark-deployer context`, send `feishu_context.request.md` to the target operator/app owner to confirm who can provide each Feishu value/permission/callback, and ask them to fill missing Feishu context through a secure channel.
 7. Give `permission_review.md` to the Feishu app owner/admin.
 8. Run `lark-deployer generate`.
-9. Run `lark-deployer configure` to write generated `bot-runtime/.env` from filled context.
-10. Start generated bot runtime.
+9. For an existing Feishu SDK service, integrate generated `adapter/` using `docs/integration_guide.md` and validate with `verify --mode embedded-adapter --strict`.
+10. If no existing host is available, run `lark-deployer configure` to write generated `bot-runtime/.env` from filled context, then start the standalone reference runtime.
 11. Configure Feishu card callback URL to `<PUBLIC_CALLBACK_BASE_URL>/webhook/card`.
 12. Use `/debug/start-card` to send the first test card.
 13. Click the card button in Feishu and confirm success/failure card behavior.
@@ -44,13 +44,15 @@ node dist/index.js analyze C:\works\image-agent-web --base-url http://127.0.0.1:
 node dist/index.js plan out\image-agent-web
 node dist/index.js context out\image-agent-web
 node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark
+node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark-embedded --mode embedded-adapter
+node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter --strict
 node dist/index.js configure generated\image-agent-web-lark --strict --dry-run
 node dist/index.js configure generated\image-agent-web-lark --strict
 node dist/index.js status generated\image-agent-web-lark
 node dist/index.js verify generated\image-agent-web-lark
 ```
 
-After the generated bot runtime is running, run:
+After the generated standalone runtime is running, run:
 
 ```powershell
 node dist/index.js verify generated\image-agent-web-lark --runtime-url http://127.0.0.1:3978 --simulate
@@ -137,13 +139,13 @@ If `GET /api/meta` is unavailable during analysis, MVP-1A reads `templates.py` a
 
 This improves the generated capability contract when the target service is not running. It does not replace runtime verification: `/api/generate`, `/api/iterate`, and `/api/batch` still require a reachable `image-agent-web` service.
 
-The generated start-card preset is derived from the selected template metadata. If the first template changes, the generated `bot-runtime/src/cards.ts` changes its `template_id`, `size`, and field payload with it.
+The generated start-card preset is derived from the selected template metadata. If the first template changes, the generated `adapter/handlers.ts` default preset and standalone `bot-runtime/src/cards.ts` change their `template_id`, `size`, and field payload with it.
 
 The generated start card also creates one input per discovered template field, plus required `Size`, optional `Message`, and batch items JSON inputs. Required template fields are marked as required in the Feishu form container.
 
 ## Current implementation status
 
-- CLI commands implemented: `analyze`, `plan`, `context`, `configure`, `generate`, `status`, `verify`, `readiness`, `evidence`, and `handoff`. `evidence --runtime-url --update-record` can fetch protected runtime audit-tail events and fill blank machine-supported artifact fields in the package-local Level 2 record without checking completion boxes; it also accepts manual Level 2 fields through CLI options or `--manual-evidence level2_manual_evidence.local.json`.
+- CLI commands implemented: `analyze`, `plan`, `context`, `configure`, `generate`, `status`, `verify`, `readiness`, `doctor`, `evidence`, and `handoff`. `generate` now emits `adapter/` as the core artifact and supports `--mode embedded-adapter` for packages that do not include standalone `bot-runtime/`. `verify --mode embedded-adapter --strict` validates manifest + adapter package structure without requiring runtime debug endpoints. `evidence --runtime-url --update-record` can fetch protected runtime audit-tail events and fill blank machine-supported artifact fields in the package-local Level 2 record without checking completion boxes; it also accepts manual Level 2 fields through CLI options or `--manual-evidence level2_manual_evidence.local.json`.
 - Root TypeScript build passes.
 - Automated CLI smoke test passes.
 - Automated local runtime e2e test passes: it starts an `image-agent-web`-compatible mock target, generates a bot runtime package, installs/builds the runtime, starts it in debug mode, confirms `/webhook/card` answers URL verification challenges, confirms missing Feishu config is rejected for non-challenge callbacks, calls `/debug/simulate-generate`, calls `/debug/simulate-card-action`, verifies field, size, and message form-value merge into the target request, verifies Feishu 2.0-shaped card-action parsing with JSON-string callback value, verifies batch submit/refresh calls and batch audit events, verifies invalid size and cleared required fields return red failure cards without calling the target service, verifies card-action audit context, verifies protected and unprotected `/debug/audit-tail`, confirms `verify --simulate` records passing target/runtime checks including v2 callback compatibility, batch submit/refresh, invalid-input rejection, encrypted URL verification when `ENCRYPT_KEY` is set, and SDK-validated signed webhook card-action execution when `VERIFICATION_TOKEN` is set, and verifies `verify --level2` can check public plaintext/encrypted callback URLs and public signed card-action callbacks against a mock runtime.
