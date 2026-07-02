@@ -217,6 +217,13 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   ]) {
     assert.ok(fs.existsSync(path.join(missingGenerated, relativePath)), `${relativePath} should be generated`);
   }
+  const runtimeIndex = fs.readFileSync(path.join(missingGenerated, "bot-runtime", "src", "index.ts"), "utf8");
+  assert.match(runtimeIndex, /adapterHandlersModule = "\.\.\/\.\.\/adapter\/handlers\.js"/);
+  assert.match(runtimeIndex, /handleImageAgentCardAction/);
+  assert.doesNotMatch(runtimeIndex, /generateImage\(/);
+  assert.doesNotMatch(runtimeIndex, /iterateImage\(/);
+  assert.doesNotMatch(runtimeIndex, /createBatch\(/);
+  assert.doesNotMatch(runtimeIndex, /getBatchStatus\(/);
   const generatedStartHere = fs.readFileSync(path.join(missingGenerated, "START_HERE.md"), "utf8");
   assert.match(generatedStartHere, /adapter\//);
   const generatedReadmeWithAdapter = fs.readFileSync(path.join(missingGenerated, "README.md"), "utf8");

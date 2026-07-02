@@ -67,6 +67,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(adapterDir, "service-client.ts"), adapterServiceClientTs());
   writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs());
   writeText(path.join(adapterDir, "handlers.ts"), adapterHandlersTs(service, capabilities, meta));
+  writeRuntimeAdapterJs(adapterDir, service, capabilities, meta);
   if (integrationMode === "standalone-runtime") {
     writeText(path.join(runtimeDir, "package.json"), runtimePackageJson(service.service.name));
     writeText(path.join(runtimeDir, ".gitignore"), runtimeGitignore());
@@ -90,6 +91,22 @@ function normalizeIntegrationMode(value: string): "embedded-adapter" | "standalo
   if (normalized === "embedded" || normalized === "embedded-adapter") return "embedded-adapter";
   if (normalized === "standalone" || normalized === "standalone-runtime") return "standalone-runtime";
   throw new Error('--mode must be "embedded-adapter" or "standalone-runtime".');
+}
+
+function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): void {
+  writeText(path.join(adapterDir, "audit-events.js"), adapterAuditEventsJs());
+  writeText(path.join(adapterDir, "cards.js"), adapterCardsJs());
+  writeText(path.join(adapterDir, "validation.js"), adapterValidationJs());
+  writeText(path.join(adapterDir, "service-client.js"), adapterServiceClientJs());
+  writeText(path.join(adapterDir, "handlers.js"), adapterHandlersJs(service, capabilities, meta));
+  writeText(path.join(adapterDir, "handlers.d.ts"), `export function handleImageAgentCardAction(ctx: Record<string, unknown>, deps: Record<string, unknown>): Promise<Record<string, unknown>>;\n`);
+  writeText(path.join(adapterDir, "service-client.d.ts"), [
+    "export function callImageIterate(baseUrl: string, request: Record<string, unknown>, timeoutMs?: number): Promise<Record<string, unknown>>;",
+    "export function callImageBatchCreate(baseUrl: string, request: Record<string, unknown>, timeoutMs?: number): Promise<{ batch_id: string }>;",
+    "export function callImageBatchStatus(baseUrl: string, batchId: string, timeoutMs?: number): Promise<Record<string, unknown>>;",
+    "export function resolveBatchDownloadUrl(baseUrl: string, batchId: string): string;",
+    "",
+  ].join("\n"));
 }
 
 function writeLevel2VerificationRecord(recordPath: string, content: string): void {
@@ -474,6 +491,7 @@ export interface AdapterAuditEvent {
 export interface AdapterResult {
   ok: boolean;
   card: Record<string, unknown>;
+  result?: Record<string, unknown>;
   auditEvents: AdapterAuditEvent[];
 }
 `;
@@ -543,8 +561,9 @@ export async function callImageGenerate(baseUrl: string, preset: GeneratePreset,
     const form = new FormData();
     form.set("template_id", preset.template_id);
     form.set("size", preset.size);
-    form.set("fields", JSON.stringify(preset.fields));
-    if (preset.message) form.set("message", preset.message);
+    form.set("fields_json", JSON.stringify(preset.fields));
+    form.set("message", preset.message || "");
+    form.set("reference_types_json", "[]");
     const response = await fetch(baseUrl.replace(/\\/+$/, "") + "/api/generate", {
       method: "POST",
       body: form,
@@ -558,6 +577,171 @@ export async function callImageGenerate(baseUrl: string, preset: GeneratePreset,
   } finally {
     clearTimeout(timeout);
   }
+}
+`;
+}
+
+function adapterAuditEventsJs(): string {
+  return `export function auditEvent(event, detail = {}) {
+  return { event, detail };
+}
+`;
+}
+
+function adapterValidationJs(): string {
+  return `export function assertAllowedOperator(operatorOpenId, allowedOperatorOpenIds) {
+  if (!Array.isArray(allowedOperatorOpenIds) || allowedOperatorOpenIds.length === 0) return;
+  if (!operatorOpenId || !allowedOperatorOpenIds.includes(operatorOpenId)) {
+    throw new Error("Operator is not allowed to execute this card action.");
+  }
+}
+
+export function mergeGeneratePresetWithFormValue(preset, formValue) {
+  if (!formValue || typeof formValue !== "object") return preset;
+  const fields = { ...preset.fields };
+  for (const [key, value] of Object.entries(formValue)) {
+    if (key.startsWith("field_") && typeof value === "string") {
+      fields[key.slice("field_".length)] = value.trim();
+    }
+  }
+  const merged = {
+    ...preset,
+    template_id: stringValue(formValue.param_template_id) || preset.template_id,
+    size: stringValue(formValue.param_size) || preset.size,
+    message: stringValue(formValue.param_message) || preset.message,
+    fields,
+  };
+  if (!/^([1-9]\\d*)x([1-9]\\d*)$/i.test(String(merged.size || "").trim())) {
+    throw new Error("Size must use WIDTHxHEIGHT, for example 1024x1024.");
+  }
+  return merged;
+}
+
+function stringValue(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+`;
+}
+
+function adapterServiceClientJs(): string {
+  return `export async function callImageGenerate(baseUrl, preset, timeoutMs = 120000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const form = new FormData();
+    form.set("template_id", preset.template_id);
+    form.set("size", preset.size);
+    form.set("fields_json", JSON.stringify(preset.fields));
+    form.set("message", preset.message || "");
+    form.set("reference_types_json", "[]");
+    const response = await fetch(baseUrl.replace(/\\/+$/, "") + "/api/generate", {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let parsed;
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      parsed = { raw: text };
+    }
+    if (!response.ok) {
+      const message = parsed && typeof parsed === "object" && "detail" in parsed ? String(parsed.detail) : text;
+      throw new Error("image-agent-web /api/generate returned HTTP " + response.status + ": " + message);
+    }
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("image-agent-web /api/generate timed out after " + timeoutMs + "ms.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function callImageIterate(baseUrl, request, timeoutMs = 120000) {
+  const response = await fetchWithTimeout(baseUrl.replace(/\\/+$/, "") + "/api/iterate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ session_id: request.session_id, feedback: request.feedback }),
+  }, timeoutMs, "image-agent-web /api/iterate");
+  return readJsonResponse(response, "image-agent-web /api/iterate");
+}
+
+export async function callImageBatchCreate(baseUrl, request, timeoutMs = 120000) {
+  const form = new FormData();
+  form.set("template_id", request.template_id);
+  form.set("size", request.size);
+  form.set("items_json", JSON.stringify(request.items));
+  form.set("reference_types_json", "[]");
+  const response = await fetchWithTimeout(baseUrl.replace(/\\/+$/, "") + "/api/batch", { method: "POST", body: form }, timeoutMs, "image-agent-web /api/batch");
+  const parsed = await readJsonResponse(response, "image-agent-web /api/batch");
+  const batchId = typeof parsed.batch_id === "string" ? parsed.batch_id : "";
+  if (!batchId) throw new Error("image-agent-web /api/batch response did not include batch_id: " + JSON.stringify(parsed));
+  return { batch_id: batchId };
+}
+
+export async function callImageBatchStatus(baseUrl, batchId, timeoutMs = 120000) {
+  const response = await fetchWithTimeout(baseUrl.replace(/\\/+$/, "") + "/api/batch/" + encodeURIComponent(batchId) + "/status", {}, timeoutMs, "image-agent-web /api/batch/{batch_id}/status");
+  return readJsonResponse(response, "image-agent-web /api/batch/{batch_id}/status");
+}
+
+export function resolveBatchDownloadUrl(baseUrl, batchId) {
+  return baseUrl.replace(/\\/+$/, "") + "/api/batch/" + encodeURIComponent(batchId) + "/download";
+}
+
+async function fetchWithTimeout(url, init, timeoutMs, label) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(label + " timed out after " + timeoutMs + "ms.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readJsonResponse(response, label) {
+  const text = await response.text();
+  let parsed;
+  try {
+    parsed = text ? JSON.parse(text) : {};
+  } catch {
+    parsed = { raw: text };
+  }
+  if (!response.ok) {
+    const message = parsed && typeof parsed === "object" && "detail" in parsed ? String(parsed.detail) : text;
+    throw new Error(label + " returned HTTP " + response.status + ": " + message);
+  }
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+}
+`;
+}
+
+function adapterCardsJs(): string {
+  return `export function buildSuccessCard(result) {
+  const imageUrl = typeof result.image_url === "string" ? result.image_url : "";
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "green", title: { tag: "plain_text", content: "Image generation complete" } },
+    elements: [
+      { tag: "markdown", content: imageUrl ? "**Image:** " + imageUrl : "Image generation completed." },
+    ],
+  };
+}
+
+export function buildFailureCard(message) {
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "red", title: { tag: "plain_text", content: "Image generation failed" } },
+    elements: [{ tag: "markdown", content: "**What happened:** " + message }],
+  };
 }
 `;
 }
@@ -616,12 +800,63 @@ export async function handleImageAgentCardAction(ctx: AdapterActionContext, deps
     const preset = mergeGeneratePresetWithFormValue(defaultPreset, ctx.formValue);
     const result = await callImageGenerate(deps.imageAgentBaseUrl, preset, deps.timeoutMs);
     auditEvents.push(auditEvent("adapter_generation_succeeded", { imageUrl: result.image_url || "" }));
-    return { ok: true, card: buildSuccessCard(result), auditEvents };
+    return { ok: true, card: buildSuccessCard(result), result, auditEvents };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     auditEvents.push(auditEvent("adapter_generation_failed", { message }));
     return { ok: false, card: buildFailureCard(message), auditEvents };
   }
+}
+`;
+}
+
+function adapterHandlersJs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
+  const generateCapability = capabilities.capabilities.find((capability) => capability.id === "image.generate") || capabilities.capabilities[0];
+  const properties = isJsonObject(generateCapability?.input_schema.properties) ? generateCapability.input_schema.properties : {};
+  const templateProperty = isJsonObject(properties.template_id) ? properties.template_id : {};
+  const defaultTemplate = typeof templateProperty.default === "string" ? templateProperty.default : meta?.templates?.[0]?.id || "product-image";
+  const fieldsProperty = isJsonObject(properties.fields) ? properties.fields : {};
+  const defaultSizeByTemplate = isJsonObject(fieldsProperty.default_size_by_template) ? fieldsProperty.default_size_by_template : {};
+  const defaultSize = typeof defaultSizeByTemplate[defaultTemplate] === "string" ? defaultSizeByTemplate[defaultTemplate] : "1024x1024";
+  const defaultPreset = {
+    template_id: defaultTemplate,
+    size: defaultSize,
+    fields: {},
+    message: "",
+  };
+  return `import { auditEvent } from "./audit-events.js";
+import { buildFailureCard, buildSuccessCard } from "./cards.js";
+import { callImageGenerate } from "./service-client.js";
+import { assertAllowedOperator, mergeGeneratePresetWithFormValue } from "./validation.js";
+
+const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
+
+export async function handleImageAgentCardAction(ctx, deps) {
+  const action = typeof ctx?.action === "string" ? ctx.action : "";
+  const auditEvents = [auditEvent("adapter_card_action_received", { action, service: ${JSON.stringify(service.service.name)} })];
+  try {
+    assertAllowedOperator(ctx?.operatorOpenId, deps?.allowedOperatorOpenIds);
+    if (action !== "image.generate.submit") {
+      throw new Error("Unsupported adapter action: " + action);
+    }
+    const actionValue = ctx?.value && typeof ctx.value === "object" ? ctx.value : {};
+    const basePreset = isGeneratePreset(actionValue.preset) ? actionValue.preset : defaultPreset;
+    const preset = mergeGeneratePresetWithFormValue(basePreset, ctx?.formValue);
+    const result = await callImageGenerate(String(deps?.imageAgentBaseUrl || ""), preset, Number(deps?.timeoutMs || 120000));
+    auditEvents.push(auditEvent("adapter_generation_succeeded", { imageUrl: result.image_url || "" }));
+    return { ok: true, card: buildSuccessCard(result), result, auditEvents };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    auditEvents.push(auditEvent("adapter_generation_failed", { message }));
+    return { ok: false, card: buildFailureCard(message), auditEvents };
+  }
+}
+
+function isGeneratePreset(value) {
+  return value && typeof value === "object"
+    && typeof value.template_id === "string"
+    && typeof value.size === "string"
+    && value.fields && typeof value.fields === "object";
 }
 `;
 }
@@ -2086,13 +2321,33 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import { audit, makeTraceId, readAuditTail } from "./audit.js";
 import { buildBatchRunningCard, buildBatchStatusCard, buildFailureCard, buildInfoCard, buildIterationRunningCard, buildRunningCard, buildStartCard, buildSuccessCard, defaultPreset, fieldSpecs, templateSpecs } from "./cards.js";
 import { loadConfig } from "./config.js";
-import { createBatch, downloadImageToTemp, generateImage, getBatchStatus, iterateImage, resolveBatchDownloadUrl, resolveImageUrl } from "./image-agent-client.js";
+import { downloadImageToTemp, resolveImageUrl } from "./image-agent-client.js";
 import type { BatchRequest, BatchStatus, GeneratePreset, ImageAgentResult, IterateRequest } from "./image-agent-client.js";
 
 const config = loadConfig();
 let cachedClient: lark.Client | undefined;
+const adapterHandlersModule = "../../adapter/handlers.js";
+const adapterServiceClientModule = "../../adapter/service-client.js";
 const CARD_ACTION_DEDUPE_TTL_MS = 120_000;
 const cardActionDedupe = new Map<string, CardActionDedupeEntry>();
+
+interface AdapterResult {
+  ok?: boolean;
+  card?: unknown;
+  result?: unknown;
+  auditEvents?: Array<{ event: string; detail: Record<string, unknown> }>;
+}
+
+interface AdapterHandlersModule {
+  handleImageAgentCardAction(ctx: Record<string, unknown>, deps: Record<string, unknown>): Promise<AdapterResult>;
+}
+
+interface AdapterServiceClientModule {
+  callImageIterate(baseUrl: string, request: IterateRequest, timeoutMs: number): Promise<unknown>;
+  callImageBatchCreate(baseUrl: string, request: BatchRequest, timeoutMs: number): Promise<{ batch_id: string }>;
+  callImageBatchStatus(baseUrl: string, batchId: string, timeoutMs: number): Promise<unknown>;
+  resolveBatchDownloadUrl(baseUrl: string, batchId: string): string;
+}
 
 interface CardActionDedupeEntry {
   traceId: string;
@@ -2237,7 +2492,22 @@ async function runGeneration(preset: GeneratePreset, uploadToLark: boolean, trac
   const running = buildRunningCard(traceId, preset);
   audit({ trace_id: traceId, event: "running_card_built", detail: { running } });
 
-  const result = await generateImage(config.imageAgentBaseUrl, preset, config.imageAgentTimeoutMs);
+  const adapter = await loadAdapterHandlers();
+  const adapterResult = await adapter.handleImageAgentCardAction({
+    action: "image.generate.submit",
+    value: { action: "image.generate.submit", preset },
+    formValue: {},
+  }, {
+    imageAgentBaseUrl: config.imageAgentBaseUrl,
+    timeoutMs: config.imageAgentTimeoutMs,
+  });
+  for (const event of adapterResult.auditEvents || []) {
+    audit({ trace_id: traceId, event: event.event, detail: event.detail || {} });
+  }
+  if (!adapterResult.ok) {
+    throw new Error(adapterFailureMessage(adapterResult));
+  }
+  const result = normalizeImageAgentResult(adapterResult.result);
   const imageUrl = resolveImageUrl(config.imageAgentBaseUrl, result.image_url);
   let imageKey = "";
   if (uploadToLark && config.feishuApiConfigured) {
@@ -2267,7 +2537,8 @@ async function runIteration(request: IterateRequest, uploadToLark: boolean, trac
   const running = buildIterationRunningCard(traceId, request.session_id);
   audit({ trace_id: traceId, event: "iteration_running_card_built", detail: { running } });
 
-  const result = await iterateImage(config.imageAgentBaseUrl, request, config.imageAgentTimeoutMs);
+  const adapter = await loadAdapterServiceClient();
+  const result = normalizeImageAgentResult(await adapter.callImageIterate(config.imageAgentBaseUrl, request, config.imageAgentTimeoutMs));
   const imageUrl = resolveImageUrl(config.imageAgentBaseUrl, result.image_url);
   let imageKey = "";
   if (uploadToLark && config.feishuApiConfigured) {
@@ -2311,7 +2582,8 @@ async function runBatchSubmission(request: BatchRequest, traceId = makeTraceId()
     },
   });
 
-  const created = await createBatch(config.imageAgentBaseUrl, request, config.imageAgentTimeoutMs);
+  const adapter = await loadAdapterServiceClient();
+  const created = await adapter.callImageBatchCreate(config.imageAgentBaseUrl, request, config.imageAgentTimeoutMs);
   audit({
     trace_id: traceId,
     event: "batch_created",
@@ -2327,7 +2599,8 @@ async function runBatchSubmission(request: BatchRequest, traceId = makeTraceId()
 }
 
 async function runBatchStatus(batchId: string, traceId = makeTraceId()): Promise<BatchRun> {
-  const status = await getBatchStatus(config.imageAgentBaseUrl, batchId, config.imageAgentTimeoutMs);
+  const adapter = await loadAdapterServiceClient();
+  const status = await adapter.callImageBatchStatus(config.imageAgentBaseUrl, batchId, config.imageAgentTimeoutMs) as BatchStatus;
   const normalizedStatus = {
     ...status,
     batch_id: status.batch_id || batchId,
@@ -2364,8 +2637,40 @@ async function runBatchStatus(batchId: string, traceId = makeTraceId()): Promise
 function batchDownloadUrl(status: BatchStatus): string {
   const completedCount = Array.isArray(status.completed) ? status.completed.length : 0;
   return status.batch_id && status.running !== true && completedCount > 0
-    ? resolveBatchDownloadUrl(config.imageAgentBaseUrl, status.batch_id)
+    ? loadAdapterBatchDownloadUrl(config.imageAgentBaseUrl, status.batch_id)
     : "";
+}
+
+async function loadAdapterHandlers(): Promise<AdapterHandlersModule> {
+  return await import(adapterHandlersModule) as AdapterHandlersModule;
+}
+
+async function loadAdapterServiceClient(): Promise<AdapterServiceClientModule> {
+  return await import(adapterServiceClientModule) as AdapterServiceClientModule;
+}
+
+function loadAdapterBatchDownloadUrl(baseUrl: string, batchId: string): string {
+  return stripTrailingSlash(baseUrl) + "/api/batch/" + encodeURIComponent(batchId) + "/download";
+}
+
+function stripTrailingSlash(value: string): string {
+  return value.endsWith("/") ? stripTrailingSlash(value.slice(0, -1)) : value;
+}
+
+function normalizeImageAgentResult(value: unknown): ImageAgentResult {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as ImageAgentResult : {};
+}
+
+function adapterFailureMessage(adapterResult: unknown): string {
+  if (!isRecord(adapterResult)) return "Adapter action failed.";
+  const auditEvents = Array.isArray(adapterResult.auditEvents) ? adapterResult.auditEvents : [];
+  for (let index = auditEvents.length - 1; index >= 0; index -= 1) {
+    const event = auditEvents[index];
+    if (!isRecord(event) || !isRecord(event.detail)) continue;
+    const message = event.detail.message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "Adapter action failed.";
 }
 
 function summarizeBatchStatus(status: BatchStatus, downloadUrl: string): Record<string, unknown> {
