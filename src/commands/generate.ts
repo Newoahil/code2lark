@@ -832,11 +832,53 @@ async function readJsonResponse(response, label) {
 `;
 }
 
-function adapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
+interface AdapterCardTemplateData {
+  defaultPreset: ReturnType<typeof buildDefaultPreset>;
+  templateSpecs: RuntimeTemplateSpec[];
+  fieldSpecs: RuntimeFieldSpec[];
+  fieldMaps: ReturnType<typeof buildFormFieldMaps>;
+}
+
+function buildAdapterCardTemplateData(capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): AdapterCardTemplateData {
   const defaultPreset = buildDefaultPreset(capabilities, meta);
   const templateSpecs = buildTemplateSpecs(defaultPreset, meta);
   const fieldSpecs = buildFieldSpecs(defaultPreset, meta);
   const fieldMaps = buildFormFieldMaps(fieldSpecs);
+  return { defaultPreset, templateSpecs, fieldSpecs, fieldMaps };
+}
+
+interface AdapterHandlerTemplateData {
+  defaultPreset: { template_id: string; size: string; fields: Record<string, string>; message: string };
+  requiredFieldsByTemplate: Record<string, string[]>;
+  fieldLabels: Record<string, string>;
+}
+
+function buildAdapterHandlerTemplateData(capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): AdapterHandlerTemplateData {
+  const generateCapability = capabilities.capabilities.find((capability) => capability.id === "image.generate") || capabilities.capabilities[0];
+  const properties = isJsonObject(generateCapability?.input_schema.properties) ? generateCapability.input_schema.properties : {};
+  const templateProperty = isJsonObject(properties.template_id) ? properties.template_id : {};
+  const fieldsProperty = isJsonObject(properties.fields) ? properties.fields : {};
+  const defaultTemplate = typeof templateProperty.default === "string" ? templateProperty.default : meta?.templates?.[0]?.id || "product-image";
+  const defaultSizeByTemplate = isJsonObject(fieldsProperty.default_size_by_template) ? fieldsProperty.default_size_by_template : {};
+  const defaultSize = typeof defaultSizeByTemplate[defaultTemplate] === "string" ? defaultSizeByTemplate[defaultTemplate] : "1024x1024";
+  const defaultPreset = {
+    template_id: defaultTemplate,
+    size: defaultSize,
+    fields: {},
+    message: "",
+  };
+  const requiredFieldsByTemplate = Object.fromEntries((meta?.templates || []).map((template) => [
+    template.id,
+    (template.fields || []).filter((field) => field.required).map((field) => field.key),
+  ]));
+  const fieldLabels = Object.fromEntries((meta?.templates || []).flatMap((template) => (
+    template.fields || []
+  ).map((field) => [field.key, field.label || humanizeKey(field.key)])));
+  return { defaultPreset, requiredFieldsByTemplate, fieldLabels };
+}
+
+function adapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
+  const { defaultPreset, templateSpecs, fieldSpecs, fieldMaps } = buildAdapterCardTemplateData(capabilities, meta);
   return `export const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
 
 export const templateSpecs = ${JSON.stringify(templateSpecs, null, 2)};
@@ -990,10 +1032,7 @@ export function buildFailureCard(message) {
 }
 
 function adapterCardsTs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
-  const defaultPreset = buildDefaultPreset(capabilities, meta);
-  const templateSpecs = buildTemplateSpecs(defaultPreset, meta);
-  const fieldSpecs = buildFieldSpecs(defaultPreset, meta);
-  const fieldMaps = buildFormFieldMaps(fieldSpecs);
+  const { defaultPreset, templateSpecs, fieldSpecs, fieldMaps } = buildAdapterCardTemplateData(capabilities, meta);
   return `export const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
 
 export const templateSpecs = ${JSON.stringify(templateSpecs, null, 2)};
@@ -1147,26 +1186,7 @@ export function buildFailureCard(message: string): Record<string, unknown> {
 }
 
 function adapterHandlersTs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
-  const generateCapability = capabilities.capabilities.find((capability) => capability.id === "image.generate") || capabilities.capabilities[0];
-  const properties = isJsonObject(generateCapability?.input_schema.properties) ? generateCapability.input_schema.properties : {};
-  const templateProperty = isJsonObject(properties.template_id) ? properties.template_id : {};
-  const defaultTemplate = typeof templateProperty.default === "string" ? templateProperty.default : meta?.templates?.[0]?.id || "product-image";
-  const fieldsProperty = isJsonObject(properties.fields) ? properties.fields : {};
-  const defaultSizeByTemplate = isJsonObject(fieldsProperty.default_size_by_template) ? fieldsProperty.default_size_by_template : {};
-  const defaultSize = typeof defaultSizeByTemplate[defaultTemplate] === "string" ? defaultSizeByTemplate[defaultTemplate] : "1024x1024";
-  const defaultPreset = {
-    template_id: defaultTemplate,
-    size: defaultSize,
-    fields: {},
-    message: "",
-  };
-  const requiredFieldsByTemplate = Object.fromEntries((meta?.templates || []).map((template) => [
-    template.id,
-    (template.fields || []).filter((field) => field.required).map((field) => field.key),
-  ]));
-  const fieldLabels = Object.fromEntries((meta?.templates || []).flatMap((template) => (
-    template.fields || []
-  ).map((field) => [field.key, field.label || humanizeKey(field.key)])));
+  const { defaultPreset, requiredFieldsByTemplate, fieldLabels } = buildAdapterHandlerTemplateData(capabilities, meta);
   return `import { auditEvent } from "./audit-events.js";
 import { buildBatchStatusCard, buildFailureCard, buildSuccessCard, formFieldToTemplateKey } from "./cards.js";
 import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
@@ -1290,26 +1310,7 @@ function stringValue(value: unknown): string {
 }
 
 function adapterHandlersJs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
-  const generateCapability = capabilities.capabilities.find((capability) => capability.id === "image.generate") || capabilities.capabilities[0];
-  const properties = isJsonObject(generateCapability?.input_schema.properties) ? generateCapability.input_schema.properties : {};
-  const templateProperty = isJsonObject(properties.template_id) ? properties.template_id : {};
-  const defaultTemplate = typeof templateProperty.default === "string" ? templateProperty.default : meta?.templates?.[0]?.id || "product-image";
-  const fieldsProperty = isJsonObject(properties.fields) ? properties.fields : {};
-  const defaultSizeByTemplate = isJsonObject(fieldsProperty.default_size_by_template) ? fieldsProperty.default_size_by_template : {};
-  const defaultSize = typeof defaultSizeByTemplate[defaultTemplate] === "string" ? defaultSizeByTemplate[defaultTemplate] : "1024x1024";
-  const defaultPreset = {
-    template_id: defaultTemplate,
-    size: defaultSize,
-    fields: {},
-    message: "",
-  };
-  const requiredFieldsByTemplate = Object.fromEntries((meta?.templates || []).map((template) => [
-    template.id,
-    (template.fields || []).filter((field) => field.required).map((field) => field.key),
-  ]));
-  const fieldLabels = Object.fromEntries((meta?.templates || []).flatMap((template) => (
-    template.fields || []
-  ).map((field) => [field.key, field.label || humanizeKey(field.key)])));
+  const { defaultPreset, requiredFieldsByTemplate, fieldLabels } = buildAdapterHandlerTemplateData(capabilities, meta);
   return `import { auditEvent } from "./audit-events.js";
 import { buildBatchStatusCard, buildFailureCard, buildSuccessCard, formFieldToTemplateKey } from "./cards.js";
 import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
