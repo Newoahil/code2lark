@@ -30,6 +30,9 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     await runCli(["plan", workspace]);
     await runCli(["context", workspace]);
     await runCli(["generate", workspace, "--out", generated]);
+    const generatedAdapterCards = fs.readFileSync(path.join(generated, "adapter", "cards.ts"), "utf8");
+    assert.match(generatedAdapterCards, /name: templateKeyToFormField\[field\.key\] \|\| field\.name/);
+    assert.match(generatedAdapterCards, /"hero_title": "field_hero_title_2"/);
     await runCli(["configure", generated]);
 
     const runtimeDir = path.join(generated, "bot-runtime");

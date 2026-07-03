@@ -634,6 +634,7 @@ function contextTemplateUsesEmbeddedAdapter(template: ContextTemplate): boolean 
 }
 
 export function buildContextReplyTemplate(template: ContextTemplate): ContextReplyTemplate {
+  const embedded = contextTemplateUsesEmbeddedAdapter(template);
   return {
     schema_version: "0.1",
     purpose: "Record non-secret Feishu/Lark owner answers before filling local credentials and running configure --strict --dry-run.",
@@ -675,12 +676,19 @@ export function buildContextReplyTemplate(template: ContextTemplate): ContextRep
       note: item.note,
     })),
     blocked_by: [],
-    next_local_steps: [
-      "Run init-local --context --reply, or copy feishu_context.template.json to feishu_context.local.json manually.",
-      "Fill APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, and target base URL locally. Do not put secrets in this reply template.",
-      "Run configure --strict --dry-run and review configure_report.md before writing bot-runtime/.env.",
-      "Run configure --strict, start the generated bot runtime, then run verify --level2.",
-    ],
+    next_local_steps: embedded
+      ? [
+          "Run init-local --context --reply, or copy feishu_context.template.json to feishu_context.local.json manually.",
+          "Fill APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, and target base URL in the existing host service's secret/config system. Do not put secrets in this reply template.",
+          "Mount the generated adapter in the existing Feishu SDK host.",
+          "Run verify --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate, then record real Feishu evidence in level2_verification_record.md.",
+        ]
+      : [
+          "Run init-local --context --reply, or copy feishu_context.template.json to feishu_context.local.json manually.",
+          "Fill APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, and target base URL locally. Do not put secrets in this reply template.",
+          "Run configure --strict --dry-run and review configure_report.md before writing bot-runtime/.env.",
+          "Run configure --strict, start the generated bot runtime, then run verify --level2.",
+        ],
     secret_red_lines: [
       "Do not paste APP_SECRET, VERIFICATION_TOKEN, ENCRYPT_KEY, or DEBUG_ACCESS_TOKEN into this reply template.",
       "Share secrets only through the secure_secret_channel named here.",

@@ -332,6 +332,8 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const embeddedOnlyContext = JSON.parse(fs.readFileSync(path.join(embeddedOnlyGenerated, "feishu_context.template.json"), "utf8"));
   const embeddedOnlyContextMarkdown = fs.readFileSync(path.join(embeddedOnlyGenerated, "feishu_context.template.md"), "utf8");
   const embeddedOnlyContextRequest = fs.readFileSync(path.join(embeddedOnlyGenerated, "feishu_context.request.md"), "utf8");
+  const embeddedOnlyReplyTemplate = JSON.parse(fs.readFileSync(path.join(embeddedOnlyGenerated, "feishu_context.reply.template.json"), "utf8"));
+  const embeddedOnlyReplyMarkdown = fs.readFileSync(path.join(embeddedOnlyGenerated, "feishu_context.reply.template.md"), "utf8");
   const embeddedOnlyCommands = embeddedOnlyContext.handoff_request.command_sets.flatMap((set) => set.commands);
   assert.ok(embeddedOnlyCommands.some((command) => command.includes("verify . --mode embedded-adapter --strict")));
   assert.ok(embeddedOnlyCommands.some((command) => command.includes("verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate")));
@@ -341,6 +343,8 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(embeddedOnlyContextMarkdown, /verify --level2/);
   assert.doesNotMatch(embeddedOnlyContextRequest, /bot-runtime\.env/);
   assert.doesNotMatch(embeddedOnlyContextRequest, /verify --level2/);
+  assert.equal(embeddedOnlyReplyTemplate.next_local_steps.some((step) => step.includes("bot-runtime/.env") || step.includes("generated bot runtime") || step.includes("verify --level2")), false);
+  assert.doesNotMatch(embeddedOnlyReplyMarkdown, /bot-runtime\.env|generated bot runtime|verify --level2/);
   const embeddedOnlyReadinessOutput = run(["readiness", embeddedOnlyGenerated]);
   assert.doesNotMatch(embeddedOnlyReadinessOutput, /verify \. --runtime-url/);
   const embeddedOnlyLevel2Record = fs.readFileSync(path.join(embeddedOnlyGenerated, "level2_verification_record.md"), "utf8");

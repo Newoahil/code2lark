@@ -634,7 +634,7 @@ function determineState(
   if (report.context?.mode === "embedded-adapter") {
     if (!report.context.hostRuntimeUrl || report.context.simulate !== true) return "runtime_preflight_needed";
   } else if (!report.context?.runtimeUrl || report.context.simulate !== true) return "runtime_preflight_needed";
-  if (report.context?.level2 !== true) return "level2_preflight_needed";
+  if (report.context?.mode !== "embedded-adapter" && report.context?.level2 !== true) return "level2_preflight_needed";
   if (report.status === "warn") return "level2_preflight_has_warnings";
   if (manualEvidence.parseError) return "manual_evidence_invalid";
   if (!completionDecision.complete) return "manual_click_evidence_needed";
@@ -658,9 +658,11 @@ function buildNextActions(
   const initManualEvidenceCommand = replaceInitLocalSelection(initContextCommand, "--manual-evidence");
   const verifyCommand = findPackageCommand(packagePath, context, " verify ") || "node ..\\..\\dist\\index.js verify .";
   const simulateCommand = findPackageCommand(packagePath, context, " --simulate") || "node ..\\..\\dist\\index.js verify . --runtime-url http://127.0.0.1:3978 --simulate";
-  const level2Command = findPackageCommand(packagePath, context, " --level2") || "node ..\\..\\dist\\index.js verify . --runtime-url http://127.0.0.1:3978 --level2";
   const evidenceCommand = findPackageCommand(packagePath, context, " evidence ") || "node ..\\..\\dist\\index.js evidence .";
   const embedded = contextUsesEmbeddedAdapter(context);
+  const level2Command = embedded
+    ? simulateCommand
+    : findPackageCommand(packagePath, context, " --level2") || "node ..\\..\\dist\\index.js verify . --runtime-url http://127.0.0.1:3978 --level2";
   const missingValues = requiredValues
     .filter((item) => item.status === "missing")
     .map((item) => item.key);
@@ -716,7 +718,7 @@ function buildNextActions(
         ...contextReplyActions,
         ...manualEvidenceParseActions,
         ...targetPreflightActions,
-        "Run real Level 2 preflight with a public callback URL and Feishu test chat.",
+        embedded ? "Run embedded host verification with a public callback URL and Feishu test chat evidence path." : "Run real Level 2 preflight with a public callback URL and Feishu test chat.",
         level2Command,
       ];
     case "level2_preflight_has_warnings":
@@ -724,7 +726,7 @@ function buildNextActions(
         ...contextReplyActions,
         ...manualEvidenceParseActions,
         ...targetPreflightActions,
-        "Resolve the WARN checks in verification_report.md, then rerun Level 2 preflight with --strict.",
+        embedded ? "Resolve the WARN checks in verification_report.md, then rerun embedded host verification." : "Resolve the WARN checks in verification_report.md, then rerun Level 2 preflight with --strict.",
         level2Command,
       ];
     case "manual_click_evidence_needed":
