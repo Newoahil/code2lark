@@ -30,7 +30,7 @@ export async function verifyCommand(args: string[], options: Record<string, stri
   const strict = hasOption(options, "strict") || level2;
   const envPath = getStringOption(options, "env", path.join(packagePath, "bot-runtime", ".env"));
   const hostRuntimeUrl = normalizeBaseUrl(getStringOption(options, "host-runtime-url", getStringOption(options, "hostRuntimeUrl", "")));
-  const runtimeUrl = normalizeBaseUrl(getStringOption(options, "runtime-url", hostRuntimeUrl));
+  const runtimeUrl = normalizeBaseUrl(getStringOption(options, "runtime-url", getStringOption(options, "runtimeUrl", "")));
   const simulate = hasOption(options, "simulate") || level2;
   const sendStartCard = hasOption(options, "send-start-card") || hasOption(options, "sendStartCard") || level2;
   const allowLocalCallback = hasOption(options, "allow-local-callback") || hasOption(options, "allowLocalCallback");
@@ -65,13 +65,13 @@ export async function verifyCommand(args: string[], options: Record<string, stri
 
   if (mode === "embedded-adapter" || mode === "embedded") {
     checks.push(...buildEmbeddedAdapterChecks(packagePath, interactions, permissions));
-    checks.push(...await buildEmbeddedHostValidationChecks({ hostRuntimeUrl: runtimeUrl, simulate, sendStartCard, level2 }));
+    checks.push(...await buildEmbeddedHostValidationChecks({ hostRuntimeUrl, simulate, sendStartCard, level2 }));
     printChecks(checks);
     writeReports(reportDir, checks, {
       packagePath,
       envPath,
       runtimeUrl,
-      hostRuntimeUrl: runtimeUrl,
+      hostRuntimeUrl,
       simulate,
       sendStartCard,
       level2,

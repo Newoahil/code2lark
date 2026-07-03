@@ -269,12 +269,23 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:start-card-execution" && item.status === "pass"));
   assert.ok(embeddedVerifyReport.checks.some((item) => item.name === "adapter:handler-execution" && item.status === "pass"));
   assert.equal(embeddedVerifyReport.checks.some((item) => item.name.startsWith("runtime:/debug/")), false);
-  const embeddedHostVerifyOutput = runExpectFailure(["verify", missingGenerated, "--mode", "embedded-adapter", "--host-runtime-url", "http://127.0.0.1:3978", "--simulate", "--strict"]);
+  const embeddedHostVerifyOutput = runExpectFailure([
+    "verify",
+    missingGenerated,
+    "--mode",
+    "embedded-adapter",
+    "--host-runtime-url",
+    "http://127.0.0.1:3978",
+    "--runtime-url",
+    "http://127.0.0.1:4999",
+    "--simulate",
+    "--strict",
+  ]);
   assert.match(embeddedHostVerifyOutput, /embedded:host:\/health/);
   assert.match(embeddedHostVerifyOutput, /embedded:host:\/webhook\/card:challenge/);
   const embeddedHostVerifyReport = JSON.parse(fs.readFileSync(path.join(missingGenerated, "verification_report.json"), "utf8"));
   assert.equal(embeddedHostVerifyReport.status, "fail");
-  assert.equal(embeddedHostVerifyReport.context.runtimeUrl, "http://127.0.0.1:3978");
+  assert.equal(embeddedHostVerifyReport.context.runtimeUrl, "http://127.0.0.1:4999");
   assert.equal(embeddedHostVerifyReport.context.hostRuntimeUrl, "http://127.0.0.1:3978");
   assert.equal(embeddedHostVerifyReport.context.simulate, true);
   assert.ok(embeddedHostVerifyReport.checks.some((item) => item.name === "embedded:host:/health" && item.status === "fail"));
