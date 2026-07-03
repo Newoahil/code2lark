@@ -8,6 +8,7 @@ import { readEnvFileIfExists } from "../env-utils.js";
 import { readJsonFile, writeJson, writeText } from "../fs-utils.js";
 import { getJsonWithTimeout, normalizeBaseUrl, postJsonWithTimeout } from "../http-utils.js";
 import { configuredValue } from "../placeholder-utils.js";
+import { formFieldName } from "../field-mapping.js";
 import type { ProbeResult } from "../http-utils.js";
 import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
 import { assessPublicCallbackBaseUrl } from "../url-validation.js";
@@ -1212,11 +1213,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
-}
-
-function formFieldName(key: string): string {
-  const safe = key.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^([^a-zA-Z_])/, "_$1").slice(0, 40) || "field";
-  return `field_${safe}`;
 }
 
 function humanizeKey(key: string): string {

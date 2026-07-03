@@ -247,6 +247,31 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     assert.match(mockTarget.generateBodies.at(-1), /Carousel promo theme/);
     assert.match(mockTarget.generateBodies.at(-1), /Carousel copy/);
 
+    const specialKeysResponse = await fetch(`${runtimeUrl}/debug/simulate-card-action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        formValue: {
+          param_template_id: "special-keys",
+          param_size: "512x512",
+          field_hero_title: "Hero hyphen value",
+          field_field_with_dot: "Dot key value",
+          field__1st_field: "Leading digit value",
+          field___: "Chinese key value",
+        },
+      }),
+    });
+    const specialKeysSimulation = await specialKeysResponse.json();
+    assert.equal(specialKeysResponse.status, 200);
+    assert.equal(specialKeysSimulation.ok, true);
+    assert.equal(mockTarget.generateCalls, 5);
+    const specialKeysBody = mockTarget.generateBodies.at(-1);
+    assert.match(specialKeysBody, /special-keys/);
+    assert.match(specialKeysBody, /hero-title/);
+    assert.match(specialKeysBody, /field\.with\.dot/);
+    assert.match(specialKeysBody, /1st-field/);
+    assert.match(specialKeysBody, /主题/);
+
     const batchResponse = await fetch(`${runtimeUrl}/debug/simulate-card-action`, {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=utf-8" },
@@ -327,7 +352,7 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     assert.equal(dedupeFirstResponse.status, 200);
     assert.equal(dedupeFirstSimulation.ok, true);
     assert.equal(dedupeFirstSimulation.card.header.template, "green");
-    assert.equal(mockTarget.generateCalls, 5);
+    assert.equal(mockTarget.generateCalls, 6);
     const dedupeSecondResponse = await fetch(`${runtimeUrl}/debug/simulate-card-action`, {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=utf-8" },
@@ -337,7 +362,7 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     assert.equal(dedupeSecondResponse.status, 200);
     assert.equal(dedupeSecondSimulation.ok, true);
     assert.equal(dedupeSecondSimulation.card.header.template, "green");
-    assert.equal(mockTarget.generateCalls, 5);
+    assert.equal(mockTarget.generateCalls, 6);
 
     const generateCallsAfterValidAction = mockTarget.generateCalls;
 
@@ -482,7 +507,7 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     assert.equal(batchRefreshCheck?.status, "pass");
     assert.equal(invalidInputCheck?.status, "pass");
     assert.equal(report.status, "warn");
-    assert.equal(mockTarget.generateCalls, 9);
+    assert.equal(mockTarget.generateCalls, 10);
     assert.equal(mockTarget.iterateCalls, 2);
     assert.equal(mockTarget.batchCalls, 2);
     assert.equal(mockTarget.batchStatusCalls, 4);
@@ -955,6 +980,18 @@ function startMockImageAgent() {
             fields: [
               { key: "theme", label: "Theme", required: true },
               { key: "ad_copy", label: "Ad Copy", required: false },
+            ],
+          },
+          {
+            id: "special-keys",
+            name: "Special Keys",
+            allowed_sizes: ["512x512"],
+            default_size: "512x512",
+            fields: [
+              { key: "hero-title", label: "Hero Title", required: true },
+              { key: "field.with.dot", label: "Dot Key", required: true },
+              { key: "1st-field", label: "Leading Digit", required: true },
+              { key: "主题", label: "主题", required: true },
             ],
           },
         ],

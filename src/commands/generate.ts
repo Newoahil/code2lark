@@ -3,6 +3,7 @@ import path from "node:path";
 import { getStringOption, hasOption } from "../args.js";
 import { buildContextMarkdown, buildContextReplyMarkdown, buildContextReplyTemplate, buildContextRequestMarkdown, buildContextTemplate, type ContextTemplate } from "./context.js";
 import { copyFileIfExists, ensureDir, readJsonFile, slugify, writeJson, writeText } from "../fs-utils.js";
+import { buildFormFieldMaps, formFieldName } from "../field-mapping.js";
 import type { CapabilityMap, RequiredPermissions, ServiceManifest } from "../types.js";
 import { buildDeploymentChecklist } from "./plan.js";
 
@@ -566,12 +567,12 @@ export function validateSize(size: string): void {
   }
 }
 
-export function mergeGeneratePresetWithFormValue(preset: GeneratePreset, formValue: Record<string, unknown> | undefined): GeneratePreset {
+export function mergeGeneratePresetWithFormValue(preset: GeneratePreset, formValue: Record<string, unknown> | undefined, formFieldToTemplateKey: Record<string, string> = {}): GeneratePreset {
   if (!formValue) return preset;
   const fields = { ...preset.fields };
   for (const [key, value] of Object.entries(formValue)) {
     if (key.startsWith("field_") && typeof value === "string") {
-      fields[key.slice("field_".length)] = value;
+      fields[formFieldToTemplateKey[key] || key.slice("field_".length)] = value;
     }
   }
   const merged = {
@@ -697,12 +698,12 @@ function adapterValidationJs(): string {
   }
 }
 
-export function mergeGeneratePresetWithFormValue(preset, formValue) {
+export function mergeGeneratePresetWithFormValue(preset, formValue, formFieldToTemplateKey = {}) {
   if (!formValue || typeof formValue !== "object") return preset;
   const fields = { ...preset.fields };
   for (const [key, value] of Object.entries(formValue)) {
     if (key.startsWith("field_") && typeof value === "string") {
-      fields[key.slice("field_".length)] = value.trim();
+      fields[formFieldToTemplateKey[key] || key.slice("field_".length)] = value.trim();
     }
   }
   const merged = {
@@ -833,11 +834,16 @@ function adapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, m
   const defaultPreset = buildDefaultPreset(capabilities, meta);
   const templateSpecs = buildTemplateSpecs(defaultPreset, meta);
   const fieldSpecs = buildFieldSpecs(defaultPreset, meta);
+  const fieldMaps = buildFormFieldMaps(fieldSpecs);
   return `export const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
 
 export const templateSpecs = ${JSON.stringify(templateSpecs, null, 2)};
 
 export const fieldSpecs = ${JSON.stringify(fieldSpecs, null, 2)};
+
+export const templateKeyToFormField = ${JSON.stringify(fieldMaps.templateKeyToFormField, null, 2)};
+
+export const formFieldToTemplateKey = ${JSON.stringify(fieldMaps.formFieldToTemplateKey, null, 2)};
 
 export function buildStartCard() {
   const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
@@ -985,11 +991,16 @@ function adapterCardsTs(service: ServiceManifest, capabilities: CapabilityMap, m
   const defaultPreset = buildDefaultPreset(capabilities, meta);
   const templateSpecs = buildTemplateSpecs(defaultPreset, meta);
   const fieldSpecs = buildFieldSpecs(defaultPreset, meta);
+  const fieldMaps = buildFormFieldMaps(fieldSpecs);
   return `export const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
 
 export const templateSpecs = ${JSON.stringify(templateSpecs, null, 2)};
 
 export const fieldSpecs = ${JSON.stringify(fieldSpecs, null, 2)};
+
+export const templateKeyToFormField: Record<string, string> = ${JSON.stringify(fieldMaps.templateKeyToFormField, null, 2)};
+
+export const formFieldToTemplateKey: Record<string, string> = ${JSON.stringify(fieldMaps.formFieldToTemplateKey, null, 2)};
 
 export function buildStartCard(): Record<string, unknown> {
   const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
@@ -1155,7 +1166,7 @@ function adapterHandlersTs(service: ServiceManifest, capabilities: CapabilityMap
     template.fields || []
   ).map((field) => [field.key, field.label || humanizeKey(field.key)])));
   return `import { auditEvent } from "./audit-events.js";
-import { buildBatchStatusCard, buildFailureCard, buildSuccessCard } from "./cards.js";
+import { buildBatchStatusCard, buildFailureCard, buildSuccessCard, formFieldToTemplateKey } from "./cards.js";
 import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
 import type { AdapterActionContext, AdapterDependencies, AdapterResult, BatchRequest, GeneratePreset, IterateRequest } from "./types.js";
 import { assertAllowedOperator, mergeGeneratePresetWithFormValue, validateSize } from "./validation.js";
@@ -1171,7 +1182,7 @@ export async function handleImageAgentCardAction(ctx: AdapterActionContext, deps
     if (ctx.action === "image.generate.submit") {
       const actionValue = ctx.value && typeof ctx.value === "object" ? ctx.value : {};
       const basePreset = isGeneratePreset((actionValue as { preset?: unknown }).preset) ? (actionValue as { preset: GeneratePreset }).preset : defaultPreset;
-      const preset = mergeGeneratePresetWithFormValue(basePreset, ctx.formValue);
+      const preset = mergeGeneratePresetWithFormValue(basePreset, ctx.formValue, formFieldToTemplateKey);
       validateGeneratePreset(preset);
       const result = await callImageGenerate(deps.imageAgentBaseUrl, preset, deps.timeoutMs);
       auditEvents.push(auditEvent("adapter_generation_succeeded", { imageUrl: result.image_url || "" }));
@@ -1298,7 +1309,7 @@ function adapterHandlersJs(service: ServiceManifest, capabilities: CapabilityMap
     template.fields || []
   ).map((field) => [field.key, field.label || humanizeKey(field.key)])));
   return `import { auditEvent } from "./audit-events.js";
-import { buildBatchStatusCard, buildFailureCard, buildSuccessCard } from "./cards.js";
+import { buildBatchStatusCard, buildFailureCard, buildSuccessCard, formFieldToTemplateKey } from "./cards.js";
 import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
 import { assertAllowedOperator, mergeGeneratePresetWithFormValue, validateSize } from "./validation.js";
 
@@ -1314,7 +1325,7 @@ export async function handleImageAgentCardAction(ctx, deps) {
     if (action === "image.generate.submit") {
       const actionValue = ctx?.value && typeof ctx.value === "object" ? ctx.value : {};
       const basePreset = isGeneratePreset(actionValue.preset) ? actionValue.preset : defaultPreset;
-      const preset = mergeGeneratePresetWithFormValue(basePreset, ctx?.formValue);
+      const preset = mergeGeneratePresetWithFormValue(basePreset, ctx?.formValue, formFieldToTemplateKey);
       validateGeneratePreset(preset);
       const result = await callImageGenerate(String(deps?.imageAgentBaseUrl || ""), preset, Number(deps?.timeoutMs || 120000));
       auditEvents.push(auditEvent("adapter_generation_succeeded", { imageUrl: result.image_url || "" }));
@@ -2494,11 +2505,6 @@ function buildFieldSpecs(
     }
   }
   return Array.from(byKey.values());
-}
-
-function formFieldName(key: string): string {
-  const safe = key.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^([^a-zA-Z_])/, "_$1").slice(0, 40) || "field";
-  return `field_${safe}`;
 }
 
 function defaultFieldValue(key: string): string {
