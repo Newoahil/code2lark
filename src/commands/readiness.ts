@@ -29,7 +29,9 @@ export interface VerificationReport {
   generated_at?: string;
   status?: "pass" | "warn" | "fail";
   context?: {
+    mode?: string;
     runtimeUrl?: string;
+    hostRuntimeUrl?: string;
     level2?: boolean;
     simulate?: boolean;
     sendStartCard?: boolean;
@@ -629,7 +631,9 @@ function determineState(
   if (requiredValues.some((item) => item.status === "missing")) return "external_context_missing";
   if (!report) return "runtime_preflight_needed";
   if (report.status === "fail") return "verification_failing";
-  if (!report.context?.runtimeUrl || report.context.simulate !== true) return "runtime_preflight_needed";
+  if (report.context?.mode === "embedded-adapter") {
+    if (!report.context.hostRuntimeUrl || report.context.simulate !== true) return "runtime_preflight_needed";
+  } else if (!report.context?.runtimeUrl || report.context.simulate !== true) return "runtime_preflight_needed";
   if (report.context?.level2 !== true) return "level2_preflight_needed";
   if (report.status === "warn") return "level2_preflight_has_warnings";
   if (manualEvidence.parseError) return "manual_evidence_invalid";
@@ -656,6 +660,7 @@ function buildNextActions(
   const simulateCommand = findPackageCommand(packagePath, context, " --simulate") || "node ..\\..\\dist\\index.js verify . --runtime-url http://127.0.0.1:3978 --simulate";
   const level2Command = findPackageCommand(packagePath, context, " --level2") || "node ..\\..\\dist\\index.js verify . --runtime-url http://127.0.0.1:3978 --level2";
   const evidenceCommand = findPackageCommand(packagePath, context, " evidence ") || "node ..\\..\\dist\\index.js evidence .";
+  const embedded = contextUsesEmbeddedAdapter(context);
   const missingValues = requiredValues
     .filter((item) => item.status === "missing")
     .map((item) => item.key);
@@ -681,18 +686,21 @@ function buildNextActions(
           ? `Use the recorded non-secret owner reply to fill feishu_context.local.json, then validate the missing values: ${missingValues.join(", ") || "none"}.`
           : `Send feishu_context.request.md to the Feishu app owner/FDE to confirm who can provide the missing values: ${missingValues.join(", ") || "none"}. Request file: ${contextRequestPath}`,
         ...targetPreflightActions,
-        "After confirmation, initialize local-only context files, fill secrets through a secure channel, then run configure --strict --dry-run before writing bot-runtime/.env.",
+        embedded
+          ? "After confirmation, initialize local-only context files, then mount the adapter in the existing Feishu SDK host with its secret/config system."
+          : "After confirmation, initialize local-only context files, fill secrets through a secure channel, then run configure --strict --dry-run before writing bot-runtime/.env.",
         initContextCommand,
         configureDryRunCommand,
-        "If configure_report.md shows no missing required values, run configure --strict to write bot-runtime/.env.",
-        configureCommand,
+        ...(embedded ? [] : ["If configure_report.md shows no missing required values, run configure --strict to write bot-runtime/.env.", configureCommand]),
       ];
     case "runtime_preflight_needed":
       return [
         ...contextReplyActions,
         ...manualEvidenceParseActions,
         ...targetPreflightActions,
-        "Start the externally managed target service and generated bot runtime, then run local simulation verification.",
+        embedded
+          ? "Start the externally managed target service and existing Feishu SDK host, then run embedded host simulation verification."
+          : "Start the externally managed target service and generated bot runtime, then run local simulation verification.",
         simulateCommand,
       ];
     case "verification_failing":
@@ -825,6 +833,12 @@ function findPackageCommand(packagePath: string, context: ContextTemplate | unde
 function commandFromSet(context: ContextTemplate | undefined, setName: string, needle: string): string {
   const commandSet = context?.handoff_request.command_sets.find((set) => set.name === setName);
   return commandSet?.commands.find((command) => command.includes(needle)) || "";
+}
+
+function contextUsesEmbeddedAdapter(context: ContextTemplate | undefined): boolean {
+  return Boolean(context?.handoff_request.command_sets.some((set) => (
+    set.commands.some((command) => command.includes("--mode embedded-adapter"))
+  )));
 }
 
 function commandCliExists(packagePath: string, command: string): boolean {

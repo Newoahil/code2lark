@@ -255,6 +255,7 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
           param_template_id: "special-keys",
           param_size: "512x512",
           field_hero_title: "Hero hyphen value",
+          field_hero_title_2: "Hero underscore value",
           field_field_with_dot: "Dot key value",
           field__1st_field: "Leading digit value",
           field___: "Chinese key value",
@@ -268,6 +269,7 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     const specialKeysBody = mockTarget.generateBodies.at(-1);
     assert.match(specialKeysBody, /special-keys/);
     assert.match(specialKeysBody, /hero-title/);
+    assert.match(specialKeysBody, /hero_title/);
     assert.match(specialKeysBody, /field\.with\.dot/);
     assert.match(specialKeysBody, /1st-field/);
     assert.match(specialKeysBody, /主题/);
@@ -989,6 +991,7 @@ function startMockImageAgent() {
             default_size: "512x512",
             fields: [
               { key: "hero-title", label: "Hero Title", required: true },
+              { key: "hero_title", label: "Hero Underscore", required: true },
               { key: "field.with.dot", label: "Dot Key", required: true },
               { key: "1st-field", label: "Leading Digit", required: true },
               { key: "主题", label: "主题", required: true },

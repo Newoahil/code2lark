@@ -434,6 +434,7 @@ export function buildContextTemplate(
 }
 
 export function buildContextMarkdown(template: ContextTemplate): string {
+  const embedded = contextTemplateUsesEmbeddedAdapter(template);
   const requiredRows = template.handoff_request.required_values
     .map((item) => `| ${item.key} | ${item.owner} | ${item.required_for_level_2 ? "yes" : "optional"} | ${item.note} |`)
     .join("\n");
@@ -506,7 +507,7 @@ ${runtimeRows}
 
 ## Feishu App Values
 
-Fill these in \`feishu_context.template.json\` or generated \`bot-runtime/.env\`:
+${embedded ? "Fill these in `feishu_context.template.json` or the existing host service's secret/config system:" : "Fill these in `feishu_context.template.json` or generated `bot-runtime/.env`:"}
 
 - APP_ID
 - APP_SECRET
@@ -517,7 +518,7 @@ Fill these in \`feishu_context.template.json\` or generated \`bot-runtime/.env\`
 
 ## Runtime Config Values
 
-These values are read from \`runtime_config\` when \`configure\` writes \`bot-runtime/.env\`:
+${embedded ? "These values document the existing host service runtime contract for adapter integration:" : "These values are read from `runtime_config` when `configure` writes `bot-runtime/.env`:"}
 
 | Env key | Current value | Note |
 | --- | --- | --- |
@@ -542,6 +543,7 @@ ${commandSections}
 }
 
 export function buildContextRequestMarkdown(template: ContextTemplate): string {
+  const embedded = contextTemplateUsesEmbeddedAdapter(template);
   const requiredRows = template.handoff_request.required_values
     .map((item) => {
       const handling = secretValueKeys.has(item.key)
@@ -564,8 +566,8 @@ export function buildContextRequestMarkdown(template: ContextTemplate): string {
     "Can enable bot capability and add the bot to the test chat.",
     "Can grant or request the listed scopes, then publish the app version.",
     "Can configure the Feishu card callback URL as `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` and set the verification token.",
-    "Can provide a public HTTPS callback base URL that routes to the bot runtime.",
-    `Can keep ${template.target_service.name} reachable from the bot runtime during Level 2 verification.`,
+    embedded ? "Can provide a public HTTPS callback base URL that routes to the existing Feishu SDK host." : "Can provide a public HTTPS callback base URL that routes to the bot runtime.",
+    embedded ? `Can keep ${template.target_service.name} reachable from the existing host during Level 2 verification.` : `Can keep ${template.target_service.name} reachable from the bot runtime during Level 2 verification.`,
   ].map((item) => `- [ ] ${item}`).join("\n");
 
   return `# Feishu Context Request
@@ -582,7 +584,7 @@ Use this file as the owner-facing request before real Level 2 verification.
 ## Request
 
 Please confirm whether you can provide or configure the values, permissions, callback, and test chat below. Do not paste real secrets into normal chat or shared Markdown; use a secure secret channel for secret values.
-When filling \`feishu_context.local.json\` or \`bot-runtime/.env\`, replace placeholder strings completely; \`configure --strict --dry-run\` treats values like \`<APP_ID>\`, \`{{VERIFICATION_TOKEN}}\`, and \`\${TEST_CHAT_ID}\` as missing.
+${embedded ? "When filling `feishu_context.local.json` or the existing host service's secret/config system, replace placeholder strings completely; adapter verification treats values like `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, and `${TEST_CHAT_ID}` as missing." : "When filling `feishu_context.local.json` or `bot-runtime/.env`, replace placeholder strings completely; `configure --strict --dry-run` treats values like `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, and `${TEST_CHAT_ID}` as missing."}
 
 ## Required Values
 
@@ -621,8 +623,14 @@ test_chat_id_available: yes/no
 blocked_by: <missing owner, permission, network, or policy constraint>
 \`\`\`
 
-After the non-secret answers are confirmed, fill \`feishu_context.local.json\` or \`bot-runtime/.env\` locally and run \`configure\`, \`verify --level2\`, and \`evidence --update-record\`.
+${embedded ? "After the non-secret answers are confirmed, mount the adapter in the existing Feishu SDK host, then run `verify --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate` and record real Feishu evidence in `level2_verification_record.md`." : "After the non-secret answers are confirmed, fill `feishu_context.local.json` or `bot-runtime/.env` locally and run `configure`, `verify --level2`, and `evidence --update-record`."}
 `;
+}
+
+function contextTemplateUsesEmbeddedAdapter(template: ContextTemplate): boolean {
+  return template.handoff_request.command_sets.some((set) => (
+    set.commands.some((command) => command.includes("--mode embedded-adapter"))
+  ));
 }
 
 export function buildContextReplyTemplate(template: ContextTemplate): ContextReplyTemplate {

@@ -15,9 +15,18 @@ export function buildFormFieldMaps(fields: TemplateFieldMappingInput[]): {
   const templateKeyToFormField: Record<string, string> = {};
   const formFieldToTemplateKey: Record<string, string> = {};
   for (const field of fields) {
-    const name = field.name || formFieldName(field.key);
+    const name = uniqueFormFieldName(field.name || formFieldName(field.key), formFieldToTemplateKey);
     templateKeyToFormField[field.key] = name;
     formFieldToTemplateKey[name] = field.key;
   }
   return { templateKeyToFormField, formFieldToTemplateKey };
+}
+
+function uniqueFormFieldName(baseName: string, existing: Record<string, string>): string {
+  if (!existing[baseName]) return baseName;
+  for (let index = 2; ; index += 1) {
+    const suffix = `_${index}`;
+    const candidate = `${baseName.slice(0, 64 - suffix.length)}${suffix}`;
+    if (!existing[candidate]) return candidate;
+  }
 }

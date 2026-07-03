@@ -878,159 +878,20 @@ function buildAdapterHandlerTemplateData(capabilities: CapabilityMap, meta: Imag
 }
 
 function adapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
-  const { defaultPreset, templateSpecs, fieldSpecs, fieldMaps } = buildAdapterCardTemplateData(capabilities, meta);
-  return `export const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
-
-export const templateSpecs = ${JSON.stringify(templateSpecs, null, 2)};
-
-export const fieldSpecs = ${JSON.stringify(fieldSpecs, null, 2)};
-
-export const templateKeyToFormField = ${JSON.stringify(fieldMaps.templateKeyToFormField, null, 2)};
-
-export const formFieldToTemplateKey = ${JSON.stringify(fieldMaps.formFieldToTemplateKey, null, 2)};
-
-export function buildStartCard() {
-  const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
-  return {
-    config: { wide_screen_mode: true },
-    header: { template: "blue", title: { tag: "plain_text", content: "Image Agent MVP" } },
-    elements: [
-      { tag: "markdown", content: "**Target service:** " + ${JSON.stringify(service.service.name)} + "\\n\\n**Templates:** " + templateSpecs.map((template) => template.id).join(", ") + "\\n\\nFill the parameters and submit to run /api/generate." },
-      {
-        tag: "form",
-        name: "image_generate_form",
-        elements: [
-          { tag: "input", name: "param_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
-          { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
-          ...fieldSpecs.map((field) => ({ tag: "input", name: field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
-          { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
-          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", action_type: "form_submit", name: "submit_image_generate", value: { action: "image.generate.submit", preset: defaultPreset } },
-          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_generate" },
-        ],
-      },
-      { tag: "hr" },
-      { tag: "markdown", content: "Use batch mode for long-running /api/batch jobs. Submit a JSON array of items, then refresh the returned progress card when needed." },
-      {
-        tag: "form",
-        name: "image_batch_form",
-        elements: [
-          { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
-          { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
-          { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\\"fields\\\": { ... } }]" } },
-          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", action_type: "form_submit", name: "submit_image_batch", value: { action: "image.batch.submit" } },
-          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_batch" },
-        ],
-      },
-    ],
-  };
+  return stripAdapterCardsTypeScript(adapterCardsTs(service, capabilities, meta));
 }
 
-export function buildSuccessCard(result) {
-  const imageUrl = typeof result.image_url === "string" ? result.image_url : "";
-  const sessionId = typeof result.session_id === "string" ? result.session_id : "";
-  const elements = [
-    { tag: "markdown", content: imageUrl ? "**Image:** " + imageUrl : "Image generation completed." },
-  ];
-  if (sessionId) {
-    elements.push({
-      tag: "form",
-      name: "image_iterate_form",
-      elements: [
-        {
-          tag: "input",
-          name: "param_feedback",
-          required: true,
-          width: "fill",
-          input_type: "multiline_text",
-          rows: 2,
-          auto_resize: true,
-          label: { tag: "plain_text", content: "Feedback" },
-          placeholder: { tag: "plain_text", content: "Describe what to refine in the next image" },
-        },
-        {
-          tag: "button",
-          text: { tag: "plain_text", content: "Iterate image" },
-          type: "primary",
-          action_type: "form_submit",
-          name: "submit_image_iterate",
-          value: { action: "image.iterate.submit", session_id: sessionId },
-        },
-      ],
-    });
-  }
-  return {
-    config: { wide_screen_mode: true },
-    header: { template: "green", title: { tag: "plain_text", content: "Image generation complete" } },
-    elements,
-  };
+function stripAdapterCardsTypeScript(source: string): string {
+  return source
+    .replace(/: Record<string, string>(?= =)/g, "")
+    .replace(/\(\): Record<string, unknown>/g, "()")
+    .replace(/\(result: Record<string, unknown>\): Record<string, unknown>/g, "(result)")
+    .replace(/\(status: Record<string, unknown>, downloadUrl: string\): Record<string, unknown>/g, "(status, downloadUrl)")
+    .replace(/\(message: string\): Record<string, unknown>/g, "(message)")
+    .replace(/: unknown\[\](?= =)/g, "")
+    .replace(/\(value: unknown\): number/g, "(value)")
+    .replace(/\(value: unknown\): string/g, "(value)");
 }
-
-export function buildBatchStatusCard(status, downloadUrl) {
-  const total = numberValue(status?.total);
-  const done = numberValue(status?.done);
-  const completedCount = Array.isArray(status?.completed) ? status.completed.length : 0;
-  const failedCount = Array.isArray(status?.failed) ? status.failed.length : 0;
-  const running = status?.running === true;
-  const finished = !running && total > 0 && done >= total;
-  const batchId = stringValue(status?.batch_id);
-  const elements = [
-    {
-      tag: "markdown",
-      content: [
-        "**Status:** " + (running ? "running" : finished ? "completed" : "not running"),
-        "**Batch ID:** " + batchId,
-        "**Done:** " + done + "/" + total,
-        "**Completed:** " + completedCount,
-        "**Failed:** " + failedCount,
-        stringValue(status?.template_id) ? "**Template:** " + stringValue(status.template_id) : "",
-        stringValue(status?.size) ? "**Size:** " + stringValue(status.size) : "",
-      ].filter(Boolean).join("\\n\\n"),
-    },
-  ];
-  if (finished && downloadUrl && completedCount > 0) {
-    elements.push({ tag: "markdown", content: "[Download completed images ZIP](" + downloadUrl + ")" });
-  }
-  if (batchId) {
-    elements.push({
-      tag: "action",
-      actions: [
-        {
-          tag: "button",
-          text: { tag: "plain_text", content: "Refresh status" },
-          type: "default",
-          value: { action: "image.batch.refresh", batch_id: batchId },
-        },
-      ],
-    });
-  }
-  return {
-    config: { wide_screen_mode: true },
-    header: {
-      template: running ? "blue" : failedCount > 0 ? "red" : "green",
-      title: { tag: "plain_text", content: running ? "Batch running" : failedCount > 0 ? "Batch finished with failures" : "Batch complete" },
-    },
-    elements,
-  };
-}
-
-function numberValue(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function stringValue(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-export function buildFailureCard(message) {
-  return {
-    config: { wide_screen_mode: true },
-    header: { template: "red", title: { tag: "plain_text", content: "Image generation failed" } },
-    elements: [{ tag: "markdown", content: "**What happened:** " + message }],
-  };
-}
-`;
-}
-
 function adapterCardsTs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
   const { defaultPreset, templateSpecs, fieldSpecs, fieldMaps } = buildAdapterCardTemplateData(capabilities, meta);
   return `export const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};

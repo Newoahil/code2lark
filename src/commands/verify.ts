@@ -8,7 +8,7 @@ import { readEnvFileIfExists } from "../env-utils.js";
 import { readJsonFile, writeJson, writeText } from "../fs-utils.js";
 import { getJsonWithTimeout, normalizeBaseUrl, postJsonWithTimeout } from "../http-utils.js";
 import { configuredValue } from "../placeholder-utils.js";
-import { formFieldName } from "../field-mapping.js";
+import { buildFormFieldMaps, formFieldName } from "../field-mapping.js";
 import type { ProbeResult } from "../http-utils.js";
 import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
 import { assessPublicCallbackBaseUrl } from "../url-validation.js";
@@ -1137,11 +1137,13 @@ function buildWebhookCardActionPayload(capabilities: CapabilityMap): Record<stri
     ),
     message: "Signed webhook action from Lark-deployer verification.",
   };
+  const templateFieldInputs = templateFields.map((field) => ({ key: stringValue(field.key) })).filter((field) => field.key);
+  const fieldMaps = buildFormFieldMaps(templateFieldInputs);
   const formValue = {
     param_template_id: preset.template_id,
     param_size: preset.size,
     param_message: preset.message,
-    ...Object.fromEntries(Object.keys(preset.fields).map((key) => [formFieldName(key), preset.fields[key]])),
+    ...Object.fromEntries(Object.keys(preset.fields).map((key) => [fieldMaps.templateKeyToFormField[key] || formFieldName(key), preset.fields[key]])),
   };
   return {
     open_id: "verify_signed_open_id",
@@ -1187,6 +1189,7 @@ function buildAlternateTemplateFormValue(capabilities: CapabilityMap): Record<st
   const fields = templateFields.length
     ? templateFields
     : (Array.isArray(fieldsProperty.template_fields) ? fieldsProperty.template_fields.filter(isRecord) : []);
+  const fieldMaps = buildFormFieldMaps(fields.map((field) => ({ key: stringValue(field.key) })).filter((field) => field.key));
 
   return {
     param_template_id: templateId,
@@ -1194,7 +1197,7 @@ function buildAlternateTemplateFormValue(capabilities: CapabilityMap): Record<st
     param_message: "Alternate template action from Lark-deployer verification.",
     ...Object.fromEntries(fields.map((field) => {
       const key = stringValue(field.key);
-      return [formFieldName(key), `Alternate template ${humanizeKey(key)}`];
+      return [fieldMaps.templateKeyToFormField[key] || formFieldName(key), `Alternate template ${humanizeKey(key)}`];
     })),
   };
 }
@@ -1230,6 +1233,7 @@ function buildMarkdownReport(summary: {
     packagePath: string;
     envPath: string;
     runtimeUrl: string;
+    hostRuntimeUrl?: string;
     simulate: boolean;
     sendStartCard: boolean;
       level2: boolean;
@@ -1241,6 +1245,9 @@ function buildMarkdownReport(summary: {
   const rows = summary.checks
     .map((check) => `| ${check.status.toUpperCase()} | ${check.name} | ${check.detail.replace(/\|/g, "\\|")} |`)
     .join("\n");
+  const runtimeLine = summary.context.mode === "embedded-adapter"
+    ? `- Host runtime URL: ${summary.context.hostRuntimeUrl || "not checked"}`
+    : `- Runtime URL: ${summary.context.runtimeUrl || "not checked"}`;
 
   return `# Verification Report
 
@@ -1249,7 +1256,7 @@ function buildMarkdownReport(summary: {
 - Package: ${summary.context.packagePath}
 - Env file: ${summary.context.envPath}
 - Target base URL: ${summary.context.targetBaseUrl || "not provided"}
-- Runtime URL: ${summary.context.runtimeUrl || "not checked"}
+${runtimeLine}
 - Integration mode: ${summary.context.mode || "standalone-runtime"}
 - Simulation requested: ${summary.context.simulate ? "yes" : "no"}
 - Send start card requested: ${summary.context.sendStartCard ? "yes" : "no"}
@@ -1285,20 +1292,24 @@ function buildNextSteps(
   context: {
     packagePath: string;
     level2: boolean;
+    mode?: string;
   },
 ): string {
   const steps: string[] = [];
   const byName = new Map(checks.map((check) => [check.name, check]));
   const evidenceRecordPath = getLevel2EvidenceRecordPath(context.packagePath);
+  const embedded = context.mode === "embedded-adapter";
 
-  if (["env:APP_ID", "env:APP_SECRET", "env:VERIFICATION_TOKEN", "env:TEST_CHAT_ID"].some((name) => byName.get(name)?.status !== "pass")) {
+  if (!embedded && ["env:APP_ID", "env:APP_SECRET", "env:VERIFICATION_TOKEN", "env:TEST_CHAT_ID"].some((name) => byName.get(name)?.status !== "pass")) {
     steps.push("Fill Feishu app credentials and test chat values in `bot-runtime/.env`, then rerun `verify`.");
   }
   if (byName.get("env:PUBLIC_CALLBACK_BASE_URL")?.status !== "pass") {
     steps.push("Provide `PUBLIC_CALLBACK_BASE_URL` and configure Feishu card callback to `<PUBLIC_CALLBACK_BASE_URL>/webhook/card`.");
   }
   if (byName.get("callback:/webhook/card:public-challenge")?.status === "fail") {
-    steps.push("Check the public tunnel or reverse proxy for `PUBLIC_CALLBACK_BASE_URL`; it must route `POST /webhook/card` to the generated bot runtime.");
+    steps.push(embedded
+      ? "Check the public tunnel or reverse proxy for `PUBLIC_CALLBACK_BASE_URL`; it must route `POST /webhook/card` to the existing Feishu SDK host."
+      : "Check the public tunnel or reverse proxy for `PUBLIC_CALLBACK_BASE_URL`; it must route `POST /webhook/card` to the generated bot runtime.");
   }
   if (
     byName.get("runtime:/webhook/card:encrypted-challenge")?.status === "fail"
@@ -1313,10 +1324,15 @@ function buildNextSteps(
     steps.push("Check that `VERIFICATION_TOKEN` matches the Feishu callback token, the public proxy preserves request body and `x-lark-*` headers, and the target service can complete the signed action request.");
   }
   if (byName.get("target:/api/meta")?.status !== "pass") {
-    steps.push("Start or expose the target service so the bot runtime can reach `GET <IMAGE_AGENT_BASE_URL>/api/meta`.");
+    steps.push(embedded
+      ? "Start or expose the target service so the existing host can reach `GET <IMAGE_AGENT_BASE_URL>/api/meta`."
+      : "Start or expose the target service so the bot runtime can reach `GET <IMAGE_AGENT_BASE_URL>/api/meta`.");
   }
-  if (byName.get("runtime:/health")?.status !== "pass") {
+  if (!embedded && byName.get("runtime:/health")?.status !== "pass") {
     steps.push("Start the generated `bot-runtime` and rerun `verify --runtime-url <runtime_url>`.");
+  }
+  if (embedded && byName.get("embedded:host-runtime-url")?.status === "warn") {
+    steps.push("Mount the adapter in the existing Feishu SDK host, then rerun `verify --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate`.");
   }
   if (checks.some((check) => check.name.startsWith("runtime:/health:") && check.status === "fail")) {
     steps.push("Compare `bot-runtime/.env` with the values reported by `/health`, then restart the generated runtime after any `.env` change.");
