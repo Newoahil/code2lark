@@ -150,25 +150,84 @@ export async function contextCommand(args: string[], options: Record<string, str
 export function buildContextTemplate(
   service: ServiceManifest,
   permissions: RequiredPermissions,
-  options: { generatedPackageHint?: string; packageRootCliPath?: string } = {},
+  options: { generatedPackageHint?: string; packageRootCliPath?: string; integrationMode?: "embedded-adapter" | "standalone-runtime" } = {},
 ): ContextTemplate {
   const defaultGeneratedPackage = options.generatedPackageHint || `generated\\${slugify(service.service.name)}-lark`;
   const commandPackageArg = quoteCommandArg(defaultGeneratedPackage);
   const packageRootCliPath = options.packageRootCliPath || "..\\..\\dist\\index.js";
   const packageRootCli = quoteCommandArg(packageRootCliPath);
+  const embedded = options.integrationMode === "embedded-adapter";
+  const projectDoctorCommands = embedded
+    ? [
+        `node dist/index.js doctor ${commandPackageArg} --mode embedded-adapter`,
+        `node dist/index.js doctor ${commandPackageArg} --mode embedded-adapter --gate`,
+      ]
+    : [
+        `node dist/index.js doctor ${commandPackageArg}`,
+        `node dist/index.js doctor ${commandPackageArg} --gate`,
+        `node dist/index.js doctor ${commandPackageArg} --probe-target --gate`,
+      ];
+  const packageDoctorCommands = embedded
+    ? [
+        `node ${packageRootCli} doctor . --mode embedded-adapter`,
+        `node ${packageRootCli} doctor . --mode embedded-adapter --gate`,
+      ]
+    : [
+        `node ${packageRootCli} doctor .`,
+        `node ${packageRootCli} doctor . --gate`,
+        `node ${packageRootCli} doctor . --probe-target --gate`,
+      ];
+  const movedDoctorCommands = embedded
+    ? [
+        "node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter",
+        "node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter --gate",
+      ]
+    : [
+        "node $env:LARK_DEPLOYER_CLI doctor .",
+        "node $env:LARK_DEPLOYER_CLI doctor . --gate",
+        "node $env:LARK_DEPLOYER_CLI doctor . --probe-target --gate",
+      ];
+  const projectVerifyCommands = embedded
+    ? [
+        `node dist/index.js verify ${commandPackageArg} --mode embedded-adapter --strict`,
+        `node dist/index.js verify ${commandPackageArg} --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate`,
+      ]
+    : [
+        `node dist/index.js verify ${commandPackageArg}`,
+        `node dist/index.js verify ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --simulate`,
+        `node dist/index.js verify ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --level2`,
+      ];
+  const packageVerifyCommands = embedded
+    ? [
+        `node ${packageRootCli} verify . --mode embedded-adapter --strict`,
+        `node ${packageRootCli} verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate`,
+      ]
+    : [
+        `node ${packageRootCli} verify .`,
+        `node ${packageRootCli} verify . --runtime-url http://127.0.0.1:3978 --simulate`,
+        `node ${packageRootCli} verify . --runtime-url http://127.0.0.1:3978 --level2`,
+      ];
+  const movedVerifyCommands = embedded
+    ? [
+        "node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict",
+        "node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate",
+      ]
+    : [
+        "node $env:LARK_DEPLOYER_CLI verify . --runtime-url http://127.0.0.1:3978 --simulate",
+        "node $env:LARK_DEPLOYER_CLI verify . --runtime-url http://127.0.0.1:3978 --level2",
+      ];
+  const projectEvidenceCommands = embedded ? [] : [`node dist/index.js evidence ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --update-record`];
+  const packageEvidenceCommands = embedded ? [] : [`node ${packageRootCli} evidence . --runtime-url http://127.0.0.1:3978 --update-record`];
+  const movedEvidenceCommands = embedded ? [] : ["node $env:LARK_DEPLOYER_CLI evidence . --runtime-url http://127.0.0.1:3978 --update-record"];
   const projectRootCommands = [
     `node dist/index.js init-local ${commandPackageArg} --context --reply`,
     `node dist/index.js configure ${commandPackageArg} --strict --dry-run`,
     `node dist/index.js configure ${commandPackageArg} --strict`,
     `node dist/index.js status ${commandPackageArg}`,
     `node dist/index.js readiness ${commandPackageArg}`,
-    `node dist/index.js doctor ${commandPackageArg}`,
-    `node dist/index.js doctor ${commandPackageArg} --gate`,
-    `node dist/index.js doctor ${commandPackageArg} --probe-target --gate`,
-    `node dist/index.js verify ${commandPackageArg}`,
-    `node dist/index.js verify ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --simulate`,
-    `node dist/index.js verify ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --level2`,
-    `node dist/index.js evidence ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --update-record`,
+    ...projectDoctorCommands,
+    ...projectVerifyCommands,
+    ...projectEvidenceCommands,
     `node dist/index.js handoff ${commandPackageArg}`,
   ];
   const packageRootCommands = [
@@ -177,13 +236,9 @@ export function buildContextTemplate(
     `node ${packageRootCli} configure . --strict`,
     `node ${packageRootCli} status .`,
     `node ${packageRootCli} readiness .`,
-    `node ${packageRootCli} doctor .`,
-    `node ${packageRootCli} doctor . --gate`,
-    `node ${packageRootCli} doctor . --probe-target --gate`,
-    `node ${packageRootCli} verify .`,
-    `node ${packageRootCli} verify . --runtime-url http://127.0.0.1:3978 --simulate`,
-    `node ${packageRootCli} verify . --runtime-url http://127.0.0.1:3978 --level2`,
-    `node ${packageRootCli} evidence . --runtime-url http://127.0.0.1:3978 --update-record`,
+    ...packageDoctorCommands,
+    ...packageVerifyCommands,
+    ...packageEvidenceCommands,
     `node ${packageRootCli} handoff .`,
   ];
   const movedPackageCommands = [
@@ -193,12 +248,9 @@ export function buildContextTemplate(
     "node $env:LARK_DEPLOYER_CLI configure . --strict",
     "node $env:LARK_DEPLOYER_CLI status .",
     "node $env:LARK_DEPLOYER_CLI readiness .",
-    "node $env:LARK_DEPLOYER_CLI doctor .",
-    "node $env:LARK_DEPLOYER_CLI doctor . --gate",
-    "node $env:LARK_DEPLOYER_CLI doctor . --probe-target --gate",
-    "node $env:LARK_DEPLOYER_CLI verify . --runtime-url http://127.0.0.1:3978 --simulate",
-    "node $env:LARK_DEPLOYER_CLI verify . --runtime-url http://127.0.0.1:3978 --level2",
-    "node $env:LARK_DEPLOYER_CLI evidence . --runtime-url http://127.0.0.1:3978 --update-record",
+    ...movedDoctorCommands,
+    ...movedVerifyCommands,
+    ...movedEvidenceCommands,
     "node $env:LARK_DEPLOYER_CLI handoff .",
   ];
 

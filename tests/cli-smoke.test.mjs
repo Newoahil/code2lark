@@ -326,6 +326,14 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(embeddedOnlyChecklist, /Run npm install in bot-runtime/);
   assert.doesNotMatch(embeddedOnlyChecklist, /Run npm start/);
   assert.doesNotMatch(embeddedOnlyChecklist, /--runtime-url <bot_runtime_url>/);
+  const embeddedOnlyContext = JSON.parse(fs.readFileSync(path.join(embeddedOnlyGenerated, "feishu_context.template.json"), "utf8"));
+  const embeddedOnlyCommands = embeddedOnlyContext.handoff_request.command_sets.flatMap((set) => set.commands);
+  assert.ok(embeddedOnlyCommands.some((command) => command.includes("verify . --mode embedded-adapter --strict")));
+  assert.ok(embeddedOnlyCommands.some((command) => command.includes("verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate")));
+  assert.ok(embeddedOnlyCommands.some((command) => command.includes("doctor . --mode embedded-adapter")));
+  assert.equal(embeddedOnlyCommands.some((command) => command.includes("verify . --runtime-url")), false);
+  const embeddedOnlyReadinessOutput = run(["readiness", embeddedOnlyGenerated]);
+  assert.doesNotMatch(embeddedOnlyReadinessOutput, /verify \. --runtime-url/);
   const embeddedOnlyLevel2Record = fs.readFileSync(path.join(embeddedOnlyGenerated, "level2_verification_record.md"), "utf8");
   assert.match(embeddedOnlyLevel2Record, /Existing host service URL:/);
   assert.match(embeddedOnlyLevel2Record, /existing host service's secret\/config system/);

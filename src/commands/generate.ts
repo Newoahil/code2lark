@@ -68,7 +68,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(docsDir, "integration_guide.md"), buildEmbeddedIntegrationGuide(service, permissions));
   writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode));
   writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service));
-  writePackageContext(workspace, outDir, service, permissions);
+  writePackageContext(workspace, outDir, service, permissions, integrationMode);
   writeText(path.join(adapterDir, "types.ts"), adapterTypesTs());
   writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
   writeText(path.join(adapterDir, "validation.ts"), adapterValidationTs());
@@ -232,12 +232,14 @@ function writePackageContext(
   outDir: string,
   service: ServiceManifest,
   permissions: RequiredPermissions,
+  integrationMode: IntegrationMode,
 ): void {
   const sourceContext = readOptionalJson<Partial<ContextTemplate>>(path.join(workspace, "feishu_context.template.json"));
   const mergedContext = mergeContextValues(
     buildContextTemplate(service, permissions, {
       generatedPackageHint: packageHintFromProjectRoot(outDir),
       packageRootCliPath: toCliPath(path.relative(outDir, path.resolve("dist", "index.js"))),
+      integrationMode,
     }),
     sourceContext,
   );
