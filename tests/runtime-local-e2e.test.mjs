@@ -291,6 +291,25 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     assert.match(batchRefreshCardJson, /image\.batch\.refresh/);
     assert.equal(mockTarget.batchStatusCalls, 2);
 
+    const batchCallsAfterValidBatch = mockTarget.batchCalls;
+    const invalidBatchSizeResponse = await fetch(`${runtimeUrl}/debug/simulate-card-action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        action: "image.batch.submit",
+        formValue: {
+          param_batch_size: "1024*1024",
+          param_batch_items_json: JSON.stringify([{ fields: { theme: "Invalid batch size theme" } }]),
+        },
+      }),
+    });
+    const invalidBatchSizeSimulation = await invalidBatchSizeResponse.json();
+    assert.equal(invalidBatchSizeResponse.status, 500);
+    assert.equal(invalidBatchSizeSimulation.ok, false);
+    assert.equal(invalidBatchSizeSimulation.card.header.template, "red");
+    assert.match(invalidBatchSizeSimulation.error, /Size must use WIDTHxHEIGHT/);
+    assert.equal(mockTarget.batchCalls, batchCallsAfterValidBatch);
+
     const dedupePayload = {
       dedupe: true,
       formValue: {

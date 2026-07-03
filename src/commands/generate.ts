@@ -712,10 +712,14 @@ export function mergeGeneratePresetWithFormValue(preset, formValue) {
     message: stringValue(formValue.param_message) || preset.message,
     fields,
   };
-  if (!/^([1-9]\\d*)x([1-9]\\d*)$/i.test(String(merged.size || "").trim())) {
+  validateSize(merged.size);
+  return merged;
+}
+
+export function validateSize(size) {
+  if (!/^([1-9]\\d*)x([1-9]\\d*)$/i.test(String(size || "").trim())) {
     throw new Error("Size must use WIDTHxHEIGHT, for example 1024x1024.");
   }
-  return merged;
 }
 
 function stringValue(value) {
@@ -1154,7 +1158,7 @@ function adapterHandlersTs(service: ServiceManifest, capabilities: CapabilityMap
 import { buildBatchStatusCard, buildFailureCard, buildSuccessCard } from "./cards.js";
 import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
 import type { AdapterActionContext, AdapterDependencies, AdapterResult, BatchRequest, GeneratePreset, IterateRequest } from "./types.js";
-import { assertAllowedOperator, mergeGeneratePresetWithFormValue } from "./validation.js";
+import { assertAllowedOperator, mergeGeneratePresetWithFormValue, validateSize } from "./validation.js";
 
 const defaultPreset: GeneratePreset = ${JSON.stringify(defaultPreset, null, 2)};
 const requiredFieldsByTemplate: Record<string, string[]> = ${JSON.stringify(requiredFieldsByTemplate, null, 2)};
@@ -1213,7 +1217,10 @@ function buildIterateRequest(value: Record<string, unknown> | undefined, formVal
 
 function buildBatchRequest(value: Record<string, unknown> | undefined, formValue: Record<string, unknown> | undefined): BatchRequest {
   const templateId = stringValue(formValue?.param_batch_template_id || value?.template_id || value?.templateId || defaultPreset.template_id);
-  const size = stringValue(formValue?.param_batch_size || value?.size || defaultPreset.size);
+  const size = typeof formValue?.param_batch_size === "string"
+    ? formValue.param_batch_size.trim()
+    : stringValue(value?.size || defaultPreset.size);
+  validateSize(size);
   const itemsJson = stringValue(formValue?.param_batch_items_json || value?.items_json || value?.itemsJson);
   const rawItems = itemsJson ? JSON.parse(itemsJson) : Array.isArray(value?.items) ? value.items : [];
   if (!Array.isArray(rawItems) || rawItems.length === 0) throw new Error("Batch items JSON must include at least one item.");
@@ -1293,7 +1300,7 @@ function adapterHandlersJs(service: ServiceManifest, capabilities: CapabilityMap
   return `import { auditEvent } from "./audit-events.js";
 import { buildBatchStatusCard, buildFailureCard, buildSuccessCard } from "./cards.js";
 import { callImageBatchCreate, callImageBatchStatus, callImageGenerate, callImageIterate, resolveBatchDownloadUrl } from "./service-client.js";
-import { assertAllowedOperator, mergeGeneratePresetWithFormValue } from "./validation.js";
+import { assertAllowedOperator, mergeGeneratePresetWithFormValue, validateSize } from "./validation.js";
 
 const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
 const requiredFieldsByTemplate = ${JSON.stringify(requiredFieldsByTemplate, null, 2)};
@@ -1353,7 +1360,10 @@ function buildIterateRequest(value, formValue) {
 
 function buildBatchRequest(value, formValue) {
   const templateId = stringValue(formValue?.param_batch_template_id || value?.template_id || value?.templateId || defaultPreset.template_id);
-  const size = stringValue(formValue?.param_batch_size || value?.size || defaultPreset.size);
+  const size = typeof formValue?.param_batch_size === "string"
+    ? formValue.param_batch_size.trim()
+    : stringValue(value?.size || defaultPreset.size);
+  validateSize(size);
   const itemsJson = stringValue(formValue?.param_batch_items_json || value?.items_json || value?.itemsJson);
   const rawItems = itemsJson ? JSON.parse(itemsJson) : Array.isArray(value?.items) ? value.items : [];
   if (!Array.isArray(rawItems) || rawItems.length === 0) throw new Error("Batch items JSON must include at least one item.");
