@@ -27,12 +27,14 @@ The MVP is considered functionally proven when a real Feishu development app can
 7. Give `permission_review.md` to the Feishu app owner/admin.
 8. Run `lark-deployer generate`.
 9. For an existing Feishu SDK service, integrate generated `adapter/` using `docs/integration_guide.md` and validate with `verify --mode embedded-adapter --strict`.
-10. If no existing host is available, run `lark-deployer configure` to write generated `bot-runtime/.env` from filled context, then start the standalone reference runtime.
-11. Configure Feishu card callback URL to `<PUBLIC_CALLBACK_BASE_URL>/webhook/card`.
-12. Use `/debug/start-card` to send the first test card.
-13. Click the card button in Feishu and confirm success/failure card behavior.
-14. Submit feedback from the result card and confirm `/api/iterate` returns an updated result card.
-15. Submit a batch job from the start card and confirm the progress card can refresh status and expose a download link after completion.
+10. For a generated Python host, use `--mode self-hosted-runtime`; keep the FastAPI service unchanged, run `feishu-host/` as a separate Python process, subscribe to `card.action.trigger` through `lark-oapi` long connection, and call `image-agent-web` over HTTP.
+11. For the adapter sidecar route, keep the FastAPI service unchanged and add a sidecar/gateway host with `--host-mode embedded-long-connection`; the sidecar owns Feishu SDK long connection, subscribes to `card.action.trigger`, sends the start card, and calls `adapter/handlers.ts`.
+12. If no existing host is available and Python self-hosting is not selected, run `lark-deployer configure` to write generated `bot-runtime/.env` from filled context, then start the standalone reference runtime.
+13. Configure Feishu card callback URL to `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` only for webhook or standalone-runtime host modes.
+14. Use `/debug/start-card`, the long-connection sidecar's send-card entry, or `feishu-host` start-card helper to send the first test card.
+15. Click the card button in Feishu and confirm success/failure card behavior.
+16. Submit feedback from the result card and confirm `/api/iterate` returns an updated result card.
+17. Submit a batch job from the start card and confirm the progress card can refresh status and expose a download link after completion.
 
 ## Commands
 
@@ -45,7 +47,11 @@ node dist/index.js plan out\image-agent-web
 node dist/index.js context out\image-agent-web
 node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark
 node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark-embedded --mode embedded-adapter
+node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark-long --mode embedded-adapter --host-mode embedded-long-connection
+node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark-self-hosted --mode self-hosted-runtime
 node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter --strict
+node dist/index.js verify generated\image-agent-web-lark-long --mode embedded-adapter --host-mode embedded-long-connection --strict
+node dist/index.js verify generated\image-agent-web-lark-self-hosted --mode self-hosted-runtime --strict
 node dist/index.js configure generated\image-agent-web-lark --strict --dry-run
 node dist/index.js configure generated\image-agent-web-lark --strict
 node dist/index.js status generated\image-agent-web-lark
@@ -59,6 +65,28 @@ node dist/index.js verify generated\image-agent-web-lark --runtime-url http://12
 ```
 
 This also checks that `POST /webhook/card` can answer a local `url_verification` challenge. That keeps Feishu developer-console callback setup separate from full card-action execution.
+
+For `embedded-long-connection`, use `--host-mode embedded-long-connection` and validate the sidecar/gateway host instead:
+
+```powershell
+node dist/index.js verify generated\image-agent-web-lark-long --mode embedded-adapter --host-mode embedded-long-connection --host-runtime-url http://127.0.0.1:3978 --simulate
+```
+
+This checks host health and host-owned simulation/manual evidence without requiring a `/webhook/card` URL-verification endpoint.
+
+For `self-hosted-runtime`, use the generated Python host and prove the local MVP before any real Feishu click:
+
+```powershell
+cd generated\image-agent-web-lark-self-hosted\feishu-host
+Copy-Item .env.example .env
+python -m pip install -r requirements.txt
+python local_contract_test.py
+python app.py --selfcheck
+cd ..
+node ..\..\dist\index.js verify . --mode self-hosted-runtime --strict
+```
+
+This proves the generated specs, Python handlers, HTTP target-call shapes, failure paths, special field-name round trip, and Feishu SDK `card.action.trigger` wiring without opening a live Feishu WebSocket. Real Feishu Level 2 is still manual and is documented in `docs/self-hosted-runtime-level2-runbook.md`.
 
 After Feishu credentials are filled and the bot is in the test chat, run the stricter Level 2 preflight:
 
@@ -168,11 +196,12 @@ The generated start card also creates one input per discovered template field, p
 - Handoff path freshness is protected: `handoff --copy-to` refreshes package-path fields after copying, and `handoff --check` fails if copied shared files still point at an old generated package path or stale `generated_package_hint`.
 - `status --json` and `readiness` report whether `level2_manual_evidence.template.json` exists, whether ignored `level2_manual_evidence.local.json` parses, and which filled field names are imported or pending import, without printing the local evidence values.
 - Generated bot runtime supports `CARD_ACTION_MODE=async`, returning a running card immediately and patching the original message with the final card through Feishu `message.patch`.
+- Generated `self-hosted-runtime` supports a Python `feishu-host/` package with `.env.example`, `lark-oapi`/`requests` requirements, manifest-derived specs, local contract test, and `app.py --selfcheck`; strict verify can execute the Python proof when dependencies are installed.
 - Real Feishu verification is still pending external app credentials, callback URL setup, and a running target service.
 
 ## Completion split
 
 MVP-1A has two evidence layers:
 
-- Local build evidence: covered by `npm test`.
+- Local build evidence: covered by `npm test`, plus `verify --mode self-hosted-runtime --strict` with installed Python dependencies for the generated Python host path.
 - Real Feishu evidence: covered by the package-local `generated/image-agent-web-lark/level2_verification_record.md` after the operator provides app credentials, required scopes, callback URL, and a reachable target service. `evidence --runtime-url --update-record` can prefill machine-supported fields from `verification_report.json` and `bot-runtime/audit.log` or protected `/debug/audit-tail`, then accept manual result-card and batch-card evidence through CLI options or ignored `level2_manual_evidence.local.json`; its shared Markdown output redacts submitted field values, operator ids, chat ids, and raw manual evidence values. The completion checkboxes remain manual. `docs/level-2-verification-record.md` remains only the generic template.

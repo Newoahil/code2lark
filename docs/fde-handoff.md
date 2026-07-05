@@ -6,7 +6,7 @@ This project should be usable by a teammate without relying on a specific Codex 
 
 - A running target service URL for `image-agent-web`.
 - A Feishu custom app with bot capability enabled.
-- Permission to configure app scopes and card callbacks.
+- Permission to configure app scopes and either card callbacks or the SDK long-connection event subscription.
 - A test group where the bot can send messages.
 
 ## What Lark-deployer gives you
@@ -14,7 +14,7 @@ This project should be usable by a teammate without relying on a specific Codex 
 - Machine-readable service and interaction contracts.
 - Human-readable permission review.
 - Deployment checklist.
-- An embeddable `adapter/` package as the primary artifact, plus an optional standalone Node runtime reference host.
+- An embeddable `adapter/` package as the primary artifact, an optional standalone Node runtime reference host, and a Python `feishu-host/` self-hosted long-connection runtime when generated with `--mode self-hosted-runtime`.
 - Verification checks that explain missing context.
 - A package-local `level2_verification_record.md` for real Feishu evidence collection.
 - Static `templates.py` fallback for `image-agent-web` template ids, sizes, and fields when `/api/meta` is not available during analysis.
@@ -36,7 +36,8 @@ This project should be usable by a teammate without relying on a specific Codex 
 - Async card updates need `APP_ID`, `APP_SECRET`, and the message update scope.
 - Slow target calls should tune `target_timeout_seconds` in context, which writes `IMAGE_AGENT_TIMEOUT_MS` into the runtime `.env`.
 - Runtime startup validates `PORT`, `CARD_ACTION_MODE`, and boolean flags, so fix `.env` typos before rerunning.
-- Full Level 2 needs all of the above plus a public HTTPS `PUBLIC_CALLBACK_BASE_URL` and a reachable target service.
+- Full Level 2 in `embedded-webhook` or `standalone-runtime` needs all of the above plus a public HTTPS `PUBLIC_CALLBACK_BASE_URL` and a reachable target service. In `embedded-long-connection`, the host/gateway instead needs `APP_ID`, `APP_SECRET`, an online Feishu SDK long connection subscribed to `card.action.trigger`, and a reachable target service.
+- Full Level 2 in `self-hosted-runtime` uses the generated Python `feishu-host/`: fill `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_CONNECTION_MODE=websocket`, `IMAGE_AGENT_BASE_URL`, and optional `TEST_CHAT_ID`/allowlist/timeout in `feishu-host/.env`; no public webhook callback is required unless a webhook fallback is added.
 - `ALLOWED_OPERATOR_OPEN_IDS` is optional but recommended for real group use. It limits card-action execution to listed Feishu operator `open_id` values and is enforced before the target service is called.
 
 ## Recommended handoff sequence
@@ -45,7 +46,7 @@ This project should be usable by a teammate without relying on a specific Codex 
 2. Review `out/image-agent-web/permission_review.md`.
 3. Run `node dist/index.js context out\image-agent-web`, send `feishu_context.request.md` to the Feishu app owner or FDE to confirm who can provide each value, permission, callback, and test-chat setup, then use `feishu_context.reply.template.json/md` as the non-secret intake form for the reply. Run `node dist/index.js init-local generated\image-agent-web-lark --context --reply` to create ignored local intake files, then fill the local context including `runtime_config` if the runtime should use async card updates, a non-default port, or a Feishu OpenAPI override.
 4. Generate `generated/image-agent-web-lark`.
-5. For an existing Feishu SDK service, integrate `generated/image-agent-web-lark/adapter/` using `docs/integration_guide.md`, then run `node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter --strict` and `node dist/index.js doctor generated\image-agent-web-lark --mode embedded-adapter`.
+5. For an existing Feishu SDK service, integrate `generated/image-agent-web-lark/adapter/` using `docs/integration_guide.md`, then run `node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter --strict` and `node dist/index.js doctor generated\image-agent-web-lark --mode embedded-adapter`. For the `image-agent-web` sidecar-long-connection route, generate with `--mode embedded-adapter --host-mode embedded-long-connection` and run the same verify/doctor commands with `--host-mode embedded-long-connection`. For the generated Python host route, generate with `--mode self-hosted-runtime`, install `feishu-host/requirements.txt`, run `python feishu-host/local_contract_test.py`, run `python feishu-host/app.py --selfcheck`, then run `node dist/index.js verify <package> --mode self-hosted-runtime --strict`.
    If `feishu_context.reply.local.json` exists, this strict dry run also fails when the owner reply is invalid, contains blockers, has blocked/unknown/missing permission confirmations, has negative answers, or omits `secure_secret_channel`.
 6. If you do not already have a Feishu SDK host, use the optional standalone reference runtime: run `node dist/index.js configure generated\image-agent-web-lark --strict` to validate the context and write `bot-runtime/.env`. Blank context fields preserve existing non-empty `.env` values; strict mode fails if required Level 2 values are still missing.
    If `feishu_context.local.json` leaves public fields blank, non-secret owner reply values may fill `TEST_CHAT_ID`, `PUBLIC_CALLBACK_BASE_URL`, and `IMAGE_AGENT_BASE_URL`; `configure_report.*` marks those rows as `context_reply` and prints only field names.
@@ -62,7 +63,7 @@ This project should be usable by a teammate without relying on a specific Codex 
    If `/health` returns `feishuConfigured: false`, continue local debug only; real Feishu verification still needs the listed missing keys.
    Before exposing the runtime through a public callback URL, set `DEBUG_ACCESS_TOKEN`; `verify` and `evidence --runtime-url` will use it automatically, and manual `/debug/*` calls must include it as `Authorization: Bearer <token>` or `x-lark-deployer-debug-token`.
    `GET /debug/audit-tail?limit=100` returns recent audit events for evidence collection when the runtime is on another machine.
-9. Configure Feishu card callback URL as `<PUBLIC_CALLBACK_BASE_URL>/webhook/card`.
+9. Configure Feishu card callback URL as `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` for webhook/standalone modes. For `embedded-long-connection`, keep the sidecar/gateway online, subscribe to `card.action.trigger`, and route events into `adapter/handlers.ts` without modifying `image-agent-web` FastAPI routes. For `self-hosted-runtime`, run `feishu-host/app.py` after local contract/selfcheck passes; it owns the `lark-oapi` WebSocket long connection and calls `image-agent-web` through `IMAGE_AGENT_BASE_URL`.
 10. After credentials, scopes, callback URL, and test chat are ready, run `node dist/index.js verify generated\image-agent-web-lark --runtime-url http://127.0.0.1:3978 --level2`.
    Real Feishu Level 2 should not use `--allow-local-callback`; that flag is only for automated local mock verification.
    This also posts a URL verification challenge to `<PUBLIC_CALLBACK_BASE_URL>/webhook/card`; if that check fails, fix the tunnel, reverse proxy, or callback path before continuing.

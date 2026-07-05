@@ -43,6 +43,16 @@ Event and callback setup:
 - Receive events and encrypted push: https://open.feishu.cn/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/encrypt-key-encryption-configuration-case
 - Official Node SDK: https://github.com/larksuite/node-sdk
 
+Cards and card actions:
+
+- Develop a card interactive bot: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/quick-start/develop-a-card-interactive-bot
+- Card callback communication: https://open.feishu.cn/document/feishu-cards/card-callback-communication
+- Card JSON 2.0 structure: https://open.feishu.cn/document/feishu-cards/card-json-v2-structure
+- Feishu CardKit overview: https://open.feishu.cn/document/feishu-cards/feishu-card-cardkit/feishu-cardkit-overview
+- Form container: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/form-container
+- Button component: https://open.feishu.cn/document/feishu-cards/card-json-v2-components/interactive-components/button?lang=zh-CN
+- Card resource overview: https://open.feishu.cn/document/cardkit-v1/feishu-card-resource-overview
+
 ## 3. Feishu permission model
 
 Feishu permissions should be treated as four separate layers:
@@ -352,11 +362,17 @@ Constraints:
 - The runtime must be able to access the public network.
 - Events are received by one client in clustered deployment, not broadcast to all clients.
 - Official SDK notes that event processing should complete quickly to avoid timeout/retry behavior.
-- Long connection supports event subscriptions, but official SDK notes it does not support callback subscriptions.
+- Long connection can receive callback subscriptions in the newer callback flow, including `card.action.trigger`.
+- The older `card.action.trigger_v1` callback flow does not support long connection; treat it as legacy/webhook-oriented.
 
 Lark-deployer implication:
 
-Use long connection for `im.message.receive_v1` during early MVP if possible. For card action callbacks, verify whether webhook callback configuration is still required in the chosen SDK/runtime path.
+Use long connection for `im.message.receive_v1` when it fits the host architecture.
+For interactive card actions, distinguish callback versions explicitly:
+
+- If the host uses `card.action.trigger`, long-connection receiving is a valid host mode.
+- If the host uses `card.action.trigger_v1`, keep webhook callback assumptions.
+- Until the generated host mode is explicit, do not hard-code webhook-only assumptions into generic platform docs.
 
 ### Webhook
 
@@ -613,4 +629,3 @@ generated/manifest/deployment_checklist.md
 - Is there a narrower alternative?
 - What happens if this permission is not granted?
 - Which permissions are broad or sensitive?
-

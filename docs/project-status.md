@@ -9,7 +9,7 @@
 
 Lark-deployer 是一个构建时（build-time）生成器：分析一个已有服务或服务交互流程，生成可审查的服务契约（manifest / capability_map / interaction_contract / required_permissions）、飞书/Lark 交互设计、可嵌入适配器代码、权限说明、验证与交接材料。
 
-2026-07-02 的设计纠偏后，项目总方向以 `docs/development-charter.md` 为准：核心产物应是 `adapter/`，而不是必须独立部署的 `bot-runtime`。当前已有 `bot-runtime` 应被保留为 standalone/reference host，用于没有现成飞书服务的用户或本地验证；对已有飞书 SDK 服务的场景，应优先生成可嵌入 adapter。
+2026-07-02 的设计纠偏后，项目总方向以 `docs/development-charter.md` 为准：核心产物应是 `adapter/` 或目标语言宿主，而不是必须独立部署的 `bot-runtime`。当前已有 `bot-runtime` 应被保留为 standalone/reference host，用于没有现成飞书服务的用户或本地验证；对已有飞书 SDK 服务的场景，应优先生成可嵌入 adapter。2026-07-04 新增的 `self-hosted-runtime` 是第一种目标语言宿主，当前为 Python `feishu-host/`，使用 `lark-oapi` 长连接接收 `card.action.trigger`，通过 HTTP 调用 `image-agent-web`。
 
 当前 MVP（MVP-1A）唯一目标服务：`C:\works\image-agent-web`（`docs/mvp-1a-image-agent-web.md`）。
 
@@ -38,6 +38,7 @@ analyze → plan → context(生成给所有者的凭据请求) → generate(生
   - CLI 冒烟测试覆盖 embedded adapter 输出：`adapter/` 文件、`docs/integration_guide.md`、`verify --mode embedded-adapter --strict`、`doctor --mode embedded-adapter --json`。
   - 运行时本地 e2e 测试覆盖：生成运行时包 → 安装/构建 → 启动 → `/webhook/card` URL 校验挑战 → `/debug/simulate-generate` → `/debug/simulate-card-action`（含表单合并、Feishu 2.0 事件形状兼容、非法输入拒绝）→ 批量任务提交/刷新 → 去重窗口 → operator 授权检查 → 签名/加密回调（当 `VERIFICATION_TOKEN` / `ENCRYPT_KEY` 设置时）。
 - **真实飞书 Level 2 验证尚未完成**：`docs/mvp-1a-image-agent-web.md` 明确写明"Real Feishu verification is still pending external app credentials, callback URL setup, and a running target service"。目前所有绿灯都来自本地模拟（mock target + 本地 webhook），尚未在真实飞书开发者应用上跑通发卡、点击回调、图片上传、批量任务下载的完整闭环。
+- **self-hosted-runtime 本地 MVP 已作为目标形态落地**：生成物为 `generated/<target>-lark/feishu-host/`，包含 `.env.example`、`requirements.txt`、manifest-derived `spec/*.json`、Python card/client/validation/handler/app 文件、`local_contract_test.py` 和 `app.py --selfcheck`。最终本地完成证据必须在安装 Python 依赖后运行 strict verify，不能把缺依赖 WARN 当成绿灯。
 - 唯一一次真实目标服务联调记录：2026-07-01，临时启动 `C:\works\image-agent-web`，验证了 `GET /api/meta`、生成运行时 `/health`、本地卡片 URL 挑战等；`POST /api/generate` 之外的真实调用未覆盖（依赖外部图像/模型服务）。
 
 ## 5. 审计结论：优点
@@ -68,3 +69,4 @@ analyze → plan → context(生成给所有者的凭据请求) → generate(生
 ## 7. 处理记录
 
 - 2026-07-02：完成首次代码审计（本文档）；创建 `docs/development-direction.md` 记录后续开发方向；执行 `git init` 首次提交，锁定当前基线。
+- 2026-07-04：按 `docs/mvp-self-hosting-task-book.md` 推进 `self-hosted-runtime`，新增 Python `feishu-host/` 长连接宿主生成、local contract/selfcheck/strict verify 路径，并明确真实飞书 Level 2 仍是人工证据步骤。

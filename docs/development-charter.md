@@ -86,6 +86,15 @@ Lark-deployer 必须遵守最小侵入原则：
 
 用户已有飞书 SDK 服务时，Lark-deployer 应优先生成可嵌入 adapter，而不是要求用户部署一套新的 `bot-runtime`。
 
+Host 接收方式必须作为一等概念记录，不能把某个宿主实现路径写成平台事实：
+
+```text
+--mode: 产物包装形态，embedded-adapter 或 standalone-runtime。
+--host-mode / host_receive_mode: 飞书事件如何到达宿主，embedded-webhook、embedded-long-connection、hybrid 或 standalone-runtime。
+```
+
+`embedded-adapter` 未显式指定 host mode 时保持兼容，默认 `embedded-webhook`。`embedded-long-connection` 表示由既有 Feishu SDK 长连接宿主或 sidecar/gateway 订阅新版 `card.action.trigger`，再调用生成的 `adapter/handlers.ts`；它不要求把 `PUBLIC_CALLBACK_BASE_URL` 或 `/webhook/card` 作为统一前置事实。
+
 ## 4. 核心产物定义
 
 项目核心产物应从“独立 bot-runtime”调整为“飞书适配包”。
@@ -261,6 +270,20 @@ cardActionHandler.onAction(async (ctx) => {
 
 Lark-deployer 可以生成一个完整可运行的包装器，但包装器必须调用 adapter，而不是内嵌业务逻辑。
 
+### 8.3 self_hosted_runtime（目标语言宿主模式）
+
+适合已有目标应用已部署、但还没有可运行飞书宿主的用户。该模式生成一个独立的目标语言宿主；当前 MVP 仅生成 Python 宿主，目录位于：
+
+```text
+generated/<target>-lark/feishu-host/
+```
+
+`self-hosted-runtime` 是一等产物模式，不替代 `embedded-adapter` 或 `standalone-runtime`。它默认使用 `host_receive_mode=embedded-long-connection`，通过飞书官方 Python SDK `lark-oapi` 的 WebSocket 长连接订阅 `card.action.trigger`，不把 `PUBLIC_CALLBACK_BASE_URL`、`/webhook/card` 或 `VERIFICATION_TOKEN` 作为强制前置。
+
+该宿主通过 `IMAGE_AGENT_BASE_URL` 调用目标应用 HTTP API，不 import 目标应用内部代码，不改写目标业务逻辑。配置全部来自 `.env`：`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_CONNECTION_MODE=websocket`、`IMAGE_AGENT_BASE_URL`、可选 `FEISHU_ALLOWED_USERS`、`IMAGE_AGENT_TIMEOUT_MS`、`TEST_CHAT_ID`。
+
+业务数据仍在生成期从 manifest 派生。起始卡完整渲染到 `feishu-host/spec/start_card.json`，Python 端只加载；字段恢复、端点映射和模板信息写入 `feishu-host/spec/*.json`。Python 端只最小组装运行时结果卡、失败卡、运行中卡和批量状态卡。
+
 ## 9. 契约模型方向
 
 当前 MVP-1A 的 `InteractionContract` 被写死为：
@@ -353,7 +376,8 @@ lark-deployer verify <generated-package> \
 从当前 bot-runtime 中抽出 adapter；
 保留 standalone runtime 作为包装器；
 新增 embedded adapter 输出与集成文档；
-用用户现有飞书 SDK 服务完成真实集成验证。
+新增 self-hosted-runtime Python 长连接宿主产物；
+用本地 contract/selfcheck 证明宿主可运行，再由人工完成真实飞书 Level 2。
 ```
 
 ## 13. 成功标准
@@ -362,9 +386,9 @@ Adapter-first 版本的完成标准：
 
 ```text
 给定一个已有服务 image-agent-web；
-给定一个已有飞书 SDK 服务；
-Lark-deployer 能生成一个 adapter 包；
-用户把 adapter 接入已有飞书服务；
+给定一个已有飞书 SDK 服务或需要生成自宿主长连接宿主；
+Lark-deployer 能生成一个 adapter 包或 self-hosted-runtime Python 宿主；
+用户把 adapter 接入已有飞书服务，或运行生成的 feishu-host；
 飞书卡片内可完成原 Web 前端的图片处理交互；
 Lark-deployer 不接管 image-agent-web 或飞书服务的运行生命周期；
 生成包包含权限说明、契约、集成说明和验收材料。
@@ -380,6 +404,7 @@ Lark-deployer 不接管 image-agent-web 或飞书服务的运行生命周期；
 4. **Host-owned runtime**：运行、部署、日志、SDK 初始化由宿主负责。
 5. **Manifest-driven**：生成代码必须由 manifest / interaction contract 驱动。
 6. **Reviewable permissions**：所有飞书权限必须说明原因与触发能力。
-7. **Verification over claims**：是否完成以真实飞书/宿主集成证据为准。
-8. **No premature channel expansion**：未出现明确需求前，不扩展 Slack/企业微信/群 @ / 私聊命令。
-9. **Small commits**：架构纠偏必须拆成可审查的小提交。
+7. **Local proof before Level 2**：self-hosted-runtime 必须先通过本地 contract test 与 `app.py --selfcheck`，真实飞书点击是人工 Level 2。
+8. **Verification over claims**：是否完成以本地可执行证据和真实飞书/宿主集成证据为准。
+9. **No premature channel expansion**：未出现明确需求前，不扩展 Slack/企业微信/群 @ / 私聊命令。
+10. **Small commits**：架构纠偏必须拆成可审查的小提交。
