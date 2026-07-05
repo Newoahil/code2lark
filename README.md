@@ -2,7 +2,7 @@
 
 Lark-deployer is a build-time generator for turning an existing service interaction flow into a Lark/Feishu adapter package.
 
-It does not own the target service lifecycle. It analyzes a target service, generates reviewable contracts, produces an embeddable `adapter/` as the core artifact, keeps `bot-runtime/` as an optional standalone reference host, and provides verification checks for FDE-style handoff.
+It does not own the target service lifecycle. It analyzes a target service, generates reviewable contracts, produces an embeddable `adapter/` as the core artifact, keeps `bot-runtime/` as an optional standalone reference host, can generate a Python `feishu-host/` self-hosted long-connection runtime, and provides verification checks for FDE-style handoff.
 
 ## MVP Scope
 
@@ -10,10 +10,10 @@ MVP-1A targets one real integration:
 
 - Target: `C:\works\image-agent-web`
 - Capabilities: `POST /api/generate`, `POST /api/iterate`, and `/api/batch` progress/download
-- Runtime mode: external target service
-- Done level: real Feishu development app verification
+- Runtime mode: external target service, with `embedded-adapter`, `standalone-runtime`, or `self-hosted-runtime` artifacts
+- Done level: local MVP proof is automated; real Feishu development app verification remains manual Level 2 evidence
 
-The generated `adapter/` maps Feishu card actions to `image-agent-web`, builds target-service requests, and returns card payloads plus audit events for a host service to persist. The generated `bot-runtime/` remains available as a standalone reference host: it receives Feishu card actions, calls `image-agent-web`, uploads the generated or iterated image when possible, and updates the card with success or failure. The start card includes a Feishu form built from discovered template fields plus `size` and optional `message`, so the operator can override parameters before submitting. It also includes a batch form that submits items JSON to `/api/batch`, returns a progress card, supports manual refresh through `/api/batch/{batch_id}/status`, and shows a `/api/batch/{batch_id}/download` link when completed images exist.
+The generated `adapter/` maps Feishu card actions to `image-agent-web`, builds target-service requests, and returns card payloads plus audit events for a host service to persist. The generated `bot-runtime/` remains available as a standalone reference host: it receives Feishu card actions, calls `image-agent-web`, uploads the generated or iterated image when possible, and updates the card with success or failure. The generated `self-hosted-runtime` emits `feishu-host/`, a Python `lark-oapi` WebSocket long-connection host that subscribes to `card.action.trigger` and calls `image-agent-web` over HTTP without importing or modifying the target service. The start card includes a Feishu form built from discovered template fields plus `size` and optional `message`, so the operator can override parameters before submitting. It also includes a batch form that submits items JSON to `/api/batch`, returns a progress card, supports manual refresh through `/api/batch/{batch_id}/status`, and shows a `/api/batch/{batch_id}/download` link when completed images exist.
 
 For slow target services, the generated runtime can set `CARD_ACTION_MODE=async`: it returns a running card immediately, then patches the original Feishu message with the final success or failure card after the target service completes.
 
@@ -35,6 +35,8 @@ node dist/index.js plan out\image-agent-web
 node dist/index.js context out\image-agent-web
 node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark
 node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark-embedded --mode embedded-adapter
+node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark-long --mode embedded-adapter --host-mode embedded-long-connection
+node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark-self-hosted --mode self-hosted-runtime
 node dist/index.js configure generated\image-agent-web-lark --strict --dry-run
 node dist/index.js configure generated\image-agent-web-lark --strict
 node dist/index.js status generated\image-agent-web-lark
@@ -42,6 +44,7 @@ node dist/index.js readiness generated\image-agent-web-lark
 node dist/index.js doctor generated\image-agent-web-lark
 node dist/index.js verify generated\image-agent-web-lark
 node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter --strict
+node dist/index.js verify generated\image-agent-web-lark-self-hosted --mode self-hosted-runtime --strict
 node dist/index.js evidence generated\image-agent-web-lark
 node dist/index.js handoff generated\image-agent-web-lark
 ```
@@ -54,6 +57,24 @@ For an existing Feishu SDK service, start with `generated\image-agent-web-lark\a
 node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter --strict
 node dist/index.js doctor generated\image-agent-web-lark --mode embedded-adapter
 ```
+
+`--mode` describes the generated artifact shape. `--host-mode` describes how Feishu reaches the host: `embedded-webhook` is the default for embedded packages, while `embedded-long-connection` is for a sidecar/gateway or existing SDK host that subscribes to `card.action.trigger` and calls `adapter/handlers.ts`. For `image-agent-web`, prefer this sidecar route before embedding Feishu SDK code into the FastAPI service itself.
+
+For the Python self-hosted long-connection runtime:
+
+```powershell
+node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark-self-hosted --mode self-hosted-runtime
+cd generated\image-agent-web-lark-self-hosted\feishu-host
+Copy-Item .env.example .env
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe local_contract_test.py
+.\.venv\Scripts\python.exe app.py --selfcheck
+cd ..
+node ..\..\dist\index.js verify . --mode self-hosted-runtime --strict
+```
+
+`self-hosted-runtime` defaults to `host_receive_mode=embedded-long-connection`. Its automated MVP proof is local: generated specs, Python compilation, `local_contract_test.py`, and `app.py --selfcheck`. It does not require `PUBLIC_CALLBACK_BASE_URL`, `/webhook/card`, or `VERIFICATION_TOKEN` unless the operator adds a webhook fallback. Real Feishu Level 2 for this mode means configuring the Feishu app for long connection, subscribing to `card.action.trigger`, running `feishu-host/app.py`, sending the start card, clicking it in Feishu, and recording evidence with `docs/self-hosted-runtime-level2-runbook.md` plus the package-local `level2_verification_record.md`.
 
 For the optional standalone reference host:
 
@@ -122,9 +143,9 @@ When Feishu credentials are filled and the bot has been added to the test chat, 
 node dist/index.js verify generated\image-agent-web-lark --runtime-url http://127.0.0.1:3978 --level2
 ```
 
-`--level2` implies `--simulate`, `--send-start-card`, and `--strict`. It also probes `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` with Feishu-style URL verification and signed card-action payloads before asking the operator to click the card. If `ENCRYPT_KEY` is set, `verify` sends encrypted URL verification payloads as well. The final human step is still clicking the card in Feishu and recording the result in the generated package's `level2_verification_record.md`, for example `generated/image-agent-web-lark/level2_verification_record.md`.
+`--level2` implies `--simulate`, `--send-start-card`, and `--strict`. In standalone-runtime and embedded-webhook modes it probes `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` with Feishu-style URL verification and signed card-action payloads before asking the operator to click the card. In embedded-long-connection mode, the host/gateway must instead provide Feishu SDK long-connection evidence for `card.action.trigger`. The final human step is still clicking the card in Feishu and recording the result in the generated package's `level2_verification_record.md`, for example `generated/image-agent-web-lark/level2_verification_record.md`.
 
-Real Level 2 expects `PUBLIC_CALLBACK_BASE_URL` to be a public HTTPS URL. `--allow-local-callback` exists only for automated local mock verification and should not be used as real Feishu evidence.
+Webhook and standalone Level 2 expect `PUBLIC_CALLBACK_BASE_URL` to be a public HTTPS URL. `--allow-local-callback` exists only for automated local mock verification and should not be used as real Feishu evidence.
 
 `--strict` exits non-zero on any WARN or FAIL check, which makes it suitable for handoff gates and real Level 2 preflight.
 
@@ -132,18 +153,18 @@ Real Level 2 expects `PUBLIC_CALLBACK_BASE_URL` to be a public HTTPS URL. `--all
 
 Before real Feishu verification, the operator must provide:
 
-- Running `image-agent-web` base URL reachable from the bot runtime.
+- Running `image-agent-web` base URL reachable from the selected host/runtime.
 - Feishu custom app `APP_ID` and `APP_SECRET`.
-- Card callback `VERIFICATION_TOKEN` and optional `ENCRYPT_KEY`.
+- Card callback `VERIFICATION_TOKEN` and optional `ENCRYPT_KEY` for webhook or standalone-runtime host modes; these are optional for embedded-long-connection and self-hosted-runtime unless webhook fallback is enabled.
 - Test chat ID where the bot can send messages.
-- Feishu permissions and callback configuration described in `permission_review.md`.
+- Feishu permissions plus callback or long-connection event configuration described in `permission_review.md` and the generated package docs.
 
 Runtime configuration is split by use:
 
-- Callback verification: `VERIFICATION_TOKEN`, plus `ENCRYPT_KEY` if encrypted callbacks are enabled.
+- Callback verification: `VERIFICATION_TOKEN`, plus `ENCRYPT_KEY` if encrypted callbacks are enabled; long-connection and self-hosted-runtime hosts use app credentials and `card.action.trigger` subscription evidence instead.
 - Sending the first test card: `APP_ID`, `APP_SECRET`, and `TEST_CHAT_ID`.
 - Uploading result images to Feishu: `APP_ID` and `APP_SECRET`.
-- Full Level 2 verification: all of the above, plus `PUBLIC_CALLBACK_BASE_URL` and a reachable target service.
+- Full Level 2 verification: all mode-specific Feishu setup plus a reachable target service; webhook and standalone modes also require `PUBLIC_CALLBACK_BASE_URL`.
 
 Use the context command to create a handoff template:
 
@@ -151,7 +172,7 @@ Use the context command to create a handoff template:
 node dist/index.js context out\image-agent-web
 ```
 
-It writes `feishu_context.template.json`, `feishu_context.template.md`, `feishu_context.request.md`, and `feishu_context.reply.template.json/md`. The request file is the shortest owner-facing note: send it to the Feishu app owner or FDE to confirm who can provide the app context, grant scopes, configure the card callback as `<PUBLIC_CALLBACK_BASE_URL>/webhook/card`, add the bot to a test chat, and expose the public callback URL. The reply template is a safe non-secret intake form for the owner's answer; run `init-local --reply` or copy it to `feishu_context.reply.local.json`/`.md` before adding internal contact, handoff, or blocked-by notes.
+It writes `feishu_context.template.json`, `feishu_context.template.md`, `feishu_context.request.md`, and `feishu_context.reply.template.json/md`. The request file is the shortest owner-facing note: send it to the Feishu app owner or FDE to confirm who can provide the app context, grant scopes, configure either the webhook callback or long-connection `card.action.trigger` subscription, add the bot to a test chat, and expose the required host path for the selected host mode. The reply template is a safe non-secret intake form for the owner's answer; run `init-local --reply` or copy it to `feishu_context.reply.local.json`/`.md` before adding internal contact, handoff, or blocked-by notes.
 
 The JSON template also contains `runtime_config`. Use it for handoff-time settings such as `CARD_ACTION_MODE`, `UPLOAD_IMAGE_TO_LARK`, `HOST`, `PORT`, `FEISHU_OPENAPI_BASE_URL`, `DEBUG_ACCESS_TOKEN`, `ALLOWED_OPERATOR_OPEN_IDS`, and `ALLOW_DEBUG_WITHOUT_FEISHU`; `configure` writes those values into `bot-runtime/.env`.
 When `PUBLIC_CALLBACK_BASE_URL` is set, debug endpoints are enabled, and no `DEBUG_ACCESS_TOKEN` is provided or preserved, `configure` generates a random token and writes it to `.env` without printing the value.
@@ -250,6 +271,30 @@ generated/image-agent-web-lark/
     src/
     package.json
     .env.example
+
+generated/image-agent-web-lark-self-hosted/
+  START_HERE.md
+  README.md
+  docs/
+    integration_guide.md
+  feishu-host/
+    .env.example
+    requirements.txt
+    config.py
+    cards.py
+    service_client.py
+    validation.py
+    handlers.py
+    app.py
+    local_contract_test.py
+    README.md
+    spec/
+      start_card.json
+      field_map.json
+      endpoints.json
+      preset.json
+      template_specs.json
+      field_specs.json
 ```
 
 ## Boundary
@@ -267,6 +312,8 @@ verification_report.md
 
 Warnings for missing Feishu credentials, missing `.env`, unavailable target service, or unchecked runtime health are expected until the external context is provided. `verification_report.md` includes a `Next Steps` section for the operator.
 
+For final `self-hosted-runtime` MVP proof, missing Python dependencies are not an acceptable green state. Install `feishu-host/requirements.txt` and run strict verify so the report includes passing Python contract and `app.py --selfcheck` checks.
+
 Runtime check failures include a short response-body summary when available. For example, a failed `/debug/start-card` check should show the missing Feishu send config or non-zero Feishu OpenAPI `code` directly in the report detail.
 
 ## Current MVP Evidence
@@ -275,6 +322,7 @@ The automated test suite now covers both levels that can be proven without real 
 
 - CLI smoke path: analyze -> plan -> context -> generate -> configure -> verify.
 - Embedded adapter package path: `generate` emits `adapter/` and `docs/integration_guide.md`; `verify --mode embedded-adapter --strict` validates the package without requiring `bot-runtime/.env` or runtime debug endpoints.
+- Self-hosted runtime package path: `generate --mode self-hosted-runtime` emits `feishu-host/`, manifest-derived specs, Python handlers/client/card rendering, `local_contract_test.py`, and `app.py --selfcheck`; `verify --mode self-hosted-runtime --strict` validates the package without requiring webhook callback configuration.
 - Local runtime e2e path: generate a runtime package, install/build it, start it, call `/debug/simulate-generate`, confirm the runtime calls an `image-agent-web`-compatible target and writes a passing simulation check.
 - Runtime callback path: `/webhook/card` answers URL verification challenges before full credentials are available.
 - Runtime public callback preflight path: `verify --level2` posts a URL verification challenge to `<PUBLIC_CALLBACK_BASE_URL>/webhook/card`, catching tunnel or reverse-proxy mistakes before the Feishu console is used.

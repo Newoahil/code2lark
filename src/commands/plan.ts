@@ -81,7 +81,7 @@ ${permissions.review_flags.map((item) => `- ${item}`).join("\n") || "- None"}
 export function buildDeploymentChecklist(
   service: ServiceManifest,
   permissions: RequiredPermissions,
-  integrationMode: "embedded-adapter" | "standalone-runtime" = "standalone-runtime",
+  integrationMode: "embedded-adapter" | "standalone-runtime" | "self-hosted-runtime" = "standalone-runtime",
 ): string {
   if (integrationMode === "embedded-adapter") {
     return `# Deployment Checklist
@@ -121,6 +121,38 @@ ${permissions.manual_steps.map((item) => `- [ ] ${item}`).join("\n")}
 - [ ] Batch submit and refresh call adapter/ and ${service.service.name} /api/batch endpoints.
 - [ ] Failure paths show readable error cards.
 - [ ] level2_verification_record.md contains the final operator, message id or screenshot, trace id, and completion decision.
+`;
+  }
+  if (integrationMode === "self-hosted-runtime") {
+    return `# Deployment Checklist
+
+## Target Service
+
+- [ ] Confirm ${service.service.name} is running outside Lark-deployer.
+- [ ] Confirm the generated Python host can reach ${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}.
+- [ ] Confirm GET /api/meta returns template metadata.
+
+## Python Feishu Host
+
+- [ ] Copy \`feishu-host/.env.example\` to \`feishu-host/.env\`.
+- [ ] Fill FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_CONNECTION_MODE=websocket, IMAGE_AGENT_BASE_URL, optional FEISHU_ALLOWED_USERS, IMAGE_AGENT_TIMEOUT_MS, and TEST_CHAT_ID.
+- [ ] Create a venv and run \`pip install -r feishu-host/requirements.txt\`.
+- [ ] Run \`python feishu-host/local_contract_test.py\`.
+- [ ] Run \`python feishu-host/app.py --selfcheck\`.
+- [ ] Run \`node ..\\..\\dist\\index.js verify . --mode self-hosted-runtime --strict\` or \`node $env:LARK_DEPLOYER_CLI verify . --mode self-hosted-runtime --strict\` from the generated package root.
+
+## Feishu/Lark App
+
+${permissions.manual_steps.map((item) => `- [ ] ${item}`).join("\n")}
+- [ ] Enable long connection and subscribe to card.action.trigger.
+- [ ] Add the bot to the test chat.
+- [ ] Use the manual Level 2 runbook for real Feishu clicks.
+
+## Done
+
+- [ ] Local contract test proves generate, iterate, batch submit, batch refresh, and failure/no-call paths.
+- [ ] app.py --selfcheck proves card.action.trigger wiring without live Feishu connection.
+- [ ] Real Feishu Level 2 evidence is recorded manually when available.
 `;
   }
   return `# Deployment Checklist

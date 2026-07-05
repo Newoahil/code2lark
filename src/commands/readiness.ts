@@ -30,6 +30,7 @@ export interface VerificationReport {
   status?: "pass" | "warn" | "fail";
   context?: {
     mode?: string;
+    hostReceiveMode?: string;
     runtimeUrl?: string;
     hostRuntimeUrl?: string;
     level2?: boolean;
@@ -143,6 +144,16 @@ const REQUIRED_VALUE_DEFS = [
   },
 ] as const;
 
+const SELF_HOSTED_REQUIRED_VALUE_DEFS = [
+  { key: "FEISHU_APP_ID", note: "Feishu custom app id for feishu-host/.env. Value is intentionally hidden in this status file." },
+  { key: "FEISHU_APP_SECRET", note: "Feishu custom app secret for feishu-host/.env. Value is intentionally hidden in this status file." },
+  { key: "FEISHU_CONNECTION_MODE", note: "Must be websocket for self-hosted-runtime." },
+  { key: "IMAGE_AGENT_BASE_URL", note: "Target service base URL reachable from feishu-host." },
+  { key: "FEISHU_ALLOWED_USERS", note: "Optional comma-separated Feishu operator open_id allowlist." },
+  { key: "IMAGE_AGENT_TIMEOUT_MS", note: "Target HTTP timeout in milliseconds." },
+  { key: "TEST_CHAT_ID", note: "Optional chat receive id for sending the start card during manual Level 2." },
+] as const;
+
 export async function readinessCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const packageArg = args[0];
   if (!packageArg) {
@@ -165,9 +176,10 @@ export function buildReadinessSummary(
   const manifestDir = path.join(packagePath, "manifest");
   const service = readJsonFile<ServiceManifest>(path.join(manifestDir, "service_manifest.json"));
   const permissions = readJsonFile<RequiredPermissions>(path.join(manifestDir, "required_permissions.json"));
-  const envPath = path.resolve(getStringOption(options, "env", path.join(packagePath, "bot-runtime", ".env")));
-  const env = readEnvFileIfExists(envPath);
   const { contextPath, context } = readContext(packagePath);
+  const selfHosted = context?.integration_mode === "self-hosted-runtime";
+  const envPath = path.resolve(getStringOption(options, "env", path.join(packagePath, selfHosted ? "feishu-host" : "bot-runtime", ".env")));
+  const env = readEnvFileIfExists(envPath);
   const contextRequestPath = path.join(packagePath, "feishu_context.request.md");
   const contextReply = buildContextReplyStatus(packagePath);
   const reportPath = path.join(packagePath, "verification_report.json");
@@ -177,7 +189,8 @@ export function buildReadinessSummary(
   const manualEvidence = buildManualEvidenceStatus(packagePath, context, level2Record);
   const completionDecision = parseCompletionDecision(level2Record);
 
-  const requiredValues = REQUIRED_VALUE_DEFS.map((item) => buildRequiredValueRow(item.key, item.note, env, context, service));
+  const requiredValueDefs = selfHosted ? SELF_HOSTED_REQUIRED_VALUE_DEFS : REQUIRED_VALUE_DEFS;
+  const requiredValues = requiredValueDefs.map((item) => buildRequiredValueRow(item.key, item.note, env, context, service));
   const runtimeRows = buildRuntimeRows(env, context);
   const reportCounts = countReportChecks(report);
   const securityWarnings = buildSecurityWarnings(env, context, service);
@@ -268,6 +281,21 @@ function buildRequiredValueRow(
   context: ContextTemplate | undefined,
   service: ServiceManifest,
 ): RequiredValueRow {
+  if (context?.integration_mode === "self-hosted-runtime" && (key === "FEISHU_ALLOWED_USERS" || key === "IMAGE_AGENT_TIMEOUT_MS" || key === "TEST_CHAT_ID")) {
+    const resolved = resolveRequiredValue(key, env, context, service);
+    return { key, status: resolved.value ? "provided" : "optional", source: resolved.source, note };
+  }
+  if (context?.host_receive_mode === "embedded-long-connection" && (key === "PUBLIC_CALLBACK_BASE_URL" || key === "VERIFICATION_TOKEN")) {
+    const resolved = resolveRequiredValue(key, env, context, service);
+    return {
+      key,
+      status: resolved.value ? "provided" : "optional",
+      source: resolved.source,
+      note: key === "PUBLIC_CALLBACK_BASE_URL"
+        ? "Optional for embedded-long-connection; required only for webhook or hybrid callback verification."
+        : "Optional for embedded-long-connection; Feishu SDK long connection uses app credentials rather than webhook token verification.",
+    };
+  }
   const resolved = resolveRequiredValue(key, env, context, service);
   return {
     key,
@@ -289,12 +317,17 @@ function resolveRequiredValue(
   const feishu = context?.feishu_app;
   const contextValueByKey: Record<string, string | undefined> = {
     APP_ID: feishu?.app_id,
+    FEISHU_APP_ID: feishu?.app_id,
     APP_SECRET: feishu?.app_secret,
+    FEISHU_APP_SECRET: feishu?.app_secret,
+    FEISHU_CONNECTION_MODE: context?.host_receive_mode === "embedded-long-connection" ? "websocket" : undefined,
     VERIFICATION_TOKEN: feishu?.verification_token,
     ENCRYPT_KEY: feishu?.encrypt_key,
     TEST_CHAT_ID: feishu?.test_chat_id,
     PUBLIC_CALLBACK_BASE_URL: feishu?.public_callback_base_url,
     IMAGE_AGENT_BASE_URL: context?.target_service.base_url,
+    FEISHU_ALLOWED_USERS: context?.runtime_config.allowed_operator_open_ids?.join(","),
+    IMAGE_AGENT_TIMEOUT_MS: context?.runtime_config.target_timeout_seconds ? String(context.runtime_config.target_timeout_seconds * 1000) : "120000",
   };
   const contextValue = configuredValue(contextValueByKey[key]);
   if (contextValue) return { value: contextValue, source: "context" };
@@ -309,6 +342,13 @@ function resolveRequiredValue(
 
 function buildRuntimeRows(env: Record<string, string>, context: ContextTemplate | undefined): RequiredValueRow[] {
   const rows: RequiredValueRow[] = [];
+  if (context?.integration_mode === "self-hosted-runtime") {
+    rows.push(buildRuntimeRow("FEISHU_CONNECTION_MODE", env.FEISHU_CONNECTION_MODE, "websocket", "Required by feishu-host long connection."));
+    rows.push(buildRuntimeRow("IMAGE_AGENT_TIMEOUT_MS", env.IMAGE_AGENT_TIMEOUT_MS, context?.runtime_config.target_timeout_seconds ? String(context.runtime_config.target_timeout_seconds * 1000) : "120000", "Target HTTP timeout for service_client.py."));
+    rows.push(buildOptionalRuntimeRow("FEISHU_ALLOWED_USERS", env.FEISHU_ALLOWED_USERS, operatorOpenIdStatus(context?.runtime_config.allowed_operator_open_ids), "Optional operator open_id allowlist for card actions."));
+    rows.push(buildOptionalRuntimeRow("TEST_CHAT_ID", env.TEST_CHAT_ID, context?.feishu_app.test_chat_id || "", "Optional chat id for manual start-card send."));
+    return rows;
+  }
   rows.push(buildRuntimeRow("CARD_ACTION_MODE", env.CARD_ACTION_MODE, context?.runtime_config.card_action_mode || "sync", "sync waits for target completion; async returns a running card and patches later."));
   rows.push(buildRuntimeRow("UPLOAD_IMAGE_TO_LARK", env.UPLOAD_IMAGE_TO_LARK, boolToEnv(context?.runtime_config.upload_image_to_lark, "1"), "1 uploads result images to Feishu when API credentials and scope are available."));
   rows.push(buildRuntimeRow("IMAGE_AGENT_TIMEOUT_MS", env.IMAGE_AGENT_TIMEOUT_MS, context?.runtime_config.target_timeout_seconds ? String(context.runtime_config.target_timeout_seconds * 1000) : "120000", "Target service call and image download timeout."));
@@ -597,20 +637,21 @@ function buildSecurityWarnings(
   context: ContextTemplate | undefined,
   service: ServiceManifest,
 ): string[] {
+  const selfHosted = context?.integration_mode === "self-hosted-runtime";
   const publicCallback = configuredValue(env.PUBLIC_CALLBACK_BASE_URL) || configuredValue(context?.feishu_app.public_callback_base_url);
   const debugAccessToken = configuredValue(env.DEBUG_ACCESS_TOKEN) || configuredValue(context?.runtime_config.debug_access_token);
   const debugEnabled = env.ALLOW_DEBUG_WITHOUT_FEISHU
     ? envFlagValue(env.ALLOW_DEBUG_WITHOUT_FEISHU)
     : context?.runtime_config.allow_debug_without_feishu !== false;
   const warnings: string[] = [];
-  warnings.push(...publicCallbackWarnings(publicCallback));
+  if (!selfHosted) warnings.push(...publicCallbackWarnings(publicCallback));
   for (const finding of service.source_scan.secret_findings || []) {
     warnings.push(`Target source scan found a potential secret literal in ${finding.file}:${finding.line} (${finding.kind}). ${finding.action} No secret value was copied.`);
   }
 
-  if (debugEnabled && !debugAccessToken && publicCallback) {
+  if (!selfHosted && debugEnabled && !debugAccessToken && publicCallback) {
     warnings.push("PUBLIC_CALLBACK_BASE_URL is set while /debug/* endpoints are enabled without DEBUG_ACCESS_TOKEN. Set a random DEBUG_ACCESS_TOKEN before exposing this runtime publicly.");
-  } else if (debugEnabled && !debugAccessToken) {
+  } else if (!selfHosted && debugEnabled && !debugAccessToken && context?.host_receive_mode !== "embedded-long-connection") {
     warnings.push("Set DEBUG_ACCESS_TOKEN before publishing the runtime behind a public callback URL.");
   }
 
@@ -628,9 +669,16 @@ function determineState(
   completionDecision: CompletionDecision,
   manualEvidence: ManualEvidenceStatus,
 ): ReadinessState {
+  const selfHosted = report?.context?.mode === "self-hosted-runtime";
   if (requiredValues.some((item) => item.status === "missing")) return "external_context_missing";
   if (!report) return "runtime_preflight_needed";
   if (report.status === "fail") return "verification_failing";
+  if (selfHosted) {
+    if (report.status === "warn") return "level2_preflight_has_warnings";
+    if (manualEvidence.parseError) return "manual_evidence_invalid";
+    if (!completionDecision.complete) return "manual_click_evidence_needed";
+    return "handoff_ready";
+  }
   if (report.context?.mode === "embedded-adapter") {
     if (!report.context.hostRuntimeUrl || report.context.simulate !== true) return "runtime_preflight_needed";
   } else if (!report.context?.runtimeUrl || report.context.simulate !== true) return "runtime_preflight_needed";
@@ -660,6 +708,15 @@ function buildNextActions(
   const simulateCommand = findPackageCommand(packagePath, context, " --simulate") || "node ..\\..\\dist\\index.js verify . --runtime-url http://127.0.0.1:3978 --simulate";
   const evidenceCommand = findPackageCommand(packagePath, context, " evidence ") || "node ..\\..\\dist\\index.js evidence .";
   const embedded = contextUsesEmbeddedAdapter(context);
+  const selfHosted = context?.integration_mode === "self-hosted-runtime";
+  const selfHostedSetupActions = [
+    "Copy feishu-host/.env.example to feishu-host/.env and fill FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_CONNECTION_MODE=websocket, IMAGE_AGENT_BASE_URL, and optional FEISHU_ALLOWED_USERS/IMAGE_AGENT_TIMEOUT_MS/TEST_CHAT_ID.",
+    "Run python -m pip install -r feishu-host/requirements.txt.",
+    "Run python feishu-host/local_contract_test.py.",
+    "Run python feishu-host/app.py --selfcheck.",
+    "Enable Feishu long connection and subscribe the app to card.action.trigger.",
+    "Run verify --mode self-hosted-runtime --strict.",
+  ];
   const level2Command = embedded
     ? simulateCommand
     : findPackageCommand(packagePath, context, " --level2") || "node ..\\..\\dist\\index.js verify . --runtime-url http://127.0.0.1:3978 --level2";
@@ -684,26 +741,29 @@ function buildNextActions(
       return [
         ...contextReplyActions,
         ...manualEvidenceParseActions,
+        ...(selfHosted ? ["Prepare feishu-host/.env from feishu-host/.env.example, then run the generated Python local contract and selfcheck after the Feishu app owner confirms credentials."] : []),
         contextReply.localJsonPresent
           ? `Use the recorded non-secret owner reply to fill feishu_context.local.json, then validate the missing values: ${missingValues.join(", ") || "none"}.`
           : `Send feishu_context.request.md to the Feishu app owner/FDE to confirm who can provide the missing values: ${missingValues.join(", ") || "none"}. Request file: ${contextRequestPath}`,
         ...targetPreflightActions,
-        embedded
+        selfHosted
+          ? "After confirmation, fill feishu-host/.env through a secure channel and run the Python local contract and selfcheck before real Feishu Level 2."
+          : embedded
           ? "After confirmation, initialize local-only context files, then mount the adapter in the existing Feishu SDK host with its secret/config system."
           : "After confirmation, initialize local-only context files, fill secrets through a secure channel, then run configure --strict --dry-run before writing bot-runtime/.env.",
-        initContextCommand,
-        configureDryRunCommand,
-        ...(embedded ? [] : ["If configure_report.md shows no missing required values, run configure --strict to write bot-runtime/.env.", configureCommand]),
+        ...(selfHosted ? selfHostedSetupActions : [initContextCommand, configureDryRunCommand, ...(embedded ? [] : ["If configure_report.md shows no missing required values, run configure --strict to write bot-runtime/.env.", configureCommand])]),
       ];
     case "runtime_preflight_needed":
       return [
         ...contextReplyActions,
         ...manualEvidenceParseActions,
         ...targetPreflightActions,
-        embedded
+        selfHosted
+          ? "Run the generated Python local contract, app selfcheck, and self-hosted verify strict before manual Feishu Level 2."
+          : embedded
           ? "Start the externally managed target service and existing Feishu SDK host, then run embedded host simulation verification."
           : "Start the externally managed target service and generated bot runtime, then run local simulation verification.",
-        simulateCommand,
+        ...(selfHosted ? selfHostedSetupActions : [simulateCommand]),
       ];
     case "verification_failing":
       return [
@@ -718,8 +778,8 @@ function buildNextActions(
         ...contextReplyActions,
         ...manualEvidenceParseActions,
         ...targetPreflightActions,
-        embedded ? "Run embedded host verification with a public callback URL and Feishu test chat evidence path." : "Run real Level 2 preflight with a public callback URL and Feishu test chat.",
-        level2Command,
+        selfHosted ? "Use feishu-host long connection with card.action.trigger for manual Feishu Level 2; no webhook/public callback is required." : embedded ? "Run embedded host verification with a public callback URL and Feishu test chat evidence path." : "Run real Level 2 preflight with a public callback URL and Feishu test chat.",
+        ...(selfHosted ? ["Run verify --mode self-hosted-runtime --strict after any package regeneration."] : [level2Command]),
       ];
     case "level2_preflight_has_warnings":
       return [

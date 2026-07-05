@@ -9,6 +9,7 @@ import { readJsonFile, writeJson, writeText } from "../fs-utils.js";
 import { getJsonWithTimeout, normalizeBaseUrl, postJsonWithTimeout } from "../http-utils.js";
 import { configuredValue } from "../placeholder-utils.js";
 import { buildFormFieldMaps, formFieldName } from "../field-mapping.js";
+import { hostModeUsesLongConnection, hostModeUsesWebhook, normalizeHostReceiveMode, type HostReceiveMode, type IntegrationMode } from "../host-mode.js";
 import type { ProbeResult } from "../http-utils.js";
 import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
 import { assessPublicCallbackBaseUrl } from "../url-validation.js";
@@ -22,11 +23,13 @@ interface CheckResult {
 export async function verifyCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const packageArg = args[0];
   if (!packageArg) {
-    throw new Error("Usage: lark-deployer verify <generated-package-or-analysis-workspace> [--env <file>] [--runtime-url <url>] [--host-runtime-url <url>] [--simulate] [--send-start-card] [--level2] [--strict] [--allow-local-callback]");
+    throw new Error("Usage: lark-deployer verify <generated-package-or-analysis-workspace> [--env <file>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime] [--runtime-url <url>] [--host-runtime-url <url>] [--simulate] [--send-start-card] [--level2] [--strict] [--allow-local-callback]");
   }
 
   const packagePath = path.resolve(packageArg);
   const mode = getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime")));
+  const integrationMode = normalizeVerifyIntegrationMode(mode);
+  const hostReceiveMode = normalizeHostReceiveMode(getStringOption(options, "host-mode", getStringOption(options, "hostMode", "")), integrationMode);
   const level2 = hasOption(options, "level2");
   const strict = hasOption(options, "strict") || level2;
   const envPath = getStringOption(options, "env", path.join(packagePath, "bot-runtime", ".env"));
@@ -66,18 +69,42 @@ export async function verifyCommand(args: string[], options: Record<string, stri
 
   if (mode === "embedded-adapter" || mode === "embedded") {
     checks.push(...buildEmbeddedAdapterChecks(packagePath, interactions, permissions));
-    checks.push(...await buildEmbeddedHostValidationChecks({ hostRuntimeUrl, simulate, sendStartCard, level2 }));
+    checks.push(...await buildEmbeddedHostValidationChecks({ hostRuntimeUrl, hostReceiveMode, simulate, sendStartCard, level2 }));
     printChecks(checks);
     writeReports(reportDir, checks, {
       packagePath,
       envPath,
       runtimeUrl,
       hostRuntimeUrl,
+      hostReceiveMode,
       simulate,
       sendStartCard,
       level2,
       targetBaseUrl: "",
       mode: "embedded-adapter",
+    });
+    const failed = checks.some((check) => check.status === "fail");
+    const warned = checks.some((check) => check.status === "warn");
+    if (failed || (strict && warned)) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (integrationMode === "self-hosted-runtime") {
+    checks.push(...buildSelfHostedRuntimeChecks(packagePath));
+    printChecks(checks);
+    writeReports(reportDir, checks, {
+      packagePath,
+      envPath: path.join(packagePath, "feishu-host", ".env"),
+      runtimeUrl: "",
+      hostRuntimeUrl,
+      hostReceiveMode,
+      simulate: false,
+      sendStartCard: false,
+      level2,
+      targetBaseUrl: "",
+      mode: "self-hosted-runtime",
     });
     const failed = checks.some((check) => check.status === "fail");
     const warned = checks.some((check) => check.status === "warn");
@@ -466,6 +493,14 @@ export async function verifyCommand(args: string[], options: Record<string, stri
   }
 }
 
+function normalizeVerifyIntegrationMode(value: string): IntegrationMode {
+  const normalized = value.trim() || "standalone-runtime";
+  if (normalized === "embedded" || normalized === "embedded-adapter") return "embedded-adapter";
+  if (normalized === "standalone" || normalized === "standalone-runtime") return "standalone-runtime";
+  if (normalized === "self-hosted" || normalized === "self-hosted-runtime") return "self-hosted-runtime";
+  throw new Error('--mode must be "embedded-adapter", "standalone-runtime", or "self-hosted-runtime".');
+}
+
 function checkFile(name: string, filePath: string): CheckResult {
   return fs.existsSync(filePath)
     ? { name, status: "pass", detail: filePath }
@@ -503,6 +538,194 @@ function buildEmbeddedAdapterChecks(packagePath: string, interactions: Interacti
   checks.push(checkAdapterTypeScriptCompile(packagePath));
   checks.push(...executeEmbeddedAdapterSmoke(packagePath));
   return checks;
+}
+
+function buildSelfHostedRuntimeChecks(packagePath: string): CheckResult[] {
+  const checks: CheckResult[] = [];
+  const feishuHostDir = path.join(packagePath, "feishu-host");
+  const specDir = path.join(feishuHostDir, "spec");
+  const summaryPath = path.join(packagePath, "generation_summary.json");
+  checks.push(checkFile("self-hosted:feishu-host", feishuHostDir));
+  checks.push(checkFile("self-hosted:integration-guide", path.join(packagePath, "docs", "integration_guide.md")));
+  for (const file of [
+    ".env.example",
+    "requirements.txt",
+    "config.py",
+    "cards.py",
+    "service_client.py",
+    "validation.py",
+    "handlers.py",
+    "app.py",
+    "local_contract_test.py",
+    "README.md",
+  ]) {
+    checks.push(checkFile(`self-hosted:${file}`, path.join(feishuHostDir, file)));
+  }
+  const specNames = ["start_card.json", "field_map.json", "endpoints.json", "preset.json", "template_specs.json", "field_specs.json"];
+  for (const file of specNames) {
+    checks.push(checkFile(`self-hosted:spec:${file}`, path.join(specDir, file)));
+  }
+
+  const summary = readJsonCheck<Record<string, unknown>>(summaryPath, "self-hosted:summary:parse", checks);
+  if (summary) {
+    checks.push({
+      name: "self-hosted:summary:integration-mode",
+      status: summary.integration_mode === "self-hosted-runtime" ? "pass" : "fail",
+      detail: `generation_summary.json integration_mode=${String(summary.integration_mode)}.`,
+    });
+    checks.push({
+      name: "self-hosted:summary:host-receive-mode",
+      status: summary.host_receive_mode === "embedded-long-connection" ? "pass" : "fail",
+      detail: `generation_summary.json host_receive_mode=${String(summary.host_receive_mode)}.`,
+    });
+  }
+
+  const specs: Record<string, unknown> = {};
+  for (const file of specNames) {
+    const parsed = readJsonCheck<unknown>(path.join(specDir, file), `self-hosted:spec:${file}:parse`, checks);
+    if (parsed !== undefined) specs[file] = parsed;
+  }
+  checks.push(checkSelfHostedEnvExample(path.join(feishuHostDir, ".env.example")));
+  checks.push(checkSelfHostedEndpoints(specs["endpoints.json"]));
+  checks.push(checkSelfHostedStartCard(specs["start_card.json"]));
+  checks.push(checkSelfHostedFieldMap(specs["field_map.json"]));
+  checks.push(...runSelfHostedPythonChecks(feishuHostDir));
+  return checks;
+}
+
+function readJsonCheck<T>(filePath: string, name: string, checks: CheckResult[]): T | undefined {
+  try {
+    const parsed = readJsonFile<T>(filePath);
+    checks.push({ name, status: "pass", detail: `${filePath} parsed as JSON.` });
+    return parsed;
+  } catch (error) {
+    checks.push({ name, status: "fail", detail: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  }
+}
+
+function checkSelfHostedEnvExample(envExamplePath: string): CheckResult {
+  const source = fs.existsSync(envExamplePath) ? fs.readFileSync(envExamplePath, "utf8") : "";
+  const required = [
+    "FEISHU_APP_ID",
+    "FEISHU_APP_SECRET",
+    "FEISHU_CONNECTION_MODE=websocket",
+    "IMAGE_AGENT_BASE_URL",
+    "FEISHU_ALLOWED_USERS",
+    "IMAGE_AGENT_TIMEOUT_MS",
+    "TEST_CHAT_ID",
+  ];
+  const missing = required.filter((key) => !new RegExp(`^${escapeRegExp(key)}`, "m").test(source));
+  return {
+    name: "self-hosted:env-example",
+    status: missing.length ? "fail" : "pass",
+    detail: missing.length ? `.env.example missing keys: ${missing.join(", ")}.` : ".env.example contains locked self-hosted env keys.",
+  };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function checkSelfHostedEndpoints(value: unknown): CheckResult {
+  const actions = isRecord(value) && isRecord(value.actions) ? value.actions : {};
+  const required = ["image.generate.submit", "image.iterate.submit", "image.batch.submit", "image.batch.refresh"];
+  const missing = required.filter((action) => !isRecord(actions[action]));
+  const supporting = isRecord(value) && isRecord(value.supporting_endpoints) ? value.supporting_endpoints : {};
+  if (!missing.length && isRecord(supporting.batch_download)) {
+    return { name: "self-hosted:endpoints", status: "pass", detail: "endpoints.json covers four card actions and batch_download." };
+  }
+  return {
+    name: "self-hosted:endpoints",
+    status: "fail",
+    detail: `endpoints.json missing actions/supporting endpoints: ${[...missing, ...(!isRecord(supporting.batch_download) ? ["batch_download"] : [])].join(", ")}.`,
+  };
+}
+
+function checkSelfHostedStartCard(value: unknown): CheckResult {
+  const actions = collectCardActionValues(value);
+  const missing = ["image.generate.submit", "image.batch.submit"].filter((action) => !actions.includes(action));
+  return {
+    name: "self-hosted:start-card-actions",
+    status: missing.length ? "fail" : "pass",
+    detail: missing.length ? `start_card.json missing actions: ${missing.join(", ")}.` : "start_card.json contains generate and batch submit actions.",
+  };
+}
+
+function checkSelfHostedFieldMap(value: unknown): CheckResult {
+  const ok = isRecord(value) && isRecord(value.templateKeyToFormField) && isRecord(value.formFieldToTemplateKey);
+  return {
+    name: "self-hosted:field-map",
+    status: ok ? "pass" : "fail",
+    detail: ok ? "field_map.json contains templateKeyToFormField and formFieldToTemplateKey." : "field_map.json is missing bidirectional mapping objects.",
+  };
+}
+
+function collectCardActionValues(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  const current = isRecord(record.value) && typeof record.value.action === "string" ? [record.value.action] : [];
+  const children = Array.isArray(value) ? value : Object.values(record);
+  return current.concat(children.flatMap(collectCardActionValues));
+}
+
+function runSelfHostedPythonChecks(feishuHostDir: string): CheckResult[] {
+  const checks: CheckResult[] = [];
+  const python = findPythonCommand();
+  if (!python) {
+    checks.push({ name: "self-hosted:python", status: "warn", detail: "No runnable Python command found; py_compile, local contract, and selfcheck were not run." });
+    return checks;
+  }
+  checks.push({ name: "self-hosted:python", status: "pass", detail: `Using Python command: ${python}.` });
+  const pyFiles = ["config.py", "cards.py", "service_client.py", "validation.py", "handlers.py", "app.py", "local_contract_test.py"].map((file) => path.join(feishuHostDir, file));
+  checks.push(runCommandCheck("self-hosted:python:py_compile", python, ["-m", "py_compile", ...pyFiles], feishuHostDir, "Generated Python files compile."));
+  if (!pythonCanImport(python, "requests", feishuHostDir)) {
+    checks.push({ name: "self-hosted:python:requests", status: "warn", detail: "Python cannot import requests; local_contract_test.py was not run. Install feishu-host/requirements.txt." });
+  } else {
+    checks.push({ name: "self-hosted:python:requests", status: "pass", detail: "Python can import requests." });
+    checks.push(runCommandCheck("self-hosted:python:local-contract", python, [path.join(feishuHostDir, "local_contract_test.py")], feishuHostDir, "local_contract_test.py passed."));
+  }
+  if (!pythonCanImport(python, "lark_oapi", feishuHostDir)) {
+    checks.push({ name: "self-hosted:python:lark-oapi", status: "warn", detail: "Python cannot import lark_oapi; app.py --selfcheck was not run. Install feishu-host/requirements.txt." });
+  } else {
+    checks.push({ name: "self-hosted:python:lark-oapi", status: "pass", detail: "Python can import lark_oapi." });
+    checks.push(runCommandCheck("self-hosted:python:selfcheck", python, [path.join(feishuHostDir, "app.py"), "--selfcheck"], feishuHostDir, "app.py --selfcheck passed."));
+  }
+  return checks;
+}
+
+function findPythonCommand(): string {
+  for (const command of ["python", "py"]) {
+    try {
+      execFileSync(command, ["--version"], { stdio: "pipe" });
+      return command;
+    } catch {
+      // try next
+    }
+  }
+  return "";
+}
+
+function pythonCanImport(python: string, moduleName: string, cwd: string): boolean {
+  try {
+    execFileSync(python, ["-c", `import ${moduleName}`], { cwd, stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runCommandCheck(name: string, command: string, args: string[], cwd: string, passDetail: string): CheckResult {
+  try {
+    const output = execFileSync(command, args, { cwd, encoding: "utf8", stdio: "pipe" }).trim();
+    return { name, status: "pass", detail: output ? `${passDetail} Output: ${output}` : passDetail };
+  } catch (error) {
+    const detailParts: string[] = [];
+    if (error && typeof error === "object" && "stdout" in error) detailParts.push(String((error as { stdout?: Buffer | string }).stdout || "").trim());
+    if (error && typeof error === "object" && "stderr" in error) detailParts.push(String((error as { stderr?: Buffer | string }).stderr || "").trim());
+    if (error instanceof Error) detailParts.push(error.message);
+    return { name, status: "fail", detail: detailParts.filter(Boolean).join("\n") || `${command} ${args.join(" ")} failed.` };
+  }
 }
 
 function checkAdapterStartCardBuilder(packagePath: string): CheckResult {
@@ -618,6 +841,7 @@ function checkRequiredPermissionsMatchInteractions(interactions: InteractionCont
 
 async function buildEmbeddedHostValidationChecks(context: {
   hostRuntimeUrl: string;
+  hostReceiveMode: HostReceiveMode;
   simulate: boolean;
   sendStartCard: boolean;
   level2: boolean;
@@ -628,7 +852,7 @@ async function buildEmbeddedHostValidationChecks(context: {
       checks.push({
         name: "embedded:host-runtime-url",
         status: "warn",
-        detail: "Provide --host-runtime-url to run embedded host health and callback probes; package validation still does not require a generated bot-runtime.",
+        detail: `Provide --host-runtime-url to run embedded host health${hostModeUsesWebhook(context.hostReceiveMode) ? " and callback" : ""} probes; package validation still does not require a generated bot-runtime.`,
       });
     }
     return checks;
@@ -643,19 +867,29 @@ async function buildEmbeddedHostValidationChecks(context: {
       : formatProbeDetail(healthProbe),
   });
 
-  const challenge = "lark-deployer-embedded-host-challenge";
-  const callbackProbe = await postJsonWithTimeout(
-    `${context.hostRuntimeUrl}/webhook/card`,
-    { type: "url_verification", challenge },
-    3000,
-  );
-  checks.push({
-    name: "embedded:host:/webhook/card:challenge",
-    status: isExpectedChallenge(callbackProbe.data, challenge) ? "pass" : "fail",
-    detail: isExpectedChallenge(callbackProbe.data, challenge)
-      ? "Embedded host answered a Feishu-style URL verification challenge."
-      : formatProbeDetail(callbackProbe),
-  });
+  if (hostModeUsesWebhook(context.hostReceiveMode)) {
+    const challenge = "lark-deployer-embedded-host-challenge";
+    const callbackProbe = await postJsonWithTimeout(
+      `${context.hostRuntimeUrl}/webhook/card`,
+      { type: "url_verification", challenge },
+      3000,
+    );
+    checks.push({
+      name: "embedded:host:/webhook/card:challenge",
+      status: isExpectedChallenge(callbackProbe.data, challenge) ? "pass" : "fail",
+      detail: isExpectedChallenge(callbackProbe.data, challenge)
+        ? "Embedded host answered a Feishu-style URL verification challenge."
+        : formatProbeDetail(callbackProbe),
+    });
+  }
+
+  if (hostModeUsesLongConnection(context.hostReceiveMode)) {
+    checks.push({
+      name: "embedded:host:card.action.trigger",
+      status: "warn",
+      detail: "Confirm the Feishu SDK long-connection host is online, subscribed to card.action.trigger, and routes events into adapter/handlers.ts. This evidence is host-owned and cannot be proven by a webhook challenge.",
+    });
+  }
 
   if (context.simulate) {
     const debugProbe = await postJsonWithTimeout(
@@ -676,14 +910,16 @@ async function buildEmbeddedHostValidationChecks(context: {
     checks.push({
       name: "embedded:host:start-card",
       status: "warn",
-      detail: "Embedded adapter mode cannot know the existing host's send-card endpoint. Send the first card from the existing Feishu SDK service and record evidence.",
+      detail: `Embedded adapter mode cannot know the existing host's send-card endpoint. Send the first card from the existing Feishu SDK service (${context.hostReceiveMode}) and record evidence.`,
     });
   }
   if (context.level2) {
     checks.push({
       name: "embedded:level2",
       status: "warn",
-      detail: "Real Level 2 for embedded adapter mode requires the existing Feishu SDK host, public callback, target reachability, and manual Feishu evidence.",
+      detail: context.hostReceiveMode === "embedded-long-connection"
+        ? "Real Level 2 for embedded-long-connection requires the existing Feishu SDK long-connection host, target reachability, card.action.trigger evidence, and manual Feishu evidence."
+        : "Real Level 2 for embedded adapter mode requires the existing Feishu SDK host, public callback, target reachability, and manual Feishu evidence.",
     });
   }
   return checks;
@@ -1011,6 +1247,7 @@ function writeReports(
     envPath: string;
     runtimeUrl: string;
     hostRuntimeUrl?: string;
+    hostReceiveMode?: HostReceiveMode;
     simulate: boolean;
     sendStartCard: boolean;
     level2: boolean;
@@ -1234,6 +1471,7 @@ function buildMarkdownReport(summary: {
     envPath: string;
     runtimeUrl: string;
     hostRuntimeUrl?: string;
+    hostReceiveMode?: HostReceiveMode;
     simulate: boolean;
     sendStartCard: boolean;
       level2: boolean;
@@ -1258,6 +1496,7 @@ function buildMarkdownReport(summary: {
 - Target base URL: ${summary.context.targetBaseUrl || "not provided"}
 ${runtimeLine}
 - Integration mode: ${summary.context.mode || "standalone-runtime"}
+- Host receive mode: ${summary.context.hostReceiveMode || "standalone-runtime"}
 - Simulation requested: ${summary.context.simulate ? "yes" : "no"}
 - Send start card requested: ${summary.context.sendStartCard ? "yes" : "no"}
 - Level 2 mode: ${summary.context.level2 ? "yes" : "no"}
@@ -1293,6 +1532,7 @@ function buildNextSteps(
     packagePath: string;
     level2: boolean;
     mode?: string;
+    hostReceiveMode?: HostReceiveMode;
   },
 ): string {
   const steps: string[] = [];
@@ -1303,7 +1543,11 @@ function buildNextSteps(
   if (!embedded && ["env:APP_ID", "env:APP_SECRET", "env:VERIFICATION_TOKEN", "env:TEST_CHAT_ID"].some((name) => byName.get(name)?.status !== "pass")) {
     steps.push("Fill Feishu app credentials and test chat values in `bot-runtime/.env`, then rerun `verify`.");
   }
-  if (byName.get("env:PUBLIC_CALLBACK_BASE_URL")?.status !== "pass") {
+  const hostReceiveMode = context.mode === "embedded-adapter" ? context.hostReceiveMode || "embedded-webhook" : "standalone-runtime";
+  const usesWebhook = hostModeUsesWebhook(hostReceiveMode);
+  const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
+
+  if (usesWebhook && byName.get("env:PUBLIC_CALLBACK_BASE_URL")?.status !== "pass") {
     steps.push("Provide `PUBLIC_CALLBACK_BASE_URL` and configure Feishu card callback to `<PUBLIC_CALLBACK_BASE_URL>/webhook/card`.");
   }
   if (byName.get("callback:/webhook/card:public-challenge")?.status === "fail") {
@@ -1332,7 +1576,11 @@ function buildNextSteps(
     steps.push("Start the generated `bot-runtime` and rerun `verify --runtime-url <runtime_url>`.");
   }
   if (embedded && byName.get("embedded:host-runtime-url")?.status === "warn") {
-    steps.push("Mount the adapter in the existing Feishu SDK host, then rerun `verify --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate`.");
+    const hostModeOption = hostReceiveMode === "embedded-webhook" ? "" : ` --host-mode ${hostReceiveMode}`;
+    steps.push(`Mount the adapter in the existing Feishu SDK host, then rerun \`verify --mode embedded-adapter${hostModeOption} --host-runtime-url <host_runtime_url> --simulate\`.`);
+  }
+  if (usesLongConnection && byName.get("embedded:host:card.action.trigger")?.status === "warn") {
+    steps.push("Record host-owned long-connection evidence: SDK connection online, card.action.trigger subscription active, and events routed into adapter/handlers.ts.");
   }
   if (checks.some((check) => check.name.startsWith("runtime:/health:") && check.status === "fail")) {
     steps.push("Compare `bot-runtime/.env` with the values reported by `/health`, then restart the generated runtime after any `.env` change.");

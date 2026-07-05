@@ -4,6 +4,7 @@ import { getStringOption, hasOption } from "../args.js";
 import { buildContextMarkdown, buildContextReplyMarkdown, buildContextReplyTemplate, buildContextRequestMarkdown, buildContextTemplate, type ContextTemplate } from "./context.js";
 import { copyFileIfExists, ensureDir, readJsonFile, slugify, writeJson, writeText } from "../fs-utils.js";
 import { buildFormFieldMaps, formFieldName } from "../field-mapping.js";
+import { hostModeUsesLongConnection, hostModeUsesWebhook, normalizeHostReceiveMode, type HostReceiveMode, type IntegrationMode } from "../host-mode.js";
 import type { CapabilityMap, RequiredPermissions, ServiceManifest } from "../types.js";
 import { buildDeploymentChecklist } from "./plan.js";
 
@@ -16,8 +17,6 @@ interface ImageAgentMeta {
     fields?: Array<{ key: string; label?: string; required?: boolean; placeholder?: string }>;
   }>;
 }
-
-type IntegrationMode = "embedded-adapter" | "standalone-runtime";
 
 export async function generateCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const workspaceArg = args[0];
@@ -38,14 +37,19 @@ export async function generateCommand(args: string[], options: Record<string, st
   const defaultOut = path.resolve("generated", `${slugify(service.service.name)}-lark`);
   const outDir = path.resolve(getStringOption(options, "out", defaultOut));
   const integrationMode = normalizeIntegrationMode(getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime"))));
+  const hostReceiveMode = normalizeHostReceiveMode(getStringOption(options, "host-mode", getStringOption(options, "hostMode", "")), integrationMode);
   const adapterDir = path.join(outDir, "adapter");
   const docsDir = path.join(outDir, "docs");
+  const sidecarDir = path.join(outDir, "sidecar-long-connection");
   const runtimeDir = path.join(outDir, "bot-runtime");
+  const feishuHostDir = path.join(outDir, "feishu-host");
 
   ensureDir(outDir);
   ensureDir(adapterDir);
   ensureDir(docsDir);
+  if (integrationMode === "embedded-adapter" && (hostReceiveMode === "embedded-long-connection" || hostReceiveMode === "hybrid")) ensureDir(sidecarDir);
   if (integrationMode === "standalone-runtime") ensureDir(runtimeDir);
+  if (integrationMode === "self-hosted-runtime") ensureDir(feishuHostDir);
   ensureDir(path.join(outDir, "manifest"));
 
   copyManifestArtifacts(workspace, outDir);
@@ -55,20 +59,23 @@ export async function generateCommand(args: string[], options: Record<string, st
     source_workspace: workspace,
     service: service.service.name,
     integration_mode: integrationMode,
-    core_artifact: "adapter",
-    runtime: integrationMode === "standalone-runtime" ? "node-lark-bot-runtime" : "none",
+    host_receive_mode: hostReceiveMode,
+    core_artifact: integrationMode === "self-hosted-runtime" ? "feishu-host" : "adapter",
+    runtime: integrationMode === "standalone-runtime"
+      ? "node-lark-bot-runtime"
+      : integrationMode === "self-hosted-runtime" ? "python-feishu-host" : "none",
     capability_ids: capabilities.capabilities.map((capability) => capability.id),
   });
 
   writeText(path.join(outDir, ".gitignore"), generatedPackageGitignore());
   writeText(path.join(outDir, "package.json"), generatedPackageJson(service.service.name));
-  writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode));
-  writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode));
+  writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode, hostReceiveMode));
+  writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode, hostReceiveMode));
   writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions, integrationMode));
-  writeText(path.join(docsDir, "integration_guide.md"), buildEmbeddedIntegrationGuide(service, permissions));
-  writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode));
+  writeText(path.join(docsDir, "integration_guide.md"), integrationMode === "self-hosted-runtime" ? buildSelfHostedIntegrationGuide(service) : buildEmbeddedIntegrationGuide(service, permissions, hostReceiveMode));
+  writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode, hostReceiveMode));
   writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service));
-  writePackageContext(workspace, outDir, service, permissions, integrationMode);
+  writePackageContext(workspace, outDir, service, permissions, integrationMode, hostReceiveMode);
   writeText(path.join(adapterDir, "types.ts"), adapterTypesTs());
   writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
   writeText(path.join(adapterDir, "validation.ts"), adapterValidationTs());
@@ -76,6 +83,12 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs(service, capabilities, meta));
   writeText(path.join(adapterDir, "handlers.ts"), adapterHandlersTs(service, capabilities, meta));
   writeRuntimeAdapterJs(adapterDir, service, capabilities, meta);
+  if (integrationMode === "embedded-adapter" && (hostReceiveMode === "embedded-long-connection" || hostReceiveMode === "hybrid")) {
+    writeText(path.join(sidecarDir, "README.md"), sidecarLongConnectionReadme(service, hostReceiveMode));
+    writeText(path.join(sidecarDir, "local-contract-test.mjs"), sidecarLocalContractTestMjs(service));
+  } else if (fs.existsSync(sidecarDir)) {
+    fs.rmSync(sidecarDir, { recursive: true, force: true });
+  }
   if (integrationMode === "standalone-runtime") {
     writeText(path.join(runtimeDir, "package.json"), runtimePackageJson(service.service.name));
     writeText(path.join(runtimeDir, ".gitignore"), runtimeGitignore());
@@ -89,20 +102,26 @@ export async function generateCommand(args: string[], options: Record<string, st
   } else if (fs.existsSync(runtimeDir)) {
     fs.rmSync(runtimeDir, { recursive: true, force: true });
   }
+  if (integrationMode === "self-hosted-runtime") {
+    writePythonFeishuHost(feishuHostDir, service, capabilities, meta);
+  } else if (fs.existsSync(feishuHostDir)) {
+    fs.rmSync(feishuHostDir, { recursive: true, force: true });
+  }
 
   console.log(`Generated Lark integration package at ${outDir}`);
   console.log(`Next: review ${path.join(outDir, "README.md")}`);
 }
 
 function generateUsage(): string {
-  return "Usage: lark-deployer generate <analysis-workspace> [--out <generated-dir>] [--mode embedded-adapter|standalone-runtime]";
+  return "Usage: lark-deployer generate <analysis-workspace> [--out <generated-dir>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime]";
 }
 
 function normalizeIntegrationMode(value: string): IntegrationMode {
   const normalized = value.trim() || "standalone-runtime";
   if (normalized === "embedded" || normalized === "embedded-adapter") return "embedded-adapter";
   if (normalized === "standalone" || normalized === "standalone-runtime") return "standalone-runtime";
-  throw new Error('--mode must be "embedded-adapter" or "standalone-runtime".');
+  if (normalized === "self-hosted" || normalized === "self-hosted-runtime") return "self-hosted-runtime";
+  throw new Error('--mode must be "embedded-adapter", "standalone-runtime", or "self-hosted-runtime".');
 }
 
 function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): void {
@@ -119,6 +138,1302 @@ function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, cap
     "export function resolveBatchDownloadUrl(baseUrl: string, batchId: string): string;",
     "",
   ].join("\n"));
+}
+
+function sidecarLongConnectionReadme(service: ServiceManifest, hostReceiveMode: HostReceiveMode): string {
+  return `# Sidecar Long-Connection Gateway Starter
+
+This directory is a starter contract for an external Feishu SDK host/gateway. It keeps \`${service.service.name}\` as a standalone business service and keeps Feishu ingress in a sidecar process.
+
+## Host Receive Mode
+
+- Generated host receive mode: ${hostReceiveMode}
+- Feishu ingress: SDK long connection with \`FEISHU_CONNECTION_MODE=websocket\`
+- Event to subscribe: \`card.action.trigger\`
+- Business target: \`IMAGE_AGENT_BASE_URL=${service.service.base_url || "http://127.0.0.1:8000"}\`
+
+## Sidecar Responsibilities
+
+1. Load \`FEISHU_APP_ID\`, \`FEISHU_APP_SECRET\`, \`FEISHU_CONNECTION_MODE=websocket\`, \`IMAGE_AGENT_BASE_URL\`, and optional \`FEISHU_ALLOWED_USERS\`.
+2. Start the Feishu SDK long-connection client and keep it supervised independently of \`${service.service.name}\`.
+3. Subscribe to \`card.action.trigger\` and normalize each event into the generated adapter context: \`action\`, \`formValue\`, \`operatorOpenId\`, \`openMessageId\`, and \`openChatId\`.
+4. Call \`adapter/handlers.js\` or \`adapter/handlers.ts\` with \`imageAgentBaseUrl\` and return or patch the card produced by the adapter.
+5. Send the start card with \`buildStartCard()\`; do not recreate the generated card schema by hand.
+
+## Local Contract Check
+
+Run this from the generated package root after generation:
+
+\`\`\`powershell
+node sidecar-long-connection/local-contract-test.mjs
+\`\`\`
+
+The script starts an in-process mock \`${service.service.name}\` HTTP API and proves the sidecar contract path: \`card.action.trigger\`-shaped action context -> generated adapter -> \`POST /api/generate\` -> success card.
+`;
+}
+
+function sidecarLocalContractTestMjs(service: ServiceManifest): string {
+  return `import http from "node:http";
+import { buildStartCard } from "../adapter/cards.js";
+import { handleImageAgentCardAction } from "../adapter/handlers.js";
+
+const requests = [];
+const server = http.createServer((req, res) => {
+  const chunks = [];
+  req.on("data", (chunk) => chunks.push(chunk));
+  req.on("end", () => {
+    const body = Buffer.concat(chunks).toString("utf8");
+    requests.push({ method: req.method, url: req.url, body });
+    if (req.method === "POST" && req.url === "/api/generate") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ image_url: "https://example.invalid/generated.png", session_id: "session-local-contract", trace_id: "trace-local-contract" }));
+      return;
+    }
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+  });
+});
+
+const listen = () => new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+const close = () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+
+try {
+  await listen();
+  const address = server.address();
+  const imageAgentBaseUrl = "http://127.0.0.1:" + address.port;
+  const startCard = buildStartCard();
+  const preset = findPreset(startCard) || {};
+  const formValue = buildFormValue(startCard, preset);
+  const result = await handleImageAgentCardAction({
+    action: "image.generate.submit",
+    formValue,
+    value: {},
+    operatorOpenId: "sidecar-contract-operator",
+    openMessageId: "sidecar-contract-message",
+    openChatId: "sidecar-contract-chat",
+  }, {
+    imageAgentBaseUrl,
+    timeoutMs: 5000,
+    allowedOperatorOpenIds: [],
+  });
+
+  const generateRequest = requests.find((item) => item.method === "POST" && item.url === "/api/generate");
+  if (!generateRequest) throw new Error("adapter did not call POST /api/generate");
+  if (!result.ok) throw new Error("adapter returned failure: " + JSON.stringify(result.card));
+  if (!JSON.stringify(result.card).includes("generated.png")) throw new Error("success card did not include generated image URL");
+  console.log("sidecar-long-connection contract: PASS for ${service.service.name}");
+} finally {
+  await close();
+}
+
+function buildFormValue(card, preset) {
+  const names = [...new Set(collectNames(card))];
+  const formValue = {};
+  for (const name of names) {
+    if (name === "param_template_id") formValue[name] = String(preset.template_id || "default-template");
+    else if (name === "param_size") formValue[name] = String(preset.size || "1024x1024");
+    else if (name === "param_message") formValue[name] = "Sidecar contract image";
+    else if (name.startsWith("field_")) formValue[name] = "Sidecar contract value";
+  }
+  return formValue;
+}
+
+function collectNames(value) {
+  if (!value || typeof value !== "object") return [];
+  const current = typeof value.name === "string" ? [value.name] : [];
+  const children = Array.isArray(value) ? value : Object.values(value);
+  return current.concat(children.flatMap(collectNames));
+}
+
+function findPreset(value) {
+  if (!value || typeof value !== "object") return undefined;
+  if (value.preset && typeof value.preset === "object") return value.preset;
+  const children = Array.isArray(value) ? value : Object.values(value);
+  for (const child of children) {
+    const found = findPreset(child);
+    if (found) return found;
+  }
+  return undefined;
+}
+`;
+}
+
+function writePythonFeishuHost(feishuHostDir: string, service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): void {
+  const specDir = path.join(feishuHostDir, "spec");
+  const cardData = buildAdapterCardTemplateData(capabilities, meta);
+  writeText(path.join(feishuHostDir, ".env.example"), pythonHostEnvExample(service));
+  writeText(path.join(feishuHostDir, "requirements.txt"), pythonHostRequirementsTxt());
+  writeText(path.join(feishuHostDir, "config.py"), pythonHostConfigPy());
+  writeText(path.join(feishuHostDir, "cards.py"), pythonHostCardsPy());
+  writeText(path.join(feishuHostDir, "service_client.py"), pythonHostServiceClientPy());
+  writeText(path.join(feishuHostDir, "validation.py"), pythonHostValidationPy());
+  writeText(path.join(feishuHostDir, "handlers.py"), pythonHostHandlersPy());
+  writeText(path.join(feishuHostDir, "app.py"), pythonHostAppPy());
+  writeText(path.join(feishuHostDir, "local_contract_test.py"), pythonHostLocalContractTestPy());
+  writeText(path.join(feishuHostDir, "README.md"), pythonHostReadme(service));
+  writeJson(path.join(specDir, "preset.json"), cardData.defaultPreset);
+  writeJson(path.join(specDir, "field_map.json"), buildPythonHostFieldMapSpec(cardData.fieldSpecs, cardData.fieldMaps));
+  writeJson(path.join(specDir, "endpoints.json"), buildPythonHostEndpointsSpec());
+  writeJson(path.join(specDir, "start_card.json"), buildStartCardSpec(service, cardData));
+  writeJson(path.join(specDir, "template_specs.json"), cardData.templateSpecs);
+  writeJson(path.join(specDir, "field_specs.json"), cardData.fieldSpecs);
+}
+
+function pythonHostEnvExample(service: ServiceManifest): string {
+  return `# Feishu/Lark app credentials. Fill real values in .env; never commit them.
+FEISHU_APP_ID=
+FEISHU_APP_SECRET=
+FEISHU_CONNECTION_MODE=websocket
+
+# Target image-agent-web HTTP base URL.
+IMAGE_AGENT_BASE_URL=${service.service.base_url || "http://127.0.0.1:8000"}
+
+# Optional comma-separated Feishu operator open_id allowlist. Empty allows any valid card click.
+FEISHU_ALLOWED_USERS=
+
+# Target HTTP timeout used by the later service client slice.
+IMAGE_AGENT_TIMEOUT_MS=120000
+
+# Optional chat id for sending the generated spec/start_card.json during manual Level 2 setup.
+TEST_CHAT_ID=
+`;
+}
+
+function pythonHostRequirementsTxt(): string {
+  return `lark-oapi==1.7.0
+requests
+`;
+}
+
+function pythonHostConfigPy(): string {
+  return `"""Configuration loader for the generated Feishu Python host.
+
+This module validates the locked self-hosted-runtime environment contract and
+does not print or expose secret values. Later runtime slices can import
+load_config() before constructing the Feishu SDK long-connection client.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import os
+from pathlib import Path
+from typing import Tuple
+
+
+REQUIRED_ENV_KEYS = (
+    "FEISHU_APP_ID",
+    "FEISHU_APP_SECRET",
+    "FEISHU_CONNECTION_MODE",
+    "IMAGE_AGENT_BASE_URL",
+)
+
+
+@dataclass(frozen=True)
+class HostConfig:
+    feishu_app_id: str
+    feishu_app_secret: str
+    feishu_connection_mode: str
+    image_agent_base_url: str
+    feishu_allowed_users: Tuple[str, ...]
+    image_agent_timeout_ms: int
+    test_chat_id: str
+
+    def safe_summary(self) -> dict:
+        return {
+            "feishu_app_id_present": bool(self.feishu_app_id),
+            "feishu_app_secret_present": bool(self.feishu_app_secret),
+            "feishu_connection_mode": self.feishu_connection_mode,
+            "image_agent_base_url": self.image_agent_base_url,
+            "feishu_allowed_user_count": len(self.feishu_allowed_users),
+            "image_agent_timeout_ms": self.image_agent_timeout_ms,
+            "test_chat_id_present": bool(self.test_chat_id),
+        }
+
+
+def load_dotenv(path: Path | None = None) -> None:
+    env_path = path or Path(__file__).with_name(".env")
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value.strip().strip('"').strip("'")
+
+
+def load_config() -> HostConfig:
+    load_dotenv()
+    values = {key: os.environ.get(key, "").strip() for key in REQUIRED_ENV_KEYS}
+    missing = [key for key, value in values.items() if not value]
+    if missing:
+        raise RuntimeError("Missing required environment variables: " + ", ".join(missing))
+    if values["FEISHU_CONNECTION_MODE"] != "websocket":
+        raise RuntimeError("FEISHU_CONNECTION_MODE must be websocket for self-hosted-runtime.")
+    timeout_ms = _read_timeout_ms(os.environ.get("IMAGE_AGENT_TIMEOUT_MS", "120000"))
+    return HostConfig(
+        feishu_app_id=values["FEISHU_APP_ID"],
+        feishu_app_secret=values["FEISHU_APP_SECRET"],
+        feishu_connection_mode=values["FEISHU_CONNECTION_MODE"],
+        image_agent_base_url=values["IMAGE_AGENT_BASE_URL"].rstrip("/"),
+        feishu_allowed_users=_read_csv(os.environ.get("FEISHU_ALLOWED_USERS", "")),
+        image_agent_timeout_ms=timeout_ms,
+        test_chat_id=os.environ.get("TEST_CHAT_ID", "").strip(),
+    )
+
+
+def _read_csv(value: str) -> Tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _read_timeout_ms(value: str) -> int:
+    try:
+        timeout_ms = int(value.strip())
+    except ValueError as exc:
+        raise RuntimeError("IMAGE_AGENT_TIMEOUT_MS must be an integer number of milliseconds.") from exc
+    if timeout_ms <= 0:
+        raise RuntimeError("IMAGE_AGENT_TIMEOUT_MS must be greater than 0.")
+    return timeout_ms
+`;
+}
+
+function pythonHostCardsPy(): string {
+  return `"""Card builders for the generated Feishu Python host."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+import json
+from pathlib import Path
+from typing import Any, Dict
+
+
+SPEC_DIR = Path(__file__).with_name("spec")
+
+
+def load_start_card() -> Dict[str, Any]:
+    with (SPEC_DIR / "start_card.json").open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def build_success_card(result: Dict[str, Any]) -> Dict[str, Any]:
+    image_url = _string_value(result.get("image_url"))
+    session_id = _string_value(result.get("session_id"))
+    trace_id = _string_value(result.get("trace_id"))
+    elements = [
+        {"tag": "markdown", "content": "**Image:** " + image_url if image_url else "Image generation completed."},
+    ]
+    if trace_id:
+        elements.append({"tag": "markdown", "content": "**Trace ID:** " + trace_id})
+    if session_id:
+        elements.append({
+            "tag": "form",
+            "name": "image_iterate_form",
+            "elements": [
+                {
+                    "tag": "input",
+                    "name": "param_feedback",
+                    "required": True,
+                    "width": "fill",
+                    "input_type": "multiline_text",
+                    "rows": 2,
+                    "auto_resize": True,
+                    "label": {"tag": "plain_text", "content": "Feedback"},
+                    "placeholder": {"tag": "plain_text", "content": "Describe what to refine in the next image"},
+                },
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "Iterate image"},
+                    "type": "primary",
+                    "action_type": "form_submit",
+                    "name": "submit_image_iterate",
+                    "value": {"action": "image.iterate.submit", "session_id": session_id},
+                },
+            ],
+        })
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {"template": "green", "title": {"tag": "plain_text", "content": "Image generation complete"}},
+        "elements": elements,
+    }
+
+
+def build_failure_card(message: str) -> Dict[str, Any]:
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {"template": "red", "title": {"tag": "plain_text", "content": "Image generation failed"}},
+        "elements": [{"tag": "markdown", "content": "**What happened:** " + str(message)}],
+    }
+
+
+def build_running_card(action: str, trace_id: str = "") -> Dict[str, Any]:
+    lines = ["The request was accepted and is running.", "**Action:** " + _string_value(action)]
+    if trace_id:
+        lines.append("**Trace ID:** " + trace_id)
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {"template": "blue", "title": {"tag": "plain_text", "content": "Image generation running"}},
+        "elements": [{"tag": "markdown", "content": "\\n\\n".join(lines)}],
+    }
+
+
+def build_batch_status_card(status: Dict[str, Any], download_url: str = "") -> Dict[str, Any]:
+    total = _number_value(status.get("total"))
+    done = _number_value(status.get("done"))
+    completed_count = len(status.get("completed")) if isinstance(status.get("completed"), list) else 0
+    failed_count = len(status.get("failed")) if isinstance(status.get("failed"), list) else 0
+    running = status.get("running") is True
+    finished = not running and total > 0 and done >= total
+    batch_id = _string_value(status.get("batch_id"))
+    lines = [
+        "**Status:** " + ("running" if running else "completed" if finished else "not running"),
+        "**Batch ID:** " + batch_id,
+        "**Done:** " + str(done) + "/" + str(total),
+        "**Completed:** " + str(completed_count),
+        "**Failed:** " + str(failed_count),
+    ]
+    if _string_value(status.get("template_id")):
+        lines.append("**Template:** " + _string_value(status.get("template_id")))
+    if _string_value(status.get("size")):
+        lines.append("**Size:** " + _string_value(status.get("size")))
+    elements = [{"tag": "markdown", "content": "\\n\\n".join(lines)}]
+    if finished and download_url and completed_count > 0:
+        elements.append({"tag": "markdown", "content": "[Download completed images ZIP](" + download_url + ")"})
+    if batch_id:
+        elements.append({
+            "tag": "action",
+            "actions": [{
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "Refresh status"},
+                "type": "default",
+                "value": {"action": "image.batch.refresh", "batch_id": batch_id},
+            }],
+        })
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "blue" if running else "red" if failed_count > 0 else "green",
+            "title": {"tag": "plain_text", "content": "Batch running" if running else "Batch finished with failures" if failed_count > 0 else "Batch complete"},
+        },
+        "elements": elements,
+    }
+
+
+def clone_card(card: Dict[str, Any]) -> Dict[str, Any]:
+    return deepcopy(card)
+
+
+def _string_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _number_value(value: Any) -> int:
+    return int(value) if isinstance(value, (int, float)) and value == value else 0
+`;
+}
+
+function pythonHostServiceClientPy(): string {
+  return `"""HTTP client for image-agent-web target calls."""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Dict
+
+
+class TargetServiceError(RuntimeError):
+    def __init__(self, operation: str, message: str, status_code: int | None = None, detail: Any = None):
+        super().__init__(message)
+        self.operation = operation
+        self.status_code = status_code
+        self.detail = detail
+
+    def to_audit_detail(self) -> Dict[str, Any]:
+        return {"operation": self.operation, "status_code": self.status_code, "detail": self.detail}
+
+
+def call_generate(base_url: str, preset: Dict[str, Any], timeout_ms: int = 120000) -> Dict[str, Any]:
+    data = {
+        "template_id": _string_value(preset.get("template_id")),
+        "size": _string_value(preset.get("size")),
+        "fields_json": json.dumps(preset.get("fields") if isinstance(preset.get("fields"), dict) else {}, ensure_ascii=False),
+        "message": _string_value(preset.get("message")),
+        "reference_types_json": "[]",
+    }
+    response = _post(_join_url(base_url, "/api/generate"), data=data, timeout_ms=timeout_ms, operation="generate")
+    return _read_json_response(response, "generate")
+
+
+def call_iterate(base_url: str, request: Dict[str, Any], timeout_ms: int = 120000) -> Dict[str, Any]:
+    payload = {"session_id": _string_value(request.get("session_id")), "feedback": _string_value(request.get("feedback"))}
+    response = _post(_join_url(base_url, "/api/iterate"), json_body=payload, timeout_ms=timeout_ms, operation="iterate")
+    return _read_json_response(response, "iterate")
+
+
+def call_batch_create(base_url: str, request: Dict[str, Any], timeout_ms: int = 120000) -> Dict[str, Any]:
+    data = {
+        "template_id": _string_value(request.get("template_id")),
+        "size": _string_value(request.get("size")),
+        "items_json": json.dumps(request.get("items") if isinstance(request.get("items"), list) else [], ensure_ascii=False),
+        "reference_types_json": "[]",
+    }
+    response = _post(_join_url(base_url, "/api/batch"), data=data, timeout_ms=timeout_ms, operation="batch")
+    parsed = _read_json_response(response, "batch")
+    if not _string_value(parsed.get("batch_id")):
+        raise TargetServiceError("batch", "image-agent-web /api/batch response did not include batch_id", detail=parsed)
+    return parsed
+
+
+def call_batch_status(base_url: str, batch_id: str, timeout_ms: int = 120000) -> Dict[str, Any]:
+    response = _get(_join_url(base_url, "/api/batch/" + _quote(batch_id) + "/status"), timeout_ms=timeout_ms, operation="batch_status")
+    return _read_json_response(response, "batch_status")
+
+
+def resolve_download_url(base_url: str, batch_id: str) -> str:
+    return _join_url(base_url, "/api/batch/" + _quote(batch_id) + "/download")
+
+
+def _post(url: str, *, data: Dict[str, str] | None = None, json_body: Dict[str, Any] | None = None, timeout_ms: int, operation: str):
+    requests = _requests()
+    try:
+        return requests.post(url, data=data, json=json_body, timeout=_timeout_seconds(timeout_ms))
+    except requests.exceptions.Timeout as exc:
+        raise TargetServiceError(operation, operation + " timed out after " + str(timeout_ms) + "ms") from exc
+    except requests.exceptions.RequestException as exc:
+        raise TargetServiceError(operation, operation + " request failed: " + str(exc)) from exc
+
+
+def _get(url: str, *, timeout_ms: int, operation: str):
+    requests = _requests()
+    try:
+        return requests.get(url, timeout=_timeout_seconds(timeout_ms))
+    except requests.exceptions.Timeout as exc:
+        raise TargetServiceError(operation, operation + " timed out after " + str(timeout_ms) + "ms") from exc
+    except requests.exceptions.RequestException as exc:
+        raise TargetServiceError(operation, operation + " request failed: " + str(exc)) from exc
+
+
+def _read_json_response(response: Any, operation: str) -> Dict[str, Any]:
+    text = getattr(response, "text", "") or ""
+    try:
+        parsed = response.json() if text else {}
+    except ValueError:
+        parsed = {"raw": text}
+    status_code = int(getattr(response, "status_code", 0) or 0)
+    if status_code < 200 or status_code >= 300:
+        message = parsed.get("detail") if isinstance(parsed, dict) else text
+        raise TargetServiceError(operation, "image-agent-web " + operation + " returned HTTP " + str(status_code) + ": " + str(message), status_code=status_code, detail=parsed)
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _requests():
+    import requests
+    return requests
+
+
+def _timeout_seconds(timeout_ms: int) -> float:
+    return max(int(timeout_ms), 1) / 1000.0
+
+
+def _join_url(base_url: str, path: str) -> str:
+    return str(base_url).rstrip("/") + path
+
+
+def _quote(value: str) -> str:
+    from urllib.parse import quote
+    return quote(str(value), safe="")
+
+
+def _string_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+`;
+}
+
+function pythonHostValidationPy(): string {
+  return `"""Validation helpers for generated Feishu card actions."""
+
+from __future__ import annotations
+
+import re
+from typing import Any, Dict, Iterable, List
+
+
+SIZE_PATTERN = re.compile(r"^[1-9]\\d*x[1-9]\\d*$", re.IGNORECASE)
+
+
+def assert_allowed_operator(operator_open_id: str, allowed_users: Iterable[str] | None) -> None:
+    allowed = [item for item in (allowed_users or []) if item]
+    if allowed and operator_open_id not in allowed:
+        raise ValueError("Operator is not authorized to execute this card action.")
+
+
+def validate_size(size: str) -> None:
+    if not SIZE_PATTERN.match(str(size or "").strip()):
+        raise ValueError("Size must use WIDTHxHEIGHT, for example 1024x1024.")
+
+
+def validate_required_fields(template_id: str, fields: Dict[str, Any], template_specs: List[Dict[str, Any]], field_specs: List[Dict[str, Any]]) -> None:
+    required_keys = []
+    for template in template_specs:
+        if template.get("id") == template_id:
+            required_keys = list(template.get("requiredFieldKeys") or [])
+            break
+    labels = {field.get("key"): field.get("label") or field.get("key") for field in field_specs}
+    for key in required_keys:
+        value = fields.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(str(labels.get(key) or key) + " is required.")
+
+
+def validate_batch_items(items: Any) -> List[Dict[str, Any]]:
+    if not isinstance(items, list) or not items:
+        raise ValueError("Batch items JSON must include at least one item.")
+    normalized = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError("Batch item " + str(index) + " must be an object.")
+        fields = item.get("fields")
+        if not isinstance(fields, dict):
+            raise ValueError("Batch item " + str(index) + " must include a fields object.")
+        normalized.append({"fields": fields})
+    return normalized
+`;
+}
+
+function pythonHostHandlersPy(): string {
+  return `"""Card action handler for the generated Feishu Python host."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Mapping
+
+import cards
+import service_client
+import validation
+
+
+SPEC_DIR = Path(__file__).with_name("spec")
+
+
+@dataclass(frozen=True)
+class HandlerDeps:
+    image_agent_base_url: str
+    timeout_ms: int = 120000
+    allowed_operator_open_ids: tuple[str, ...] = ()
+    call_generate: Callable[..., Dict[str, Any]] = service_client.call_generate
+    call_iterate: Callable[..., Dict[str, Any]] = service_client.call_iterate
+    call_batch_create: Callable[..., Dict[str, Any]] = service_client.call_batch_create
+    call_batch_status: Callable[..., Dict[str, Any]] = service_client.call_batch_status
+    resolve_download_url: Callable[..., str] = service_client.resolve_download_url
+
+
+def handle_card_action(ctx: Any, deps: HandlerDeps | Mapping[str, Any]) -> Dict[str, Any]:
+    normalized = normalize_card_action(ctx)
+    deps_obj = _deps_from_mapping(deps)
+    audit_events = [_audit("python_host_card_action_received", {"action": normalized["action"]})]
+    try:
+        validation.assert_allowed_operator(normalized["operatorOpenId"], deps_obj.allowed_operator_open_ids)
+        endpoints = _load_json("endpoints.json")
+        actions = endpoints.get("actions") if isinstance(endpoints.get("actions"), dict) else {}
+        action = normalized["action"]
+        if action not in actions:
+            raise ValueError("Unsupported card action: " + action)
+        if action == "image.generate.submit":
+            preset = _build_generate_preset(normalized)
+            result = deps_obj.call_generate(deps_obj.image_agent_base_url, preset, deps_obj.timeout_ms)
+            audit_events.append(_audit("python_host_generation_succeeded", {"imageUrl": result.get("image_url", "")}))
+            return _result(True, cards.build_success_card(result), audit_events, result=result)
+        if action == "image.iterate.submit":
+            request = _build_iterate_request(normalized)
+            result = deps_obj.call_iterate(deps_obj.image_agent_base_url, request, deps_obj.timeout_ms)
+            audit_events.append(_audit("python_host_iteration_succeeded", {"session_id": result.get("session_id") or request["session_id"]}))
+            return _result(True, cards.build_success_card(result), audit_events, result=result)
+        if action == "image.batch.submit":
+            request = _build_batch_request(normalized)
+            created = deps_obj.call_batch_create(deps_obj.image_agent_base_url, request, deps_obj.timeout_ms)
+            batch_id = _string_value(created.get("batch_id"))
+            status = deps_obj.call_batch_status(deps_obj.image_agent_base_url, batch_id, deps_obj.timeout_ms)
+            download_url = _batch_download_url(deps_obj, status)
+            audit_events.append(_audit("python_host_batch_submitted", {"batchId": batch_id, "total": len(request["items"])}))
+            return _result(True, cards.build_batch_status_card(status, download_url), audit_events, batchId=batch_id, batchStatus=status, downloadUrl=download_url)
+        if action == "image.batch.refresh":
+            batch_id = _string_value(normalized["value"].get("batch_id") or normalized["value"].get("batchId") or normalized["formValue"].get("param_batch_id"))
+            if not batch_id:
+                raise ValueError("batch_id is required.")
+            status = deps_obj.call_batch_status(deps_obj.image_agent_base_url, batch_id, deps_obj.timeout_ms)
+            download_url = _batch_download_url(deps_obj, status)
+            audit_events.append(_audit("python_host_batch_status_checked", {"batchId": batch_id, "downloadUrl": download_url or None}))
+            return _result(True, cards.build_batch_status_card(status, download_url), audit_events, batchId=batch_id, batchStatus=status, downloadUrl=download_url)
+        raise ValueError("Unsupported card action: " + action)
+    except Exception as exc:
+        message = str(exc)
+        audit_events.append(_audit("python_host_card_action_failed", {"message": message}))
+        return _result(False, cards.build_failure_card(message), audit_events)
+
+
+def normalize_card_action(ctx: Any) -> Dict[str, Any]:
+    if isinstance(ctx, Mapping):
+        value = _object_value(ctx.get("value"))
+        form_value = _object_value(ctx.get("formValue") or ctx.get("form_value"))
+        action = _string_value(ctx.get("action") or value.get("action"))
+        return {
+            "action": action,
+            "value": value,
+            "formValue": form_value,
+            "operatorOpenId": _string_value(ctx.get("operatorOpenId") or ctx.get("operator_open_id")),
+            "openMessageId": _string_value(ctx.get("openMessageId") or ctx.get("open_message_id")),
+            "openChatId": _string_value(ctx.get("openChatId") or ctx.get("open_chat_id")),
+        }
+    event = getattr(ctx, "event", None)
+    action_obj = getattr(event, "action", None)
+    raw_value = getattr(action_obj, "value", None)
+    value = _object_value(json.loads(raw_value) if isinstance(raw_value, str) and raw_value.strip().startswith("{") else raw_value)
+    form_value = _object_value(getattr(action_obj, "form_value", None))
+    operator = getattr(event, "operator", None)
+    context = getattr(event, "context", None)
+    return {
+        "action": _string_value(value.get("action")),
+        "value": value,
+        "formValue": form_value,
+        "operatorOpenId": _string_value(getattr(operator, "open_id", "")),
+        "openMessageId": _string_value(getattr(context, "open_message_id", "")),
+        "openChatId": _string_value(getattr(context, "open_chat_id", "")),
+    }
+
+
+def _build_generate_preset(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    base = normalized["value"].get("preset") if isinstance(normalized["value"].get("preset"), dict) else _load_json("preset.json")
+    form_value = normalized["formValue"]
+    fields = dict(base.get("fields") if isinstance(base.get("fields"), dict) else {})
+    field_map = _load_json("field_map.json").get("formFieldToTemplateKey", {})
+    for key, value in form_value.items():
+        if key.startswith("field_") and isinstance(value, str):
+            fields[str(field_map.get(key) or key.removeprefix("field_"))] = value.strip()
+    preset = {
+        "template_id": _string_value(form_value.get("param_template_id")) or _string_value(base.get("template_id")),
+        "size": _string_value(form_value.get("param_size")) or _string_value(base.get("size")),
+        "fields": fields,
+        "message": _string_value(form_value.get("param_message")) or _string_value(base.get("message")),
+    }
+    validation.validate_size(preset["size"])
+    validation.validate_required_fields(preset["template_id"], preset["fields"], _load_json("template_specs.json"), _load_json("field_specs.json"))
+    return preset
+
+
+def _build_iterate_request(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    session_id = _string_value(normalized["value"].get("session_id") or normalized["value"].get("sessionId") or normalized["formValue"].get("param_session_id"))
+    feedback = _string_value(normalized["formValue"].get("param_feedback") or normalized["value"].get("feedback"))
+    if not session_id or not feedback:
+        raise ValueError("session_id and feedback are required.")
+    return {"session_id": session_id, "feedback": feedback}
+
+
+def _build_batch_request(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    preset = _load_json("preset.json")
+    form_value = normalized["formValue"]
+    value = normalized["value"]
+    template_id = _string_value(form_value.get("param_batch_template_id") or value.get("template_id") or value.get("templateId") or preset.get("template_id"))
+    size = _string_value(form_value.get("param_batch_size") or value.get("size") or preset.get("size"))
+    validation.validate_size(size)
+    items_json = _string_value(form_value.get("param_batch_items_json") or value.get("items_json") or value.get("itemsJson"))
+    raw_items = json.loads(items_json) if items_json else value.get("items")
+    items = validation.validate_batch_items(raw_items)
+    return {"template_id": template_id, "size": size, "items": items}
+
+
+def _batch_download_url(deps: HandlerDeps, status: Dict[str, Any]) -> str:
+    batch_id = _string_value(status.get("batch_id"))
+    completed = status.get("completed")
+    if batch_id and status.get("running") is not True and isinstance(completed, list) and completed:
+        return deps.resolve_download_url(deps.image_agent_base_url, batch_id)
+    return ""
+
+
+def _deps_from_mapping(deps: HandlerDeps | Mapping[str, Any]) -> HandlerDeps:
+    if isinstance(deps, HandlerDeps):
+        return deps
+    return HandlerDeps(
+        image_agent_base_url=_string_value(deps.get("imageAgentBaseUrl") or deps.get("image_agent_base_url")),
+        timeout_ms=int(deps.get("timeoutMs") or deps.get("timeout_ms") or 120000),
+        allowed_operator_open_ids=tuple(deps.get("allowedOperatorOpenIds") or deps.get("allowed_operator_open_ids") or ()),
+        call_generate=deps.get("call_generate", service_client.call_generate),
+        call_iterate=deps.get("call_iterate", service_client.call_iterate),
+        call_batch_create=deps.get("call_batch_create", service_client.call_batch_create),
+        call_batch_status=deps.get("call_batch_status", service_client.call_batch_status),
+        resolve_download_url=deps.get("resolve_download_url", service_client.resolve_download_url),
+    )
+
+
+def _result(ok: bool, card: Dict[str, Any], audit_events: List[Dict[str, Any]], **extra: Any) -> Dict[str, Any]:
+    result = {"ok": ok, "card": card, "auditEvents": audit_events, "response": {"card": card}}
+    result.update(extra)
+    return result
+
+
+def _audit(event: str, detail: Dict[str, Any]) -> Dict[str, Any]:
+    return {"event": event, "detail": detail}
+
+
+def _load_json(name: str) -> Any:
+    with (SPEC_DIR / name).open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _object_value(value: Any) -> Dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _string_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+`;
+}
+
+function pythonHostAppPy(): string {
+  return `"""Feishu long-connection host entrypoint for self-hosted-runtime."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from typing import Any
+
+import cards
+import config
+import handlers
+
+
+def build_lark_wiring(host_config: config.HostConfig):
+    import lark_oapi as lark
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTrigger,
+        P2CardActionTriggerResponse,
+    )
+
+    def callback(event: P2CardActionTrigger) -> P2CardActionTriggerResponse:
+        result = handlers.handle_card_action(event, {
+            "image_agent_base_url": host_config.image_agent_base_url,
+            "timeout_ms": host_config.image_agent_timeout_ms,
+            "allowed_operator_open_ids": host_config.feishu_allowed_users,
+        })
+        return P2CardActionTriggerResponse({"card": result["card"]})
+
+    event_handler = lark.EventDispatcherHandler.builder('', '').register_p2_card_action_trigger(callback).build()
+    client = lark.ws.Client(host_config.feishu_app_id, host_config.feishu_app_secret, event_handler=event_handler, log_level=lark.LogLevel.INFO)
+    return event_handler, client
+
+
+def send_start_card() -> dict[str, Any]:
+    host_config = config.load_config()
+    if not host_config.test_chat_id:
+        raise RuntimeError("TEST_CHAT_ID is required to send the start card.")
+    return {"chat_id": host_config.test_chat_id, "card": cards.load_start_card()}
+
+
+def selfcheck() -> int:
+    try:
+        import lark_oapi as lark  # noqa: F401
+    except ModuleNotFoundError as exc:
+        print("selfcheck: lark-oapi unavailable; install requirements.txt to run SDK wiring selfcheck", file=sys.stderr)
+        raise SystemExit(2) from exc
+    dummy = config.HostConfig(
+        feishu_app_id="selfcheck_app_id",
+        feishu_app_secret="selfcheck_app_secret",
+        feishu_connection_mode="websocket",
+        image_agent_base_url="http://127.0.0.1:8000",
+        feishu_allowed_users=(),
+        image_agent_timeout_ms=120000,
+        test_chat_id="",
+    )
+    event_handler, client = build_lark_wiring(dummy)
+    start_card = cards.load_start_card()
+    print("selfcheck: card.action.trigger registered")
+    print("selfcheck: lark.ws.Client constructed without start()")
+    print("selfcheck: config " + json.dumps(dummy.safe_summary(), ensure_ascii=False, sort_keys=True))
+    print("selfcheck: start_card_elements=" + str(len(start_card.get("elements", []))))
+    if event_handler is None or client is None:
+        raise RuntimeError("selfcheck failed to construct Feishu SDK wiring")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Generated Feishu Python host")
+    parser.add_argument("--selfcheck", action="store_true", help="Build SDK wiring without opening a Feishu connection")
+    parser.add_argument("--send-start-card", action="store_true", help="Prepare the generated start card payload for TEST_CHAT_ID")
+    args = parser.parse_args(argv)
+    if args.selfcheck:
+        return selfcheck()
+    if args.send_start_card:
+        payload = send_start_card()
+        print(json.dumps({"prepared_start_card": True, "test_chat_id_present": bool(payload["chat_id"]), "card_elements": len(payload["card"].get("elements", []))}, ensure_ascii=False))
+        return 0
+    host_config = config.load_config()
+    _event_handler, client = build_lark_wiring(host_config)
+    print("Starting Feishu long-connection host for card.action.trigger")
+    client.start()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+`;
+}
+
+function pythonHostLocalContractTestPy(): string {
+  return `"""Local contract test for the generated Feishu Python host.
+
+This test starts a stdlib localhost mock of image-agent-web and drives
+handlers.handle_card_action directly. It does not import lark-oapi, does not
+use real Feishu credentials, and does not contact any non-local network.
+"""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+from pathlib import Path
+import time
+from typing import Any, Dict, List
+from urllib.parse import parse_qs, urlparse
+
+import handlers
+
+
+REQUESTS: List[Dict[str, Any]] = []
+
+
+class MockImageAgentHandler(BaseHTTPRequestHandler):
+    def log_message(self, _format: str, *_args: Any) -> None:
+        return
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("content-length") or "0")
+        raw = self.rfile.read(length).decode("utf-8")
+        content_type = self.headers.get("content-type", "")
+        parsed_form = {key: values[-1] for key, values in parse_qs(raw, keep_blank_values=True).items()}
+        parsed_json: Dict[str, Any] = {}
+        if "application/json" in content_type:
+            parsed_json = json.loads(raw or "{}")
+        REQUESTS.append({
+            "method": "POST",
+            "path": self.path,
+            "content_type": content_type,
+            "raw": raw,
+            "form": parsed_form,
+            "json": parsed_json,
+        })
+        if self.path == "/api/generate":
+            if parsed_form.get("message") == "target-500":
+                self._json(500, {"detail": "mock target failure"})
+                return
+            if parsed_form.get("message") == "target-timeout":
+                time.sleep(0.25)
+            self._json(200, {"image_url": "https://example.invalid/generated.png", "session_id": "session-contract", "trace_id": "trace-generate"})
+            return
+        if self.path == "/api/iterate":
+            self._json(200, {"image_url": "https://example.invalid/iterated.png", "session_id": parsed_json.get("session_id", ""), "trace_id": "trace-iterate"})
+            return
+        if self.path == "/api/batch":
+            self._json(200, {"batch_id": "batch-contract"})
+            return
+        self._json(404, {"detail": "not found"})
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        REQUESTS.append({"method": "GET", "path": parsed.path, "content_type": self.headers.get("content-type", ""), "raw": "", "form": {}, "json": {}})
+        if parsed.path == "/api/batch/batch-contract/status":
+            self._json(200, {
+                "batch_id": "batch-contract",
+                "template_id": "launch-banner",
+                "size": "1200x628",
+                "total": 1,
+                "done": 1,
+                "running": False,
+                "completed": [{"image_url": "https://example.invalid/batch.png"}],
+                "failed": [],
+            })
+            return
+        self._json(404, {"detail": "not found"})
+
+    def _json(self, status: int, body: Dict[str, Any]) -> None:
+        payload = json.dumps(body).encode("utf-8")
+        self.send_response(status)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(payload)))
+        self.end_headers()
+        try:
+            self.wfile.write(payload)
+        except (BrokenPipeError, OSError):
+            return
+
+
+def main() -> None:
+    with mock_server() as base_url:
+        run_contract(base_url)
+    print("feishu-host contract: PASS")
+
+
+def run_contract(base_url: str) -> None:
+    REQUESTS.clear()
+    preset = load_spec("preset.json")
+    template_id = preset["template_id"]
+    size = preset["size"]
+    generate_result = handlers.handle_card_action(generate_ctx(), deps(base_url))
+    assert generate_result["ok"] is True, generate_result
+    assert "generated.png" in json.dumps(generate_result["card"])
+    generate_request = only_request("POST", "/api/generate")
+    assert_form_request(generate_request, {
+        "template_id": template_id,
+        "size": size,
+        "message": "contract generate",
+        "reference_types_json": "[]",
+    })
+    generate_fields = json.loads(generate_request["form"]["fields_json"])
+    primary_key = primary_template_key()
+    secondary_key = secondary_template_key()
+    assert generate_fields[primary_key] == "Contract primary", generate_fields
+    if secondary_key:
+        assert generate_fields[secondary_key] == "Contract secondary", generate_fields
+
+    before = len(REQUESTS)
+    iterate_result = handlers.handle_card_action({
+        "action": "image.iterate.submit",
+        "value": {"action": "image.iterate.submit", "session_id": "session-contract"},
+        "formValue": {"param_feedback": "make it brighter"},
+        "operatorOpenId": "operator-ok",
+    }, deps(base_url))
+    assert iterate_result["ok"] is True, iterate_result
+    iterate_request = REQUESTS[before]
+    assert iterate_request["method"] == "POST" and iterate_request["path"] == "/api/iterate", iterate_request
+    assert "application/json" in iterate_request["content_type"], iterate_request
+    assert iterate_request["json"] == {"session_id": "session-contract", "feedback": "make it brighter"}, iterate_request
+
+    before = len(REQUESTS)
+    batch_result = handlers.handle_card_action({
+        "action": "image.batch.submit",
+        "value": {"action": "image.batch.submit"},
+        "formValue": {
+            "param_batch_template_id": template_id,
+            "param_batch_size": size,
+            "param_batch_items_json": json.dumps([{"fields": {primary_key: "Batch primary"}}]),
+        },
+        "operatorOpenId": "operator-ok",
+    }, deps(base_url))
+    assert batch_result["ok"] is True, batch_result
+    assert batch_result["downloadUrl"].endswith("/api/batch/batch-contract/download"), batch_result
+    batch_create = REQUESTS[before]
+    batch_status = REQUESTS[before + 1]
+    assert batch_create["method"] == "POST" and batch_create["path"] == "/api/batch", batch_create
+    assert_form_request(batch_create, {"template_id": template_id, "size": size, "reference_types_json": "[]"})
+    assert json.loads(batch_create["form"]["items_json"])[0]["fields"][primary_key] == "Batch primary", batch_create
+    assert batch_status["method"] == "GET" and batch_status["path"] == "/api/batch/batch-contract/status", batch_status
+
+    before = len(REQUESTS)
+    refresh_result = handlers.handle_card_action({
+        "action": "image.batch.refresh",
+        "value": {"action": "image.batch.refresh", "batch_id": "batch-contract"},
+        "formValue": {},
+        "operatorOpenId": "operator-ok",
+    }, deps(base_url))
+    assert refresh_result["ok"] is True, refresh_result
+    assert refresh_result["downloadUrl"].endswith("/api/batch/batch-contract/download"), refresh_result
+    assert REQUESTS[before]["method"] == "GET" and REQUESTS[before]["path"] == "/api/batch/batch-contract/status", REQUESTS[before]
+    assert "Download completed images ZIP" in json.dumps(refresh_result["card"]), refresh_result
+
+    assert_no_target_call(base_url, invalid_size_ctx(), "Size must use")
+    prove_missing_required_no_call(base_url)
+    assert_no_target_call(base_url, generate_ctx(), "not authorized", allowed=("someone-else",))
+    assert_no_target_call(base_url, {"action": "unknown.action", "value": {"action": "unknown.action"}, "formValue": {}, "operatorOpenId": "operator-ok"}, "Unsupported card action")
+
+    before = len(REQUESTS)
+    target_500 = handlers.handle_card_action(generate_ctx(message="target-500"), deps(base_url))
+    assert target_500["ok"] is False, target_500
+    assert len(REQUESTS) == before + 1, REQUESTS[before:]
+    assert "HTTP 500" in json.dumps(target_500), target_500
+
+    before = len(REQUESTS)
+    timeout_result = handlers.handle_card_action(generate_ctx(message="target-timeout"), deps(base_url, timeout_ms=50))
+    assert timeout_result["ok"] is False, timeout_result
+    assert len(REQUESTS) == before + 1, REQUESTS[before:]
+    assert "timed out" in json.dumps(timeout_result), timeout_result
+
+    prove_special_field_mapping(base_url)
+
+
+def prove_special_field_mapping(base_url: str) -> None:
+    field_map_path = Path(__file__).with_name("spec") / "field_map.json"
+    original = json.loads(field_map_path.read_text(encoding="utf-8"))
+    patched = json.loads(json.dumps(original))
+    patched.setdefault("formFieldToTemplateKey", {})["field_hero_title"] = "hero-title"
+    patched.setdefault("templateKeyToFormField", {})["hero-title"] = "field_hero_title"
+    field_map_path.write_text(json.dumps(patched, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
+    try:
+        before = len(REQUESTS)
+        result = handlers.handle_card_action(generate_ctx(extra_form={"field_hero_title": "Mapped Hero"}), deps(base_url))
+        assert result["ok"] is True, result
+        request = REQUESTS[before]
+        fields = json.loads(request["form"]["fields_json"])
+        assert fields["hero-title"] == "Mapped Hero", fields
+    finally:
+        field_map_path.write_text(json.dumps(original, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
+
+
+def prove_missing_required_no_call(base_url: str) -> None:
+    template_specs_path = Path(__file__).with_name("spec") / "template_specs.json"
+    original = json.loads(template_specs_path.read_text(encoding="utf-8"))
+    patched = json.loads(json.dumps(original))
+    template_id = load_spec("preset.json")["template_id"]
+    required_key = primary_template_key()
+    for template in patched:
+        if template.get("id") == template_id:
+            keys = list(template.get("requiredFieldKeys") or [])
+            if required_key not in keys:
+                keys.append(required_key)
+            template["requiredFieldKeys"] = keys
+            break
+    template_specs_path.write_text(json.dumps(patched, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
+    try:
+        assert_no_target_call(base_url, missing_required_ctx(required_key), "is required")
+    finally:
+        template_specs_path.write_text(json.dumps(original, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
+
+
+def generate_ctx(message: str = "contract generate", extra_form: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    preset = load_spec("preset.json")
+    template_id = preset["template_id"]
+    size = preset["size"]
+    primary_key = primary_template_key()
+    secondary_key = secondary_template_key()
+    field_map = load_spec("field_map.json")["templateKeyToFormField"]
+    form = {
+        "param_template_id": template_id,
+        "param_size": size,
+        field_map[primary_key]: "Contract primary",
+        "param_message": message,
+    }
+    if secondary_key:
+        form[field_map[secondary_key]] = "Contract secondary"
+    if extra_form:
+        form.update(extra_form)
+    return {"action": "image.generate.submit", "value": {"action": "image.generate.submit"}, "formValue": form, "operatorOpenId": "operator-ok"}
+
+
+def invalid_size_ctx() -> Dict[str, Any]:
+    ctx = generate_ctx()
+    ctx["formValue"] = dict(ctx["formValue"])
+    ctx["formValue"]["param_size"] = "0xbad"
+    return ctx
+
+
+def missing_required_ctx(required_key: str) -> Dict[str, Any]:
+    ctx = generate_ctx()
+    ctx["formValue"] = dict(ctx["formValue"])
+    ctx["formValue"][load_spec("field_map.json")["templateKeyToFormField"][required_key]] = ""
+    return ctx
+
+
+def primary_template_key() -> str:
+    field_map = load_spec("field_map.json")["templateKeyToFormField"]
+    return next(iter(field_map.keys()))
+
+
+def secondary_template_key() -> str:
+    keys = list(load_spec("field_map.json")["templateKeyToFormField"].keys())
+    return keys[1] if len(keys) > 1 else ""
+
+
+def load_spec(name: str) -> Any:
+    return json.loads((Path(__file__).with_name("spec") / name).read_text(encoding="utf-8"))
+
+
+def assert_no_target_call(base_url: str, ctx: Dict[str, Any], expected_message: str, allowed: tuple[str, ...] = ()) -> None:
+    before = len(REQUESTS)
+    result = handlers.handle_card_action(ctx, deps(base_url, allowed=allowed))
+    assert result["ok"] is False, result
+    assert expected_message in json.dumps(result, ensure_ascii=False), result
+    assert len(REQUESTS) == before, REQUESTS[before:]
+
+
+def deps(base_url: str, timeout_ms: int = 120000, allowed: tuple[str, ...] = ()) -> Dict[str, Any]:
+    return {"image_agent_base_url": base_url, "timeout_ms": timeout_ms, "allowed_operator_open_ids": allowed}
+
+
+def only_request(method: str, path: str) -> Dict[str, Any]:
+    matches = [item for item in REQUESTS if item["method"] == method and item["path"] == path]
+    assert len(matches) == 1, matches
+    return matches[0]
+
+
+def assert_form_request(request: Dict[str, Any], expected: Dict[str, str]) -> None:
+    assert "application/x-www-form-urlencoded" in request["content_type"], request
+    for key, value in expected.items():
+        assert request["form"].get(key) == value, {"expected": expected, "request": request}
+
+
+@contextmanager
+def mock_server():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), MockImageAgentHandler)
+    host, port = server.server_address
+    import threading
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield "http://" + host + ":" + str(port)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+if __name__ == "__main__":
+    main()
+`;
+}
+
+function pythonHostReadme(service: ServiceManifest): string {
+  return [
+    "# Feishu Python Host Scaffold",
+    "",
+    `This directory is the generated \`self-hosted-runtime\` package for \`${service.service.name}\`. It includes the Python card renderer, service client, validation, handlers, Feishu SDK selfcheck entrypoint, and localhost contract test.`,
+    "",
+    "## Files",
+    "",
+    "- `.env.example`: locked environment contract for the Python host.",
+    "- `requirements.txt`: Python dependencies required by the Feishu SDK host path.",
+    "- `config.py`: syntactically valid config loader with secret-safe validation.",
+    "- `cards.py`, `service_client.py`, `validation.py`, `handlers.py`, `app.py`: Python runtime files for card rendering, target HTTP calls, action validation/routing, and SDK wiring selfcheck.",
+    "- `local_contract_test.py`: stdlib localhost mock test for handler-to-target behavior without Feishu.",
+    "- `spec/start_card.json`: generated Feishu start card, rendered from the TypeScript manifest/card builder logic.",
+    "- `spec/preset.json`, `spec/template_specs.json`, `spec/field_specs.json`, `spec/field_map.json`, `spec/endpoints.json`: manifest-derived contracts for later Python runtime slices.",
+    "",
+    "## Setup",
+    "",
+    "```powershell",
+    "python -m venv .venv",
+    ".\\.venv\\Scripts\\python -m pip install -r requirements.txt",
+    "Copy-Item .env.example .env",
+    "# Fill FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_CONNECTION_MODE=websocket, and IMAGE_AGENT_BASE_URL.",
+    "python local_contract_test.py",
+    "```",
+    "",
+    `The target service remains external. The Python host will call \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}\` over HTTP through the endpoint contract in \`spec/endpoints.json\`.`,
+    "",
+  ].join("\n");
+}
+
+function buildPythonHostFieldMapSpec(
+  fieldSpecs: RuntimeFieldSpec[],
+  fieldMaps: ReturnType<typeof buildFormFieldMaps>,
+): Record<string, unknown> {
+  return {
+    schema_version: "0.1",
+    templateKeyToFormField: fieldMaps.templateKeyToFormField,
+    formFieldToTemplateKey: fieldMaps.formFieldToTemplateKey,
+    fields: fieldSpecs.map((field) => ({
+      template_key: field.key,
+      form_field: fieldMaps.templateKeyToFormField[field.key] || field.name,
+      label: field.label,
+      required: field.required,
+      required_for: field.requiredFor,
+      placeholder: field.placeholder,
+      default_value: field.defaultValue,
+    })),
+  };
+}
+
+function buildPythonHostEndpointsSpec(): Record<string, unknown> {
+  return {
+    schema_version: "0.1",
+    target: "image-agent-web",
+    actions: {
+      "image.generate.submit": {
+        operation: "generate",
+        method: "POST",
+        path: "/api/generate",
+        content_type: "multipart/form-data",
+        body: "form",
+        fields: ["template_id", "size", "fields_json", "message", "reference_types_json"],
+      },
+      "image.iterate.submit": {
+        operation: "iterate",
+        method: "POST",
+        path: "/api/iterate",
+        content_type: "application/json",
+        body: "json",
+        fields: ["session_id", "feedback"],
+      },
+      "image.batch.submit": {
+        operation: "batch",
+        method: "POST",
+        path: "/api/batch",
+        content_type: "multipart/form-data",
+        body: "form",
+        fields: ["template_id", "size", "items_json", "reference_types_json"],
+      },
+      "image.batch.refresh": {
+        operation: "batch_status",
+        method: "GET",
+        path: "/api/batch/{batch_id}/status",
+        body: "none",
+        path_params: ["batch_id"],
+      },
+    },
+    supporting_endpoints: {
+      batch_download: {
+        method: "GET",
+        path: "/api/batch/{batch_id}/download",
+        path_params: ["batch_id"],
+      },
+      meta: {
+        method: "GET",
+        path: "/api/meta",
+      },
+    },
+  };
+}
+
+function buildStartCardSpec(service: ServiceManifest, data: AdapterCardTemplateData): Record<string, unknown> {
+  const { defaultPreset, templateSpecs, fieldSpecs, fieldMaps } = data;
+  const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: "Image Agent MVP" } },
+    elements: [
+      { tag: "markdown", content: `**Target service:** ${service.service.name}\n\n**Templates:** ${templateSpecs.map((template) => template.id).join(", ")}\n\nFill the parameters and submit to run /api/generate.` },
+      {
+        tag: "form",
+        name: "image_generate_form",
+        elements: [
+          { tag: "input", name: "param_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          ...fieldSpecs.map((field) => ({ tag: "input", name: fieldMaps.templateKeyToFormField[field.key] || field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
+          { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
+          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", action_type: "form_submit", name: "submit_image_generate", value: { action: "image.generate.submit", preset: defaultPreset } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_generate" },
+        ],
+      },
+      { tag: "hr" },
+      { tag: "markdown", content: "Use batch mode for long-running /api/batch jobs. Submit a JSON array of items, then refresh the returned progress card when needed." },
+      {
+        tag: "form",
+        name: "image_batch_form",
+        elements: [
+          { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\\"fields\\\": { ... } }]" } },
+          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", action_type: "form_submit", name: "submit_image_batch", value: { action: "image.batch.submit" } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_batch" },
+        ],
+      },
+    ],
+  };
 }
 
 function writeLevel2VerificationRecord(recordPath: string, content: string): void {
@@ -233,6 +1548,7 @@ function writePackageContext(
   service: ServiceManifest,
   permissions: RequiredPermissions,
   integrationMode: IntegrationMode,
+  hostReceiveMode: HostReceiveMode,
 ): void {
   const sourceContext = readOptionalJson<Partial<ContextTemplate>>(path.join(workspace, "feishu_context.template.json"));
   const mergedContext = mergeContextValues(
@@ -240,6 +1556,7 @@ function writePackageContext(
       generatedPackageHint: packageHintFromProjectRoot(outDir),
       packageRootCliPath: toCliPath(path.relative(outDir, path.resolve("dist", "index.js"))),
       integrationMode,
+      hostReceiveMode,
     }),
     sourceContext,
   );
@@ -344,6 +1661,10 @@ bot-runtime/dist/
 bot-runtime/tmp/
 bot-runtime/audit.log
 bot-runtime/*.log
+feishu-host/.env
+feishu-host/.venv/
+feishu-host/__pycache__/
+feishu-host/*.pyc
 
 # Local-only filled context copies. Keep feishu_context.template.json reviewable.
 feishu_context.local.json
@@ -415,7 +1736,20 @@ function buildLevel2ManualEvidenceTemplate(service: ServiceManifest): Record<str
   };
 }
 
-function buildStartHere(service: ServiceManifest, integrationMode: IntegrationMode): string {
+function buildStartHere(service: ServiceManifest, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode): string {
+  const hostModeOption = integrationMode === "embedded-adapter" && hostReceiveMode !== "embedded-webhook" ? ` --host-mode ${hostReceiveMode}` : "";
+  const usesWebhook = hostModeUsesWebhook(hostReceiveMode);
+  const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
+  const level2HostRequirement = usesWebhook && usesLongConnection
+    ? "a public callback URL, an online long-connection host subscribed to `card.action.trigger`"
+    : usesLongConnection
+      ? "an online long-connection host subscribed to `card.action.trigger`"
+      : "a public callback URL";
+  const ownerFields = usesWebhook && usesLongConnection
+    ? "`APP_ID`, `APP_SECRET`, `VERIFICATION_TOKEN`, `TEST_CHAT_ID`, `PUBLIC_CALLBACK_BASE_URL`, the long-connection host lifecycle, and the reachable target URL"
+    : usesLongConnection
+      ? "`APP_ID`, `APP_SECRET`, `TEST_CHAT_ID`, the long-connection host lifecycle, and the reachable target URL"
+      : "`APP_ID`, `APP_SECRET`, `VERIFICATION_TOKEN`, `TEST_CHAT_ID`, `PUBLIC_CALLBACK_BASE_URL`, and the reachable target URL";
   const afterContext = integrationMode === "standalone-runtime"
     ? `\`\`\`powershell
 node $env:LARK_DEPLOYER_CLI init-local . --context --reply
@@ -436,27 +1770,29 @@ node $env:LARK_DEPLOYER_CLI evidence . --runtime-url http://127.0.0.1:3978 --upd
 node $env:LARK_DEPLOYER_CLI doctor . --out doctor_report.json --probe-target --gate
 \`\`\``
     : `\`\`\`powershell
-node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --strict
 # After adapter/ is mounted in your existing Feishu SDK host:
-node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate
-node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter --gate
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate
+node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --gate
 \`\`\``;
   return `# Start Here
 
 This generated package connects \`${service.service.name}\` to Feishu/Lark card actions for MVP-1A verification. The core generated artifact is \`adapter/\`${integrationMode === "standalone-runtime" ? "; \`bot-runtime/\` is the optional standalone reference host." : ". This package was generated in embedded-adapter mode and does not include \`bot-runtime/\`."}
 
+Host receive mode: ${hostReceiveMode}
+
 ## Boundary
 
 - Lark-deployer built this package; it does not start or supervise \`${service.service.name}\`.
 - Keep real secrets out of shared Markdown. Use \`feishu_context.local.json\`${integrationMode === "standalone-runtime" ? " or `bot-runtime/.env`" : " or the existing host service's secret store"} locally.
-- Real MVP completion still requires a Feishu app, a test chat, a public callback URL, and a real card click/result observation.
+- Real MVP completion still requires a Feishu app, a test chat, ${level2HostRequirement}, and a real card click/result observation.
 
 ## First 10 Minutes
 
 1. Review \`adapter/\` and \`docs/integration_guide.md\` if you already have a Feishu SDK service.
 2. Read \`doctor_report.md\` for the current blocker list.
 3. Send \`feishu_context.request.md\` to the Feishu app owner/FDE.
-4. Use \`feishu_context.reply.template.json\` or \`feishu_context.reply.template.md\` to record non-secret answers, then confirm who owns \`APP_ID\`, \`APP_SECRET\`, \`VERIFICATION_TOKEN\`, \`TEST_CHAT_ID\`, \`PUBLIC_CALLBACK_BASE_URL\`, and the reachable target URL.
+4. Use \`feishu_context.reply.template.json\` or \`feishu_context.reply.template.md\` to record non-secret answers, then confirm who owns ${ownerFields}.
 5. If this package was copied outside the Lark-deployer repo, set the CLI path:
 
 \`\`\`powershell
@@ -1292,10 +2628,78 @@ function stringValue(value) {
 `;
 }
 
-function buildEmbeddedIntegrationGuide(service: ServiceManifest, permissions: RequiredPermissions): string {
+function buildSelfHostedIntegrationGuide(service: ServiceManifest): string {
+  return `# Self-Hosted Runtime Integration Guide
+
+This package was generated in \`self-hosted-runtime\` mode. The core artifact is \`feishu-host/\`: a Python Feishu long-connection host scaffold that keeps \`${service.service.name}\` external and talks to it over HTTP.
+
+## Current Slice
+
+This generated package includes configuration and executable spec artifacts only:
+
+- \`feishu-host/.env.example\`
+- \`feishu-host/requirements.txt\`
+- \`feishu-host/config.py\`
+- \`feishu-host/README.md\`
+- \`feishu-host/spec/start_card.json\`
+- \`feishu-host/spec/preset.json\`
+- \`feishu-host/spec/template_specs.json\`
+- \`feishu-host/spec/field_specs.json\`
+- \`feishu-host/spec/field_map.json\`
+- \`feishu-host/spec/endpoints.json\`
+
+Later slices emit \`cards.py\`, \`service_client.py\`, \`validation.py\`, \`handlers.py\`, \`app.py\`, and \`local_contract_test.py\`.
+
+## Locked Environment Contract
+
+Copy \`feishu-host/.env.example\` to \`feishu-host/.env\` and fill these values locally:
+
+- \`FEISHU_APP_ID\`
+- \`FEISHU_APP_SECRET\`
+- \`FEISHU_CONNECTION_MODE=websocket\`
+- \`IMAGE_AGENT_BASE_URL\`
+- Optional \`FEISHU_ALLOWED_USERS\`
+- \`IMAGE_AGENT_TIMEOUT_MS\`
+- Optional \`TEST_CHAT_ID\`
+
+\`config.py\` validates this contract and exposes only a secret-safe summary.
+
+## Spec Contracts
+
+The start card is fully rendered at generation time in \`feishu-host/spec/start_card.json\`; the Python host should load it instead of rebuilding the initial card. The manifest-derived specs preserve the TypeScript card-builder field names and template mappings, including \`field_map.json\` for converting generated form field names back to target template field keys.
+
+\`spec/endpoints.json\` maps Feishu actions to the target HTTP contract:
+
+- \`image.generate.submit\` -> \`POST /api/generate\` with multipart form fields \`template_id\`, \`size\`, \`fields_json\`, \`message\`, and \`reference_types_json\`.
+- \`image.iterate.submit\` -> \`POST /api/iterate\` with JSON \`session_id\` and \`feedback\`.
+- \`image.batch.submit\` -> \`POST /api/batch\` with multipart form fields \`template_id\`, \`size\`, \`items_json\`, and \`reference_types_json\`.
+- \`image.batch.refresh\` -> \`GET /api/batch/{batch_id}/status\`.
+
+## Setup
+
+\`\`\`powershell
+cd feishu-host
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+python -m py_compile config.py
+\`\`\`
+
+Real Feishu Level 2 remains manual: enable long connection in the Feishu app, subscribe to \`card.action.trigger\`, add the bot to the test chat, and run the later emitted host entrypoint after the remaining Python runtime slices exist.
+`;
+}
+
+function buildEmbeddedIntegrationGuide(service: ServiceManifest, permissions: RequiredPermissions, hostReceiveMode: HostReceiveMode): string {
+  const longConnection = hostReceiveMode === "embedded-long-connection";
+  const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
+  const hybrid = hostReceiveMode === "hybrid";
+  const hostModeOption = hostReceiveMode === "embedded-webhook" ? "" : ` --host-mode ${hostReceiveMode}`;
   return `# Embedded Adapter Integration Guide
 
 This package is adapter-first. The core artifact is \`adapter/\`. In embedded-adapter mode, this package is intended for an existing Feishu SDK host and does not include a generated \`bot-runtime/\` directory. If a standalone reference host is needed, regenerate with \`--mode standalone-runtime\`.
+
+- Host receive mode: ${hostReceiveMode}
+- Card action ingress: ${longConnection ? "Feishu SDK long connection subscription to `card.action.trigger`." : hybrid ? "Hybrid: webhook callback route such as `/webhook/card` plus Feishu SDK long connection subscription to `card.action.trigger`." : "Webhook callback route such as `/webhook/card`."}
 
 ## Adapter Files
 
@@ -1308,7 +2712,7 @@ This package is adapter-first. The core artifact is \`adapter/\`. In embedded-ad
 
 ## Host Responsibilities
 
-Your existing Feishu SDK service owns SDK initialization, callback verification, route registration, image upload wrappers, audit log persistence, runtime config loading, deployment, and process lifecycle.
+Your existing Feishu SDK service owns SDK initialization, ${longConnection ? "long-connection lifecycle, `card.action.trigger` subscription" : hybrid ? "callback verification, route registration, long-connection lifecycle, `card.action.trigger` subscription" : "callback verification, route registration"}, image upload wrappers, audit log persistence, runtime config loading, deployment, and process lifecycle.
 
 ## Send The Initial Card
 
@@ -1396,16 +2800,16 @@ ${permissions.callbacks.map((callback) => `- Callback \`${callback.callback}\`: 
 Run package validation without starting the standalone runtime:
 
 \`\`\`powershell
-node ..\\..\\dist\\index.js verify . --mode embedded-adapter --strict
+node ..\\..\\dist\\index.js verify . --mode embedded-adapter${hostModeOption} --strict
 \`\`\`
 
-After the adapter is mounted in your existing Feishu SDK host, run host validation against that host. This probes the host-owned \`/health\` endpoint and Feishu-style \`/webhook/card\` URL verification route; with \`--simulate\`, it also tries a conventional \`/debug/simulate-card-action\` endpoint and reports a manual-check warning if your host uses a different debug surface:
+After the adapter is mounted in your existing Feishu SDK host, run host validation against that host. This probes the host-owned \`/health\` endpoint${longConnection ? " and expects host-owned `card.action.trigger` long-connection evidence instead of a webhook URL-verification route" : hybrid ? ", Feishu-style `/webhook/card` URL verification, and host-owned `card.action.trigger` long-connection evidence" : " and Feishu-style `/webhook/card` URL verification route"}; with \`--simulate\`, it also tries a conventional \`/debug/simulate-card-action\` endpoint and reports a manual-check warning if your host uses a different debug surface:
 
 \`\`\`powershell
-node ..\\..\\dist\\index.js verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate
+node ..\\..\\dist\\index.js verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate
 \`\`\`
 
-Real Level 2 still requires your host service to receive a real Feishu card callback, call the adapter, call \`${service.service.name}\`, return the result card, and record manual evidence in \`level2_verification_record.md\`.
+Real Level 2 still requires your host service to receive a real Feishu ${usesLongConnection ? "`card.action.trigger` long-connection event" : "card callback"}${hybrid ? " and maintain the webhook callback path" : ""}, call the adapter, call \`${service.service.name}\`, return the result card, and record manual evidence in \`level2_verification_record.md\`.
 `;
 }
 
@@ -1413,8 +2817,13 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function buildGeneratedReadme(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode): string {
+function buildGeneratedReadme(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode): string {
   if (integrationMode === "embedded-adapter") {
+    const longConnection = hostReceiveMode === "embedded-long-connection";
+    const usesWebhook = hostModeUsesWebhook(hostReceiveMode);
+    const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
+    const hybrid = hostReceiveMode === "hybrid";
+    const hostModeOption = hostReceiveMode === "embedded-webhook" ? "" : ` --host-mode ${hostReceiveMode}`;
     return `# ${service.service.name} Lark Embedded Adapter Package
 
 This package was generated by Lark-deployer for the MVP-1A image generation, feedback-iteration, and batch-progress flow.
@@ -1427,6 +2836,7 @@ Lark-deployer generated an embeddable adapter package. It does not run or manage
 - Target base URL: ${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}
 - Core artifact: \`adapter/\`
 - Integration mode: embedded-adapter
+- Host receive mode: ${hostReceiveMode}
 - Managed by Lark-deployer: false
 
 ## What The Embedded Adapter Does
@@ -1434,7 +2844,8 @@ Lark-deployer generated an embeddable adapter package. It does not run or manage
 1. Exposes adapter handlers for Feishu/Lark card actions.
 2. Maps generate, iterate, batch submit, and batch refresh actions to \`${service.service.name}\` requests.
 3. Returns card JSON and audit events for your existing Feishu SDK host to send and persist.
-4. Leaves callback routing, Feishu SDK verification, secret storage, deployment, and Level 2 evidence collection to the existing host service.
+4. Leaves ${usesLongConnection && usesWebhook ? "long-connection ingress, callback routing, Feishu SDK lifecycle" : usesLongConnection ? "long-connection ingress, Feishu SDK lifecycle" : "callback routing, Feishu SDK verification"}, secret storage, deployment, and Level 2 evidence collection to the existing host service.
+5. Uses ${hybrid ? "both the webhook callback path and the Feishu SDK `card.action.trigger` long-connection event path" : usesLongConnection ? "the Feishu SDK `card.action.trigger` long-connection event path" : "the webhook callback path"} as the host receive mode.
 
 ## Required Context
 
@@ -1445,7 +2856,7 @@ ${permissions.context_requirements.map((item) => `- ${item}`).join("\n")}
 Package-only validation does not require host secrets or a running generated runtime:
 
 \`\`\`powershell
-node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --strict
 \`\`\`
 
 ## Host Validation
@@ -1453,14 +2864,14 @@ node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict
 After \`adapter/\` is mounted in your existing Feishu SDK host, validate the host boundary:
 
 \`\`\`powershell
-node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate
 \`\`\`
 
-This checks \`/health\` and \`/webhook/card\` on the existing host. If \`--simulate\` is provided and your host does not expose \`/debug/simulate-card-action\`, the report records a host-owned manual-check warning instead of assuming a generated debug API.
+This checks \`/health\`${hybrid ? ", `/webhook/card`, and host-owned `card.action.trigger` long-connection evidence" : longConnection ? " on the existing host and does not require a `/webhook/card` URL-verification endpoint for long-connection delivery" : " and `/webhook/card` on the existing host"}. If \`--simulate\` is provided and your host does not expose \`/debug/simulate-card-action\`, the report records a host-owned manual-check warning instead of assuming a generated debug API.
 
 ## Real Level 2
 
-Real Level 2 still requires your host service to receive a real Feishu card callback, call the adapter, call \`${service.service.name}\`, return the result card, and record manual evidence in \`level2_verification_record.md\`.
+Real Level 2 still requires your host service to receive a real Feishu ${hybrid ? "webhook callback and `card.action.trigger` long-connection event" : longConnection ? "`card.action.trigger` long-connection event" : "card callback"}, call the adapter, call \`${service.service.name}\`, return the result card, and record manual evidence in \`level2_verification_record.md\`.
 
 Use \`level2_manual_evidence.template.json\` as the safe template for local manual evidence intake. Keep filled evidence and secrets in ignored local files or your existing host service's secret store.
 
@@ -1469,8 +2880,8 @@ Use \`level2_manual_evidence.template.json\` as the safe template for local manu
 \`\`\`powershell
 node $env:LARK_DEPLOYER_CLI status .
 node $env:LARK_DEPLOYER_CLI readiness .
-node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter
-node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter --gate
+node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption}
+node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --gate
 node $env:LARK_DEPLOYER_CLI handoff .
 \`\`\`
 `;
@@ -1689,7 +3100,7 @@ When a runtime check fails, \`verification_report.md\` includes a short response
 `;
 }
 
-function buildLevel2VerificationRecord(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode): string {
+function buildLevel2VerificationRecord(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode): string {
   const scopes = permissions.scopes.length
     ? permissions.scopes.map((scope) => `  - [ ] \`${scope.scope}\` - ${scope.reason}`).join("\n")
     : "  - [ ] No explicit scopes were generated.";
@@ -1698,34 +3109,70 @@ function buildLevel2VerificationRecord(service: ServiceManifest, permissions: Re
     : "  - [ ] No explicit callbacks were generated.";
 
   if (integrationMode === "embedded-adapter") {
+    const longConnection = hostReceiveMode === "embedded-long-connection";
+    const usesWebhook = hostModeUsesWebhook(hostReceiveMode);
+    const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
+    const hybrid = hostReceiveMode === "hybrid";
+    const hostModeOption = hostReceiveMode === "embedded-webhook" ? "" : ` --host-mode ${hostReceiveMode}`;
+    const environmentRows = [
+      "- Date:",
+      "- Operator:",
+      `- Target service: ${service.service.name}`,
+      `- Target base URL: ${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}`,
+      "- Generated package path:",
+      "- Existing host service URL:",
+      `- Host receive mode: ${hostReceiveMode}`,
+      ...(usesWebhook ? ["- Public callback URL: <PUBLIC_CALLBACK_BASE_URL>/webhook/card"] : []),
+      ...(usesLongConnection ? ["- Long-connection gateway/sidecar:"] : []),
+      "- Feishu app name:",
+      "- Test chat:",
+    ].join("\n");
+    const setupRows = [
+      "- [ ] Bot capability is enabled.",
+      "- [ ] Bot is added to the test chat.",
+      "- [ ] App credentials are stored in the existing host service's secret/config system: `APP_ID`, `APP_SECRET`.",
+      ...(usesWebhook ? [
+        "- [ ] Callback token is stored in the existing host service's secret/config system: `VERIFICATION_TOKEN`.",
+        "- [ ] `ENCRYPT_KEY` is stored if encrypted callbacks are enabled.",
+      ] : []),
+      ...(usesLongConnection ? [
+        "- [ ] Feishu SDK long connection is configured with the existing app credentials and subscribed to `card.action.trigger`.",
+      ] : []),
+      "- [ ] `TEST_CHAT_ID` is configured in the existing host.",
+      ...(usesWebhook ? ["- [ ] `PUBLIC_CALLBACK_BASE_URL` is configured and publicly reachable by Feishu."] : []),
+      ...(usesLongConnection ? ["- [ ] The gateway/sidecar process lifecycle is supervised independently of the target business service."] : []),
+      "- [ ] `DEBUG_ACCESS_TOKEN` or equivalent protection is set before host-owned debug endpoints are exposed.",
+      "- [ ] `ALLOWED_OPERATOR_OPEN_IDS` or equivalent host guard is set for real group use, or the operator explicitly accepts that any valid card click can run the service.",
+      ...(usesWebhook ? ["- [ ] Card callback URL is configured as `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` on the existing host."] : []),
+      ...(usesLongConnection ? ["- [ ] The host routes long-connection card.action.trigger events into `adapter/handlers.ts`."] : []),
+    ].join("\n");
+    const preflightRows = [
+      "- [ ] `GET <target_base_url>/api/meta` succeeds from the existing host environment.",
+      "- [ ] `GET <host_runtime_url>/health` succeeds on the existing host.",
+      ...(usesWebhook ? [
+        "- [ ] `POST <host_runtime_url>/webhook/card` answers a local `url_verification` challenge.",
+        "- [ ] `POST <PUBLIC_CALLBACK_BASE_URL>/webhook/card` answers a public `url_verification` challenge.",
+        "- [ ] Signed card-action payloads to local and public `/webhook/card` return success cards when `VERIFICATION_TOKEN` is set.",
+        "- [ ] If `ENCRYPT_KEY` is enabled, local and public encrypted `url_verification` challenges both succeed.",
+      ] : []),
+      ...(usesLongConnection ? [
+        "- [ ] Host logs show the Feishu SDK long connection is online and a `card.action.trigger` event reaches the gateway/sidecar.",
+        "- [ ] Host-owned simulation or manual card-action evidence reaches `adapter/handlers.ts`.",
+      ] : []),
+      `- [ ] \`verify . --mode embedded-adapter${hostModeOption} --host-runtime-url <host_runtime_url> --simulate\` records host health checks and either passes host-owned simulation or records the manual-check warning for the host debug surface.`,
+      "- [ ] `verification_report.md` has no unexpected FAIL checks.",
+    ].join("\n");
     return `# Level 2 Verification Record
 
 Use this file to record the real Feishu/Lark verification for this embedded adapter package.
 
 ## Environment
 
-- Date:
-- Operator:
-- Target service: ${service.service.name}
-- Target base URL: ${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}
-- Generated package path:
-- Existing host service URL:
-- Public callback URL: <PUBLIC_CALLBACK_BASE_URL>/webhook/card
-- Feishu app name:
-- Test chat:
+${environmentRows}
 
 ## Required Feishu Setup
 
-- [ ] Bot capability is enabled.
-- [ ] Bot is added to the test chat.
-- [ ] App credentials are stored in the existing host service's secret/config system: \`APP_ID\`, \`APP_SECRET\`.
-- [ ] Callback token is stored in the existing host service's secret/config system: \`VERIFICATION_TOKEN\`.
-- [ ] \`ENCRYPT_KEY\` is stored if encrypted callbacks are enabled.
-- [ ] \`TEST_CHAT_ID\` is configured in the existing host.
-- [ ] \`PUBLIC_CALLBACK_BASE_URL\` is configured and publicly reachable by Feishu.
-- [ ] \`DEBUG_ACCESS_TOKEN\` or equivalent protection is set before host-owned debug endpoints are exposed through a public callback URL.
-- [ ] \`ALLOWED_OPERATOR_OPEN_IDS\` or equivalent host guard is set for real group use, or the operator explicitly accepts that any valid card click can run the service.
-- [ ] Card callback URL is configured as \`<PUBLIC_CALLBACK_BASE_URL>/webhook/card\` on the existing host.
+${setupRows}
 
 ## Required Scopes
 
@@ -1742,14 +3189,7 @@ ${callbacks}
 
 ## Preflight Evidence
 
-- [ ] \`GET <target_base_url>/api/meta\` succeeds from the existing host environment.
-- [ ] \`GET <host_runtime_url>/health\` succeeds on the existing host.
-- [ ] \`POST <host_runtime_url>/webhook/card\` answers a local \`url_verification\` challenge.
-- [ ] \`POST <PUBLIC_CALLBACK_BASE_URL>/webhook/card\` answers a public \`url_verification\` challenge.
-- [ ] Signed card-action payloads to local and public \`/webhook/card\` return success cards when \`VERIFICATION_TOKEN\` is set.
-- [ ] If \`ENCRYPT_KEY\` is enabled, local and public encrypted \`url_verification\` challenges both succeed.
-- [ ] \`verify . --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate\` records host health/callback checks and either passes host-owned simulation or records the manual-check warning for the host debug surface.
-- [ ] \`verification_report.md\` has no unexpected FAIL checks.
+${preflightRows}
 
 ## Interaction Evidence
 
@@ -1758,7 +3198,7 @@ ${callbacks}
 - [ ] Start card shows expected template fields from \`manifest/image_agent_meta.snapshot.json\`.
 - [ ] Start card shows \`Template ID\`, \`Size\`, optional \`Message\`, and batch items JSON inputs.
 - [ ] Operator submits a valid card form in Feishu.
-- [ ] Existing host receives the card callback.
+- [ ] Existing host receives the ${hybrid ? "card callback and `card.action.trigger` long-connection event" : longConnection ? "`card.action.trigger` long-connection event" : "card callback"}.
 - [ ] Existing host calls \`adapter/handlers.ts\` and records a \`card_action_received\` or equivalent adapter audit event.
 - [ ] If \`ALLOWED_OPERATOR_OPEN_IDS\` is set, an unlisted operator gets a red failure card and the target service is not called.
 - [ ] Repeating the same card action immediately is deduplicated by the host or documented as a host-owned behavior.

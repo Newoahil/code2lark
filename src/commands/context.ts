@@ -2,10 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { getStringOption } from "../args.js";
 import { readJsonFile, slugify, writeJson, writeText } from "../fs-utils.js";
+import { normalizeHostReceiveMode, type HostReceiveMode, type IntegrationMode } from "../host-mode.js";
 import type { RequiredPermissions, ServiceManifest } from "../types.js";
 
 export interface ContextTemplate {
   schema_version: "0.1";
+  integration_mode?: IntegrationMode;
+  host_receive_mode?: HostReceiveMode;
   purpose: string;
   target_service: {
     name: string;
@@ -122,7 +125,7 @@ export interface ContextReplyTemplate {
 export async function contextCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const packageArg = args[0];
   if (!packageArg) {
-    throw new Error("Usage: lark-deployer context <analysis-workspace-or-generated-package> [--out <file>]");
+    throw new Error("Usage: lark-deployer context <analysis-workspace-or-generated-package> [--out <file>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime]");
   }
 
   const workspace = path.resolve(packageArg);
@@ -134,7 +137,9 @@ export async function contextCommand(args: string[], options: Record<string, str
   const requestFile = contextRequestFilePath(outFile);
   const replyFile = contextReplyFilePath(outFile);
   const replyMarkdownFile = replyFile.replace(/\.json$/i, ".md");
-  const template = buildContextTemplate(service, permissions);
+  const integrationMode = normalizeContextIntegrationMode(getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime"))));
+  const hostReceiveMode = normalizeHostReceiveMode(getStringOption(options, "host-mode", getStringOption(options, "hostMode", "")), integrationMode);
+  const template = buildContextTemplate(service, permissions, { integrationMode, hostReceiveMode });
 
   writeJson(outFile, template);
   writeText(markdownFile, buildContextMarkdown(template));
@@ -147,82 +152,143 @@ export async function contextCommand(args: string[], options: Record<string, str
   console.log(`Context reply template written to ${replyFile}`);
 }
 
+function normalizeContextIntegrationMode(value: string): IntegrationMode {
+  const normalized = value.trim() || "standalone-runtime";
+  if (normalized === "embedded" || normalized === "embedded-adapter") return "embedded-adapter";
+  if (normalized === "standalone" || normalized === "standalone-runtime") return "standalone-runtime";
+  if (normalized === "self-hosted" || normalized === "self-hosted-runtime") return "self-hosted-runtime";
+  throw new Error('--mode must be "embedded-adapter", "standalone-runtime", or "self-hosted-runtime".');
+}
+
 export function buildContextTemplate(
   service: ServiceManifest,
   permissions: RequiredPermissions,
-  options: { generatedPackageHint?: string; packageRootCliPath?: string; integrationMode?: "embedded-adapter" | "standalone-runtime" } = {},
+  options: { generatedPackageHint?: string; packageRootCliPath?: string; integrationMode?: IntegrationMode; hostReceiveMode?: HostReceiveMode } = {},
 ): ContextTemplate {
   const defaultGeneratedPackage = options.generatedPackageHint || `generated\\${slugify(service.service.name)}-lark`;
   const commandPackageArg = quoteCommandArg(defaultGeneratedPackage);
   const packageRootCliPath = options.packageRootCliPath || "..\\..\\dist\\index.js";
   const packageRootCli = quoteCommandArg(packageRootCliPath);
   const embedded = options.integrationMode === "embedded-adapter";
-  const projectDoctorCommands = embedded
+  const selfHosted = options.integrationMode === "self-hosted-runtime";
+  const hostReceiveMode = options.hostReceiveMode || (embedded ? "embedded-webhook" : "standalone-runtime");
+  const hybrid = hostReceiveMode === "hybrid";
+  const hostModeOption = embedded && hostReceiveMode !== "embedded-webhook" ? ` --host-mode ${hostReceiveMode}` : "";
+  const selfHostedModeOption = " --mode self-hosted-runtime";
+  const projectDoctorCommands = selfHosted
     ? [
-        `node dist/index.js doctor ${commandPackageArg} --mode embedded-adapter`,
-        `node dist/index.js doctor ${commandPackageArg} --mode embedded-adapter --gate`,
+        `node dist/index.js doctor ${commandPackageArg}${selfHostedModeOption}`,
+        `node dist/index.js doctor ${commandPackageArg}${selfHostedModeOption} --gate`,
+      ]
+    : embedded
+    ? [
+        `node dist/index.js doctor ${commandPackageArg} --mode embedded-adapter${hostModeOption}`,
+        `node dist/index.js doctor ${commandPackageArg} --mode embedded-adapter${hostModeOption} --gate`,
       ]
     : [
         `node dist/index.js doctor ${commandPackageArg}`,
         `node dist/index.js doctor ${commandPackageArg} --gate`,
         `node dist/index.js doctor ${commandPackageArg} --probe-target --gate`,
       ];
-  const packageDoctorCommands = embedded
+  const packageDoctorCommands = selfHosted
     ? [
-        `node ${packageRootCli} doctor . --mode embedded-adapter`,
-        `node ${packageRootCli} doctor . --mode embedded-adapter --gate`,
+        `node ${packageRootCli} doctor .${selfHostedModeOption}`,
+        `node ${packageRootCli} doctor .${selfHostedModeOption} --gate`,
+      ]
+    : embedded
+    ? [
+        `node ${packageRootCli} doctor . --mode embedded-adapter${hostModeOption}`,
+        `node ${packageRootCli} doctor . --mode embedded-adapter${hostModeOption} --gate`,
       ]
     : [
         `node ${packageRootCli} doctor .`,
         `node ${packageRootCli} doctor . --gate`,
         `node ${packageRootCli} doctor . --probe-target --gate`,
       ];
-  const movedDoctorCommands = embedded
+  const movedDoctorCommands = selfHosted
     ? [
-        "node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter",
-        "node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter --gate",
+        `node $env:LARK_DEPLOYER_CLI doctor .${selfHostedModeOption}`,
+        `node $env:LARK_DEPLOYER_CLI doctor .${selfHostedModeOption} --gate`,
+      ]
+    : embedded
+    ? [
+        `node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption}`,
+        `node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --gate`,
       ]
     : [
         "node $env:LARK_DEPLOYER_CLI doctor .",
         "node $env:LARK_DEPLOYER_CLI doctor . --gate",
         "node $env:LARK_DEPLOYER_CLI doctor . --probe-target --gate",
       ];
-  const projectVerifyCommands = embedded
+  const projectVerifyCommands = selfHosted
     ? [
-        `node dist/index.js verify ${commandPackageArg} --mode embedded-adapter --strict`,
-        `node dist/index.js verify ${commandPackageArg} --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate`,
+        `node dist/index.js verify ${commandPackageArg}${selfHostedModeOption} --strict`,
+      ]
+    : embedded
+    ? [
+        `node dist/index.js verify ${commandPackageArg} --mode embedded-adapter${hostModeOption} --strict`,
+        `node dist/index.js verify ${commandPackageArg} --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate`,
       ]
     : [
         `node dist/index.js verify ${commandPackageArg}`,
         `node dist/index.js verify ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --simulate`,
         `node dist/index.js verify ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --level2`,
       ];
-  const packageVerifyCommands = embedded
+  const packageVerifyCommands = selfHosted
     ? [
-        `node ${packageRootCli} verify . --mode embedded-adapter --strict`,
-        `node ${packageRootCli} verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate`,
+        `node ${packageRootCli} verify .${selfHostedModeOption} --strict`,
+      ]
+    : embedded
+    ? [
+        `node ${packageRootCli} verify . --mode embedded-adapter${hostModeOption} --strict`,
+        `node ${packageRootCli} verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate`,
       ]
     : [
         `node ${packageRootCli} verify .`,
         `node ${packageRootCli} verify . --runtime-url http://127.0.0.1:3978 --simulate`,
         `node ${packageRootCli} verify . --runtime-url http://127.0.0.1:3978 --level2`,
       ];
-  const movedVerifyCommands = embedded
+  const movedVerifyCommands = selfHosted
     ? [
-        "node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --strict",
-        "node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate",
+        `node $env:LARK_DEPLOYER_CLI verify .${selfHostedModeOption} --strict`,
+      ]
+    : embedded
+    ? [
+        `node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --strict`,
+        `node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate`,
       ]
     : [
         "node $env:LARK_DEPLOYER_CLI verify . --runtime-url http://127.0.0.1:3978 --simulate",
         "node $env:LARK_DEPLOYER_CLI verify . --runtime-url http://127.0.0.1:3978 --level2",
       ];
-  const projectEvidenceCommands = embedded ? [] : [`node dist/index.js evidence ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --update-record`];
-  const packageEvidenceCommands = embedded ? [] : [`node ${packageRootCli} evidence . --runtime-url http://127.0.0.1:3978 --update-record`];
-  const movedEvidenceCommands = embedded ? [] : ["node $env:LARK_DEPLOYER_CLI evidence . --runtime-url http://127.0.0.1:3978 --update-record"];
+  const projectEvidenceCommands = embedded || selfHosted ? [] : [`node dist/index.js evidence ${commandPackageArg} --runtime-url http://127.0.0.1:3978 --update-record`];
+  const packageEvidenceCommands = embedded || selfHosted ? [] : [`node ${packageRootCli} evidence . --runtime-url http://127.0.0.1:3978 --update-record`];
+  const movedEvidenceCommands = embedded || selfHosted ? [] : ["node $env:LARK_DEPLOYER_CLI evidence . --runtime-url http://127.0.0.1:3978 --update-record"];
+  const selfHostedProjectSetupCommands = selfHosted ? [
+    `cd ${quoteCommandArg(path.join(defaultGeneratedPackage, "feishu-host"))}`,
+    "python -m pip install -r requirements.txt",
+    "Copy-Item .env.example .env",
+    "python local_contract_test.py",
+    "python app.py --selfcheck",
+  ] : [];
+  const selfHostedPackageSetupCommands = selfHosted ? [
+    "cd feishu-host",
+    "python -m pip install -r requirements.txt",
+    "Copy-Item .env.example .env",
+    "python local_contract_test.py",
+    "python app.py --selfcheck",
+  ] : [];
+  const selfHostedMovedSetupCommands = selfHosted ? [
+    "cd feishu-host",
+    "python -m pip install -r requirements.txt",
+    "Copy-Item .env.example .env",
+    "python local_contract_test.py",
+    "python app.py --selfcheck",
+  ] : [];
   const projectRootCommands = [
-    `node dist/index.js init-local ${commandPackageArg} --context --reply`,
-    `node dist/index.js configure ${commandPackageArg} --strict --dry-run`,
-    `node dist/index.js configure ${commandPackageArg} --strict`,
+    ...(selfHosted ? [] : [`node dist/index.js init-local ${commandPackageArg} --context --reply`]),
+    ...(selfHosted ? [] : [`node dist/index.js configure ${commandPackageArg} --strict --dry-run`, `node dist/index.js configure ${commandPackageArg} --strict`]),
+    ...selfHostedProjectSetupCommands,
     `node dist/index.js status ${commandPackageArg}`,
     `node dist/index.js readiness ${commandPackageArg}`,
     ...projectDoctorCommands,
@@ -231,9 +297,8 @@ export function buildContextTemplate(
     `node dist/index.js handoff ${commandPackageArg}`,
   ];
   const packageRootCommands = [
-    `node ${packageRootCli} init-local . --context --reply`,
-    `node ${packageRootCli} configure . --strict --dry-run`,
-    `node ${packageRootCli} configure . --strict`,
+    ...(selfHosted ? [] : [`node ${packageRootCli} init-local . --context --reply`, `node ${packageRootCli} configure . --strict --dry-run`, `node ${packageRootCli} configure . --strict`]),
+    ...selfHostedPackageSetupCommands,
     `node ${packageRootCli} status .`,
     `node ${packageRootCli} readiness .`,
     ...packageDoctorCommands,
@@ -243,9 +308,8 @@ export function buildContextTemplate(
   ];
   const movedPackageCommands = [
     "$env:LARK_DEPLOYER_CLI=\"C:\\path\\to\\Lark-deployer\\dist\\index.js\"",
-    "node $env:LARK_DEPLOYER_CLI init-local . --context --reply",
-    "node $env:LARK_DEPLOYER_CLI configure . --strict --dry-run",
-    "node $env:LARK_DEPLOYER_CLI configure . --strict",
+    ...(selfHosted ? [] : ["node $env:LARK_DEPLOYER_CLI init-local . --context --reply", "node $env:LARK_DEPLOYER_CLI configure . --strict --dry-run", "node $env:LARK_DEPLOYER_CLI configure . --strict"]),
+    ...selfHostedMovedSetupCommands,
     "node $env:LARK_DEPLOYER_CLI status .",
     "node $env:LARK_DEPLOYER_CLI readiness .",
     ...movedDoctorCommands,
@@ -256,6 +320,8 @@ export function buildContextTemplate(
 
   return {
     schema_version: "0.1",
+    integration_mode: options.integrationMode || "standalone-runtime",
+    host_receive_mode: hostReceiveMode,
     purpose: "Collect external Feishu/Lark and target-service context required for real Level 2 verification.",
     target_service: {
       name: service.service.name,
@@ -275,7 +341,11 @@ export function buildContextTemplate(
     },
     required_permissions: {
       scopes: permissions.scopes.map((scope) => scope.scope),
-      callbacks: permissions.callbacks.map((callback) => callback.callback),
+      callbacks: hostReceiveMode === "embedded-long-connection"
+        ? ["card.action.trigger via Feishu SDK long connection"]
+        : hybrid
+          ? [...permissions.callbacks.map((callback) => callback.callback), "card.action.trigger via Feishu SDK long connection"]
+        : permissions.callbacks.map((callback) => callback.callback),
       manual_steps: permissions.manual_steps,
     },
     runtime_config: {
@@ -291,7 +361,15 @@ export function buildContextTemplate(
     },
     handoff_request: {
       recipient_hint: "Feishu app owner, permission admin, or FDE who can configure the test bot.",
-      required_values: [
+      required_values: selfHosted ? [
+        { key: "FEISHU_APP_ID", owner: "Feishu app owner", required_for_level_2: true, note: "Application ID for feishu-host/.env." },
+        { key: "FEISHU_APP_SECRET", owner: "Feishu app owner", required_for_level_2: true, note: "Application secret for feishu-host/.env. Share through a secure channel only." },
+        { key: "FEISHU_CONNECTION_MODE", owner: "FDE", required_for_level_2: true, note: "Must be websocket for self-hosted-runtime." },
+        { key: "IMAGE_AGENT_BASE_URL", owner: "Target service owner", required_for_level_2: true, note: `Reachable base URL for ${service.service.name}; Lark-deployer does not start this service.` },
+        { key: "FEISHU_ALLOWED_USERS", owner: "FDE or bot tester", required_for_level_2: false, note: "Optional comma-separated Feishu operator open_id allowlist." },
+        { key: "IMAGE_AGENT_TIMEOUT_MS", owner: "FDE", required_for_level_2: false, note: "Optional target HTTP timeout in milliseconds; default 120000." },
+        { key: "TEST_CHAT_ID", owner: "FDE or bot tester", required_for_level_2: false, note: "Optional chat id for sending the start card in manual Level 2." },
+      ] : [
         {
           key: "APP_ID",
           owner: "Feishu app owner",
@@ -307,8 +385,10 @@ export function buildContextTemplate(
         {
           key: "VERIFICATION_TOKEN",
           owner: "Feishu app owner",
-          required_for_level_2: true,
-          note: "Callback verification token configured for the app.",
+          required_for_level_2: hostReceiveMode !== "embedded-long-connection",
+          note: hostReceiveMode === "embedded-long-connection"
+            ? "Optional for long-connection hosts; needed only for webhook or hybrid callback verification."
+            : "Callback verification token configured for the app.",
         },
         {
           key: "ENCRYPT_KEY",
@@ -325,8 +405,10 @@ export function buildContextTemplate(
         {
           key: "PUBLIC_CALLBACK_BASE_URL",
           owner: "FDE or infrastructure owner",
-          required_for_level_2: true,
-          note: "Public HTTPS base URL that routes to the generated bot runtime.",
+          required_for_level_2: hostReceiveMode !== "embedded-long-connection",
+          note: hostReceiveMode === "embedded-long-connection"
+            ? "Optional for long-connection hosts; needed only for webhook or hybrid callback verification."
+            : "Public HTTPS base URL that routes to the generated bot runtime or embedded webhook host.",
         },
         {
           key: "IMAGE_AGENT_BASE_URL",
@@ -343,15 +425,26 @@ export function buildContextTemplate(
           owner: "Feishu permission admin",
           security: [],
         })),
-        ...permissions.callbacks.map((callback) => ({
+        ...(selfHosted ? [{
+          item: "card.action.trigger",
+          reason: "The Python feishu-host receives card actions through Feishu SDK long connection.",
+          risk: "n/a" as const,
+          owner: "Feishu app owner or FDE",
+          security: ["long_connection", "FEISHU_CONNECTION_MODE=websocket"],
+        }] : permissions.callbacks.map((callback) => ({
           item: callback.callback,
           reason: callback.reason,
           risk: "n/a" as const,
           owner: "Feishu app owner or FDE",
           security: callback.security,
-        })),
+        }))),
       ],
-      runtime_choices: [
+      runtime_choices: selfHosted ? [
+        { key: "FEISHU_CONNECTION_MODE", recommended_value: "websocket", note: "Required; self-hosted-runtime uses Feishu SDK long connection." },
+        { key: "IMAGE_AGENT_TIMEOUT_MS", recommended_value: "120000", note: "Target HTTP timeout used by service_client.py." },
+        { key: "FEISHU_ALLOWED_USERS", recommended_value: "<comma-separated open_id allowlist for real group use>", note: "Optional operator authorization guard." },
+        { key: "TEST_CHAT_ID", recommended_value: "<chat id for manual start-card send>", note: "Optional until app.py send-start-card flow is used." },
+      ] : [
         {
           key: "CARD_ACTION_MODE",
           recommended_value: "sync",
@@ -416,7 +509,13 @@ export function buildContextTemplate(
       },
       {
         id: "callback_public_url",
-        question: "Can the operator provide a public callback base URL that points to the generated bot runtime, then configure the Feishu card callback URL as <PUBLIC_CALLBACK_BASE_URL>/webhook/card?",
+        question: selfHosted
+          ? "Can the operator run feishu-host as a Python process with FEISHU_CONNECTION_MODE=websocket and subscribe the Feishu app to card.action.trigger?"
+          : hostReceiveMode === "embedded-long-connection"
+          ? "Can the operator keep a Feishu SDK long-connection host online and subscribed to card.action.trigger?"
+          : hybrid
+            ? "Can the operator provide both a public callback base URL for /webhook/card and a Feishu SDK long-connection host subscribed to card.action.trigger?"
+          : "Can the operator provide a public callback base URL that points to the generated bot runtime or embedded webhook host, then configure the Feishu card callback URL as <PUBLIC_CALLBACK_BASE_URL>/webhook/card?",
         required_for_level_2: true,
       },
       {
@@ -435,6 +534,9 @@ export function buildContextTemplate(
 
 export function buildContextMarkdown(template: ContextTemplate): string {
   const embedded = contextTemplateUsesEmbeddedAdapter(template);
+  const selfHosted = template.integration_mode === "self-hosted-runtime";
+  const longConnection = template.host_receive_mode === "embedded-long-connection";
+  const hybrid = template.host_receive_mode === "hybrid";
   const requiredRows = template.handoff_request.required_values
     .map((item) => `| ${item.key} | ${item.owner} | ${item.required_for_level_2 ? "yes" : "optional"} | ${item.note} |`)
     .join("\n");
@@ -462,6 +564,56 @@ ${set.cwd_hint}
 
 ${set.commands.map((command) => `\`\`\`powershell\n${command}\n\`\`\``).join("\n\n")}`)
     .join("\n\n");
+  const manualSteps = longConnection
+    ? [
+        "Enable bot capability in the Feishu developer console.",
+        "Apply message send, optional message update, and resource upload scopes.",
+        "Keep the Feishu SDK long connection online and subscribe to card.action.trigger.",
+        "Publish the app version after permission or event-subscription changes.",
+        "Add the bot to the test chat and confirm it can send messages.",
+      ]
+    : hybrid
+      ? [
+          ...template.required_permissions.manual_steps,
+          "Keep the Feishu SDK long connection online and subscribe to card.action.trigger.",
+        ]
+    : template.required_permissions.manual_steps;
+  const feishuAppValueRows = selfHosted
+    ? [
+        "FEISHU_APP_ID",
+        "FEISHU_APP_SECRET",
+        "FEISHU_CONNECTION_MODE=websocket",
+        "IMAGE_AGENT_BASE_URL",
+        "optional FEISHU_ALLOWED_USERS",
+        "IMAGE_AGENT_TIMEOUT_MS",
+        "optional TEST_CHAT_ID",
+      ]
+    : longConnection
+    ? [
+        "APP_ID",
+        "APP_SECRET",
+        "TEST_CHAT_ID",
+        "IMAGE_AGENT_BASE_URL or equivalent target base URL in the host config",
+        "Long-connection host/gateway lifecycle owner",
+      ]
+    : hybrid
+      ? [
+          "APP_ID",
+          "APP_SECRET",
+          "VERIFICATION_TOKEN",
+          "ENCRYPT_KEY, if encrypted callbacks are enabled",
+          "TEST_CHAT_ID",
+          "PUBLIC_CALLBACK_BASE_URL",
+          "Long-connection host/gateway lifecycle owner",
+        ]
+    : [
+        "APP_ID",
+        "APP_SECRET",
+        "VERIFICATION_TOKEN",
+        "ENCRYPT_KEY, if encrypted callbacks are enabled",
+        "TEST_CHAT_ID",
+        "PUBLIC_CALLBACK_BASE_URL",
+      ];
 
   return `# Feishu Context Template
 
@@ -481,7 +633,7 @@ ${template.readiness_questions.map((item) => `- [ ] ${item.question}`).join("\n"
 
 Send this section to: ${template.handoff_request.recipient_hint}
 
-Please provide the following values and confirmations for the generated Lark-deployer package. Secrets should be shared through a secure channel, not pasted into normal chat.
+Please provide the following values and confirmations for the generated Lark-deployer package. Secrets should be shared through a secure channel, not pasted into normal chat.${longConnection ? " This package uses long connection delivery, so card actions arrive through the Feishu SDK `card.action.trigger` subscription instead of a webhook-only callback route." : ""}
 
 Generated package path hint: \`${template.handoff_request.generated_package_hint}\`
 
@@ -507,18 +659,13 @@ ${runtimeRows}
 
 ## Feishu App Values
 
-${embedded ? "Fill these in `feishu_context.template.json` or the existing host service's secret/config system:" : "Fill these in `feishu_context.template.json` or generated `bot-runtime/.env`:"}
+${selfHosted ? "Fill these in `feishu-host/.env` after copying `feishu-host/.env.example`:" : embedded ? "Fill these in `feishu_context.template.json` or the existing host service's secret/config system:" : "Fill these in `feishu_context.template.json` or generated `bot-runtime/.env`:"}
 
-- APP_ID
-- APP_SECRET
-- VERIFICATION_TOKEN
-- ENCRYPT_KEY, if encrypted callbacks are enabled
-- TEST_CHAT_ID
-- PUBLIC_CALLBACK_BASE_URL
+${feishuAppValueRows.map((item) => `- ${item}`).join("\n")}
 
 ## Runtime Config Values
 
-${embedded ? "These values document the existing host service runtime contract for adapter integration:" : "These values are read from `runtime_config` when `configure` writes `bot-runtime/.env`:"}
+${selfHosted ? "These values document the Python feishu-host runtime contract:" : embedded ? "These values document the existing host service runtime contract for adapter integration:" : "These values are read from `runtime_config` when `configure` writes `bot-runtime/.env`:"}
 
 | Env key | Current value | Note |
 | --- | --- | --- |
@@ -534,7 +681,7 @@ ${template.required_permissions.callbacks.map((callback) => `- ${callback}`).joi
 
 ## Manual Steps
 
-${template.required_permissions.manual_steps.map((step) => `- [ ] ${step}`).join("\n")}
+${manualSteps.map((step) => `- [ ] ${step}`).join("\n")}
 
 ## Verification Commands
 
@@ -544,6 +691,9 @@ ${commandSections}
 
 export function buildContextRequestMarkdown(template: ContextTemplate): string {
   const embedded = contextTemplateUsesEmbeddedAdapter(template);
+  const selfHosted = template.integration_mode === "self-hosted-runtime";
+  const longConnection = template.host_receive_mode === "embedded-long-connection";
+  const hybrid = template.host_receive_mode === "hybrid";
   const requiredRows = template.handoff_request.required_values
     .map((item) => {
       const handling = secretValueKeys.has(item.key)
@@ -561,12 +711,18 @@ export function buildContextRequestMarkdown(template: ContextTemplate): string {
   const runtimeRows = template.handoff_request.runtime_choices
     .map((item) => `| ${item.key} | ${item.recommended_value} | ${item.note} |`)
     .join("\n");
-  const setupRows = [
+  const setupRows = selfHosted ? [
+    "Can provide or create a Feishu custom app for this test.",
+    "Can enable bot capability and add the bot to the test chat if TEST_CHAT_ID is used.",
+    "Can grant or request the listed scopes, then publish the app version.",
+    "Can enable long connection and subscribe to card.action.trigger.",
+    `Can keep ${template.target_service.name} reachable from feishu-host during local contract and Level 2 verification.`,
+  ].map((item) => `- [ ] ${item}`).join("\n") : [
     "Can provide or create a Feishu custom app for this test.",
     "Can enable bot capability and add the bot to the test chat.",
     "Can grant or request the listed scopes, then publish the app version.",
-    "Can configure the Feishu card callback URL as `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` and set the verification token.",
-    embedded ? "Can provide a public HTTPS callback base URL that routes to the existing Feishu SDK host." : "Can provide a public HTTPS callback base URL that routes to the bot runtime.",
+    longConnection ? "Can keep the Feishu SDK long connection online and subscribed to card.action.trigger." : hybrid ? "Can configure the Feishu card callback URL as `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` and keep the SDK long connection subscribed to card.action.trigger." : "Can configure the Feishu card callback URL as `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` and set the verification token.",
+    longConnection ? "Can provide host deployment details for the long-connection gateway/sidecar." : hybrid ? "Can provide both the public HTTPS callback base URL and long-connection gateway/sidecar owner." : embedded ? "Can provide a public HTTPS callback base URL that routes to the existing Feishu SDK host." : "Can provide a public HTTPS callback base URL that routes to the bot runtime.",
     embedded ? `Can keep ${template.target_service.name} reachable from the existing host during Level 2 verification.` : `Can keep ${template.target_service.name} reachable from the bot runtime during Level 2 verification.`,
   ].map((item) => `- [ ] ${item}`).join("\n");
 
@@ -584,7 +740,7 @@ Use this file as the owner-facing request before real Level 2 verification.
 ## Request
 
 Please confirm whether you can provide or configure the values, permissions, callback, and test chat below. Do not paste real secrets into normal chat or shared Markdown; use a secure secret channel for secret values.
-${embedded ? "When filling `feishu_context.local.json` or the existing host service's secret/config system, replace placeholder strings completely; adapter verification treats values like `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, and `${TEST_CHAT_ID}` as missing." : "When filling `feishu_context.local.json` or `bot-runtime/.env`, replace placeholder strings completely; `configure --strict --dry-run` treats values like `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, and `${TEST_CHAT_ID}` as missing."}
+${selfHosted ? "When filling `feishu-host/.env`, replace placeholder strings completely. `verify --mode self-hosted-runtime --strict` checks generated specs, Python compilation, the local contract test, and app.py --selfcheck." : embedded ? "When filling `feishu_context.local.json` or the existing host service's secret/config system, replace placeholder strings completely; adapter verification treats values like `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, and `${TEST_CHAT_ID}` as missing." : "When filling `feishu_context.local.json` or `bot-runtime/.env`, replace placeholder strings completely; `configure --strict --dry-run` treats values like `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, and `${TEST_CHAT_ID}` as missing."}
 
 ## Required Values
 
@@ -613,17 +769,16 @@ ${setupRows}
 \`\`\`text
 can_provide_existing_app_context: yes/no
 can_grant_permissions: yes/no
-can_configure_card_callback: yes/no
-card_callback_url_configured: <PUBLIC_CALLBACK_BASE_URL>/webhook/card yes/no
+${selfHosted ? "long_connection_enabled: yes/no\ncard_action_trigger_subscribed: yes/no" : `can_configure_card_callback: yes/no\n${longConnection ? "long_connection_online: yes/no" : hybrid ? "card_callback_url_configured: <PUBLIC_CALLBACK_BASE_URL>/webhook/card yes/no\nlong_connection_online: yes/no" : "card_callback_url_configured: <PUBLIC_CALLBACK_BASE_URL>/webhook/card yes/no"}`}
 can_add_bot_to_test_chat: yes/no
-secure_secret_channel: <how APP_SECRET / VERIFICATION_TOKEN / ENCRYPT_KEY will be shared>
+secure_secret_channel: ${selfHosted || longConnection ? "<how app secret will be shared>" : "<how APP_SECRET / VERIFICATION_TOKEN / ENCRYPT_KEY will be shared>"}
 target_base_url: <reachable URL or owner>
-public_callback_base_url: <HTTPS URL or tunnel owner>
+${selfHosted ? "feishu_host_owner: <owner or deployment note>" : longConnection ? "long_connection_gateway_owner: <owner or deployment note>" : hybrid ? "public_callback_base_url: <HTTPS URL or tunnel owner>\nlong_connection_gateway_owner: <owner or deployment note>" : "public_callback_base_url: <HTTPS URL or tunnel owner>"}
 test_chat_id_available: yes/no
 blocked_by: <missing owner, permission, network, or policy constraint>
 \`\`\`
 
-${embedded ? "After the non-secret answers are confirmed, mount the adapter in the existing Feishu SDK host, then run `verify --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate` and record real Feishu evidence in `level2_verification_record.md`." : "After the non-secret answers are confirmed, fill `feishu_context.local.json` or `bot-runtime/.env` locally and run `configure`, `verify --level2`, and `evidence --update-record`."}
+${selfHosted ? "After the non-secret answers are confirmed, fill `feishu-host/.env`, run `python feishu-host/local_contract_test.py`, run `python feishu-host/app.py --selfcheck`, then run `verify --mode self-hosted-runtime --strict`." : embedded ? `After the non-secret answers are confirmed, mount the adapter in the existing Feishu SDK host, then run \`verify --mode embedded-adapter${longConnection ? " --host-mode embedded-long-connection" : ""} --host-runtime-url <host_runtime_url> --simulate\` and record real Feishu evidence in \`level2_verification_record.md\`.` : "After the non-secret answers are confirmed, fill `feishu_context.local.json` or `bot-runtime/.env` locally and run `configure`, `verify --level2`, and `evidence --update-record`."}
 `;
 }
 
@@ -635,9 +790,15 @@ function contextTemplateUsesEmbeddedAdapter(template: ContextTemplate): boolean 
 
 export function buildContextReplyTemplate(template: ContextTemplate): ContextReplyTemplate {
   const embedded = contextTemplateUsesEmbeddedAdapter(template);
+  const selfHosted = template.integration_mode === "self-hosted-runtime";
+  const longConnection = template.host_receive_mode === "embedded-long-connection";
+  const hybrid = template.host_receive_mode === "hybrid";
+  const hostModeOption = template.host_receive_mode && template.host_receive_mode !== "embedded-webhook" && template.host_receive_mode !== "standalone-runtime"
+    ? ` --host-mode ${template.host_receive_mode}`
+    : "";
   return {
     schema_version: "0.1",
-    purpose: "Record non-secret Feishu/Lark owner answers before filling local credentials and running configure --strict --dry-run.",
+    purpose: selfHosted ? "Record non-secret Feishu/Lark owner answers before filling feishu-host/.env and running self-hosted verification." : "Record non-secret Feishu/Lark owner answers before filling local credentials and running configure --strict --dry-run.",
     generated_package_hint: template.handoff_request.generated_package_hint,
     target_service: {
       name: template.target_service.name,
@@ -676,12 +837,24 @@ export function buildContextReplyTemplate(template: ContextTemplate): ContextRep
       note: item.note,
     })),
     blocked_by: [],
-    next_local_steps: embedded
+    next_local_steps: selfHosted
+      ? [
+          "Copy feishu-host/.env.example to feishu-host/.env and fill FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_CONNECTION_MODE=websocket, IMAGE_AGENT_BASE_URL, and optional FEISHU_ALLOWED_USERS/IMAGE_AGENT_TIMEOUT_MS/TEST_CHAT_ID.",
+          "Run python -m pip install -r feishu-host/requirements.txt.",
+          "Run python feishu-host/local_contract_test.py.",
+          "Run python feishu-host/app.py --selfcheck.",
+          "Run verify --mode self-hosted-runtime --strict, then record real Feishu evidence in level2_verification_record.md when available.",
+        ]
+      : embedded
       ? [
           "Run init-local --context --reply, or copy feishu_context.template.json to feishu_context.local.json manually.",
-          "Fill APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, and target base URL in the existing host service's secret/config system. Do not put secrets in this reply template.",
+          longConnection
+            ? "Fill APP_ID, APP_SECRET, TEST_CHAT_ID, and target base URL in the existing long-connection host service's secret/config system. Do not put secrets in this reply template."
+            : hybrid
+              ? "Fill APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, long-connection gateway owner, and target base URL in the existing host service's secret/config system. Do not put secrets in this reply template."
+            : "Fill APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, and target base URL in the existing host service's secret/config system. Do not put secrets in this reply template.",
           "Mount the generated adapter in the existing Feishu SDK host.",
-          "Run verify --mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate, then record real Feishu evidence in level2_verification_record.md.",
+          `Run verify --mode embedded-adapter${hostModeOption} --host-runtime-url <host_runtime_url> --simulate, then record real Feishu evidence in level2_verification_record.md.`,
         ]
       : [
           "Run init-local --context --reply, or copy feishu_context.template.json to feishu_context.local.json manually.",
@@ -690,7 +863,7 @@ export function buildContextReplyTemplate(template: ContextTemplate): ContextRep
           "Run configure --strict, start the generated bot runtime, then run verify --level2.",
         ],
     secret_red_lines: [
-      "Do not paste APP_SECRET, VERIFICATION_TOKEN, ENCRYPT_KEY, or DEBUG_ACCESS_TOKEN into this reply template.",
+      selfHosted ? "Do not paste FEISHU_APP_SECRET into this reply template." : "Do not paste APP_SECRET, VERIFICATION_TOKEN, ENCRYPT_KEY, or DEBUG_ACCESS_TOKEN into this reply template.",
       "Share secrets only through the secure_secret_channel named here.",
       "Do not replace empty secret fields in shared Markdown with real secret values.",
     ],
@@ -762,7 +935,7 @@ ${redLines}
 `;
 }
 
-const secretValueKeys = new Set(["APP_SECRET", "VERIFICATION_TOKEN", "ENCRYPT_KEY"]);
+const secretValueKeys = new Set(["APP_SECRET", "FEISHU_APP_SECRET", "VERIFICATION_TOKEN", "ENCRYPT_KEY"]);
 
 function contextRequestFilePath(outFile: string): string {
   if (/\.template\.json$/i.test(outFile)) {

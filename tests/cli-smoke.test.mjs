@@ -21,10 +21,10 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const generated = path.join(temp, "generated");
 
   const rootHelp = run(["--help"]);
-  assert.match(rootHelp, /--mode embedded-adapter\|standalone-runtime/);
+  assert.match(rootHelp, /--mode embedded-adapter\|standalone-runtime\|self-hosted-runtime/);
   assert.match(rootHelp, /--host-runtime-url <url>/);
   const generateHelp = run(["generate", "--help"]);
-  assert.match(generateHelp, /--mode embedded-adapter\|standalone-runtime/);
+  assert.match(generateHelp, /--mode embedded-adapter\|standalone-runtime\|self-hosted-runtime/);
 
   fs.mkdirSync(target, { recursive: true });
   fs.writeFileSync(
@@ -209,8 +209,216 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.match(contextReplyMarkdown, /Feishu Context Reply Template/);
   assert.match(contextReplyMarkdown, /Secure secret channel/);
   assert.doesNotMatch(contextReplyMarkdown, /sk-test-secret-should-not-leak/);
+  const longContextOut = path.join(workspace, "feishu_context.long.template.json");
+  run(["context", workspace, "--out", longContextOut, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection"]);
+  const longContextDirect = JSON.parse(fs.readFileSync(longContextOut, "utf8"));
+  assert.equal(longContextDirect.host_receive_mode, "embedded-long-connection");
+  assert.equal(longContextDirect.handoff_request.required_values.some((item) => item.key === "PUBLIC_CALLBACK_BASE_URL" && item.required_for_level_2), false);
+  const longContextDirectMarkdown = fs.readFileSync(longContextOut.replace(/\.json$/i, ".md"), "utf8");
+  assert.match(longContextDirectMarkdown, /card\.action\.trigger/);
+  assert.doesNotMatch(longContextDirectMarkdown, /\/webhook\/card/);
+  assert.doesNotMatch(longContextDirectMarkdown, /- VERIFICATION_TOKEN/);
+  assert.doesNotMatch(longContextDirectMarkdown, /- PUBLIC_CALLBACK_BASE_URL/);
+  const longContextDirectRequest = fs.readFileSync(longContextOut.replace(/\.template\.json$/i, ".request.md"), "utf8");
+  assert.match(longContextDirectRequest, /long_connection_gateway_owner/);
+  assert.doesNotMatch(longContextDirectRequest, /public_callback_base_url:/);
+  assert.doesNotMatch(longContextDirectRequest, /VERIFICATION_TOKEN \/ ENCRYPT_KEY/);
   const missingGenerated = path.join(temp, "generated-missing-context");
   run(["generate", workspace, "--out", missingGenerated]);
+  const selfHostedGenerated = path.join(temp, "generated-self-hosted");
+  run(["generate", workspace, "--out", selfHostedGenerated, "--mode", "self-hosted-runtime"]);
+  const selfHostedSummary = JSON.parse(fs.readFileSync(path.join(selfHostedGenerated, "generation_summary.json"), "utf8"));
+  assert.equal(selfHostedSummary.integration_mode, "self-hosted-runtime");
+  assert.equal(selfHostedSummary.host_receive_mode, "embedded-long-connection");
+  assert.equal(selfHostedSummary.core_artifact, "feishu-host");
+  assert.equal(selfHostedSummary.runtime, "python-feishu-host");
+  assert.ok(fs.existsSync(path.join(selfHostedGenerated, "feishu-host")));
+  assert.equal(fs.existsSync(path.join(selfHostedGenerated, "bot-runtime")), false);
+  assert.equal(fs.existsSync(path.join(selfHostedGenerated, "sidecar-long-connection")), false);
+  const selfHostedFeishuHost = path.join(selfHostedGenerated, "feishu-host");
+  for (const relativePath of [
+    ".env.example",
+    "requirements.txt",
+    "config.py",
+    "cards.py",
+    "service_client.py",
+    "validation.py",
+    "handlers.py",
+    "app.py",
+    "local_contract_test.py",
+    "README.md",
+    "spec/start_card.json",
+    "spec/field_map.json",
+    "spec/endpoints.json",
+    "spec/preset.json",
+    "spec/template_specs.json",
+    "spec/field_specs.json",
+  ]) {
+    assert.ok(fs.existsSync(path.join(selfHostedFeishuHost, relativePath)), `feishu-host/${relativePath} should be generated`);
+  }
+  const selfHostedEnvExample = fs.readFileSync(path.join(selfHostedFeishuHost, ".env.example"), "utf8");
+  for (const key of [
+    "FEISHU_APP_ID",
+    "FEISHU_APP_SECRET",
+    "FEISHU_CONNECTION_MODE=websocket",
+    "IMAGE_AGENT_BASE_URL",
+    "FEISHU_ALLOWED_USERS",
+    "IMAGE_AGENT_TIMEOUT_MS",
+    "TEST_CHAT_ID",
+  ]) {
+    assert.match(selfHostedEnvExample, new RegExp(`^${escapeRegExp(key)}`, "m"));
+  }
+  const selfHostedRequirements = fs.readFileSync(path.join(selfHostedFeishuHost, "requirements.txt"), "utf8");
+  assert.match(selfHostedRequirements, /^lark-oapi/m);
+  assert.match(selfHostedRequirements, /^requests$/m);
+  const selfHostedConfig = fs.readFileSync(path.join(selfHostedFeishuHost, "config.py"), "utf8");
+  assert.match(selfHostedConfig, /FEISHU_APP_ID/);
+  assert.match(selfHostedConfig, /FEISHU_APP_SECRET/);
+  assert.match(selfHostedConfig, /safe_summary/);
+  assert.doesNotMatch(selfHostedConfig, /print\(/);
+  const selfHostedCards = fs.readFileSync(path.join(selfHostedFeishuHost, "cards.py"), "utf8");
+  assert.match(selfHostedCards, /def load_start_card/);
+  assert.match(selfHostedCards, /def build_success_card/);
+  assert.match(selfHostedCards, /image\.iterate\.submit/);
+  assert.match(selfHostedCards, /image\.batch\.refresh/);
+  const selfHostedServiceClient = fs.readFileSync(path.join(selfHostedFeishuHost, "service_client.py"), "utf8");
+  assert.match(selfHostedServiceClient, /def call_generate/);
+  assert.match(selfHostedServiceClient, /requests\.post\(url, data=data/);
+  assert.match(selfHostedServiceClient, /requests\.post\(url, data=data, json=json_body/);
+  assert.match(selfHostedServiceClient, /def call_batch_status/);
+  assert.match(selfHostedServiceClient, /TargetServiceError/);
+  const selfHostedValidation = fs.readFileSync(path.join(selfHostedFeishuHost, "validation.py"), "utf8");
+  assert.match(selfHostedValidation, /def validate_size/);
+  assert.match(selfHostedValidation, /def validate_required_fields/);
+  assert.match(selfHostedValidation, /def validate_batch_items/);
+  assert.match(selfHostedValidation, /def assert_allowed_operator/);
+  const selfHostedHandlers = fs.readFileSync(path.join(selfHostedFeishuHost, "handlers.py"), "utf8");
+  assert.match(selfHostedHandlers, /def handle_card_action/);
+  assert.match(selfHostedHandlers, /normalize_card_action/);
+  assert.match(selfHostedHandlers, /endpoints\.json/);
+  assert.match(selfHostedHandlers, /formFieldToTemplateKey/);
+  assert.match(selfHostedHandlers, /image\.batch\.refresh/);
+  const selfHostedApp = fs.readFileSync(path.join(selfHostedFeishuHost, "app.py"), "utf8");
+  assert.match(selfHostedApp, /import lark_oapi as lark/);
+  assert.match(selfHostedApp, /register_p2_card_action_trigger\(callback\)/);
+  assert.match(selfHostedApp, /lark\.ws\.Client/);
+  assert.match(selfHostedApp, /card\.action\.trigger registered/);
+  assert.match(selfHostedApp, /without start\(\)/);
+  const selfHostedContract = fs.readFileSync(path.join(selfHostedFeishuHost, "local_contract_test.py"), "utf8");
+  assert.match(selfHostedContract, /ThreadingHTTPServer/);
+  assert.match(selfHostedContract, /\/api\/generate/);
+  assert.match(selfHostedContract, /fields_json/);
+  assert.match(selfHostedContract, /reference_types_json/);
+  assert.match(selfHostedContract, /\/api\/iterate/);
+  assert.match(selfHostedContract, /\/api\/batch\/batch-contract\/status/);
+  assert.match(selfHostedContract, /field_hero_title/);
+  assert.match(selfHostedContract, /feishu-host contract: PASS/);
+  if (pythonCanRunSelfHostedContract()) {
+    const contractOutput = runPython([path.join(selfHostedFeishuHost, "local_contract_test.py")], { cwd: selfHostedFeishuHost });
+    assert.match(contractOutput, /feishu-host contract: PASS/);
+  }
+  const selfHostedVerifyOutput = pythonCanImport("requests") && pythonCanImport("lark_oapi")
+    ? run(["verify", selfHostedGenerated, "--mode", "self-hosted-runtime", "--strict"])
+    : run(["verify", selfHostedGenerated, "--mode", "self-hosted-runtime"]);
+  assert.match(selfHostedVerifyOutput, /self-hosted:summary:integration-mode/);
+  assert.match(selfHostedVerifyOutput, /self-hosted:env-example/);
+  assert.match(selfHostedVerifyOutput, /self-hosted:endpoints/);
+  assert.match(selfHostedVerifyOutput, /self-hosted:start-card-actions/);
+  assert.doesNotMatch(selfHostedVerifyOutput, /PUBLIC_CALLBACK_BASE_URL/);
+  assert.doesNotMatch(selfHostedVerifyOutput, /VERIFICATION_TOKEN/);
+  assert.doesNotMatch(selfHostedVerifyOutput, /\/webhook\/card/);
+  const selfHostedVerifyReport = JSON.parse(fs.readFileSync(path.join(selfHostedGenerated, "verification_report.json"), "utf8"));
+  assert.equal(selfHostedVerifyReport.context.mode, "self-hosted-runtime");
+  assert.equal(selfHostedVerifyReport.context.hostReceiveMode, "embedded-long-connection");
+  assert.ok(selfHostedVerifyReport.checks.some((item) => item.name === "self-hosted:field-map" && item.status === "pass"));
+  assert.ok(selfHostedVerifyReport.checks.some((item) => item.name === "self-hosted:python:py_compile" && item.status === "pass"));
+  if (pythonCanImport("requests") && pythonCanImport("lark_oapi")) {
+    assert.equal(selfHostedVerifyReport.status, "pass");
+    assert.ok(selfHostedVerifyReport.checks.some((item) => item.name === "self-hosted:python:local-contract" && item.status === "pass"));
+    assert.ok(selfHostedVerifyReport.checks.some((item) => item.name === "self-hosted:python:selfcheck" && item.status === "pass"));
+  } else {
+    assert.equal(selfHostedVerifyReport.status, "warn");
+    assert.ok(selfHostedVerifyReport.checks.some((item) => item.status === "warn" && /Install feishu-host\/requirements\.txt|No runnable Python/.test(item.detail)));
+  }
+  const selfHostedContext = JSON.parse(fs.readFileSync(path.join(selfHostedGenerated, "feishu_context.template.json"), "utf8"));
+  assert.equal(selfHostedContext.integration_mode, "self-hosted-runtime");
+  assert.equal(selfHostedContext.host_receive_mode, "embedded-long-connection");
+  assert.ok(selfHostedContext.handoff_request.required_values.some((item) => item.key === "FEISHU_APP_ID" && item.required_for_level_2));
+  assert.ok(selfHostedContext.handoff_request.required_values.some((item) => item.key === "FEISHU_APP_SECRET" && item.required_for_level_2));
+  assert.ok(selfHostedContext.handoff_request.required_values.some((item) => item.key === "FEISHU_CONNECTION_MODE" && item.note.includes("websocket")));
+  assert.equal(selfHostedContext.handoff_request.required_values.some((item) => item.key === "PUBLIC_CALLBACK_BASE_URL" && item.required_for_level_2), false);
+  assert.equal(selfHostedContext.handoff_request.required_values.some((item) => item.key === "VERIFICATION_TOKEN" && item.required_for_level_2), false);
+  const selfHostedCommands = selfHostedContext.handoff_request.command_sets.flatMap((set) => set.commands);
+  assert.ok(selfHostedCommands.some((command) => command.includes("python local_contract_test.py")));
+  assert.ok(selfHostedCommands.some((command) => command.includes("python app.py --selfcheck")));
+  assert.ok(selfHostedCommands.some((command) => command.includes("verify . --mode self-hosted-runtime --strict")));
+  const selfHostedRequest = fs.readFileSync(path.join(selfHostedGenerated, "feishu_context.request.md"), "utf8");
+  assert.match(selfHostedRequest, /FEISHU_APP_ID/);
+  assert.match(selfHostedRequest, /FEISHU_CONNECTION_MODE/);
+  assert.match(selfHostedRequest, /card_action_trigger_subscribed/);
+  assert.match(selfHostedRequest, /python feishu-host\/local_contract_test\.py/);
+  assert.doesNotMatch(selfHostedRequest, /PUBLIC_CALLBACK_BASE_URL/);
+  assert.doesNotMatch(selfHostedRequest, /VERIFICATION_TOKEN/);
+  assert.doesNotMatch(selfHostedRequest, /\/webhook\/card/);
+  const selfHostedReadinessOutput = run(["readiness", selfHostedGenerated]);
+  assert.match(selfHostedReadinessOutput, /Missing required values: FEISHU_APP_ID, FEISHU_APP_SECRET/);
+  assert.match(selfHostedReadinessOutput, /feishu-host/);
+  assert.doesNotMatch(selfHostedReadinessOutput, /PUBLIC_CALLBACK_BASE_URL/);
+  assert.doesNotMatch(selfHostedReadinessOutput, /VERIFICATION_TOKEN/);
+  const selfHostedHandoffStatus = fs.readFileSync(path.join(selfHostedGenerated, "handoff_status.md"), "utf8");
+  assert.match(selfHostedHandoffStatus, /feishu-host\/\.env/);
+  assert.match(selfHostedHandoffStatus, /python feishu-host\/local_contract_test\.py/);
+  assert.match(selfHostedHandoffStatus, /python feishu-host\/app\.py --selfcheck/);
+  assert.doesNotMatch(selfHostedHandoffStatus, /Missing required values:.*PUBLIC_CALLBACK_BASE_URL/);
+  assert.doesNotMatch(selfHostedHandoffStatus, /Missing required values:.*VERIFICATION_TOKEN/);
+  const selfHostedDoctorJson = JSON.parse(run(["doctor", selfHostedGenerated, "--mode", "self-hosted-runtime", "--json"]));
+  assert.equal(selfHostedDoctorJson.integration_mode, "self-hosted-runtime");
+  assert.equal(selfHostedDoctorJson.host_receive_mode, "embedded-long-connection");
+  assert.ok(selfHostedDoctorJson.next_actions.some((item) => item.includes("feishu-host/.env") || item.includes("feishu-host\\.env")));
+  assert.equal(selfHostedDoctorJson.blockers.some((item) => item.includes("PUBLIC_CALLBACK_BASE_URL") || item.includes("/webhook/card") || item.includes("VERIFICATION_TOKEN")), false);
+  assert.match(runExpectFailure(["doctor", selfHostedGenerated, "--mode", "self-hosted-runtime", "--gate"]), /MVP gate failed/);
+  const selfHostedGuide = fs.readFileSync(path.join(selfHostedGenerated, "docs", "integration_guide.md"), "utf8");
+  assert.match(selfHostedGuide, /Self-Hosted Runtime Integration Guide/);
+  assert.match(selfHostedGuide, /card\.action\.trigger/);
+  assert.match(selfHostedGuide, /spec\/start_card\.json/);
+  assert.doesNotMatch(selfHostedGuide, /bot-runtime/);
+  const selfHostedPackageGitignore = fs.readFileSync(path.join(selfHostedGenerated, ".gitignore"), "utf8");
+  assert.match(selfHostedPackageGitignore, /feishu-host\/\.env/);
+  const selfHostedStartCard = JSON.parse(fs.readFileSync(path.join(selfHostedFeishuHost, "spec", "start_card.json"), "utf8"));
+  const selfHostedFieldMap = JSON.parse(fs.readFileSync(path.join(selfHostedFeishuHost, "spec", "field_map.json"), "utf8"));
+  const selfHostedEndpoints = JSON.parse(fs.readFileSync(path.join(selfHostedFeishuHost, "spec", "endpoints.json"), "utf8"));
+  const selfHostedPreset = JSON.parse(fs.readFileSync(path.join(selfHostedFeishuHost, "spec", "preset.json"), "utf8"));
+  const selfHostedTemplateSpecs = JSON.parse(fs.readFileSync(path.join(selfHostedFeishuHost, "spec", "template_specs.json"), "utf8"));
+  const selfHostedFieldSpecs = JSON.parse(fs.readFileSync(path.join(selfHostedFeishuHost, "spec", "field_specs.json"), "utf8"));
+  assert.equal(selfHostedPreset.template_id, "launch-banner");
+  assert.equal(selfHostedPreset.size, "1200x628");
+  assert.ok(Array.isArray(selfHostedTemplateSpecs));
+  assert.ok(selfHostedTemplateSpecs.some((item) => item.id === "launch-banner" && item.requiredFieldKeys.includes("headline")));
+  assert.ok(Array.isArray(selfHostedFieldSpecs));
+  assert.ok(selfHostedFieldSpecs.some((item) => item.key === "headline" && item.label === "主题"));
+  assert.equal(selfHostedFieldMap.schema_version, "0.1");
+  assert.equal(selfHostedFieldMap.templateKeyToFormField.headline, "field_headline");
+  assert.equal(selfHostedFieldMap.formFieldToTemplateKey.field_headline, "headline");
+  assert.ok(selfHostedFieldMap.fields.some((item) => item.template_key === "body_copy" && item.form_field === "field_body_copy"));
+  assert.deepEqual(Object.keys(selfHostedEndpoints.actions).sort(), [
+    "image.batch.refresh",
+    "image.batch.submit",
+    "image.generate.submit",
+    "image.iterate.submit",
+  ]);
+  assert.equal(selfHostedEndpoints.actions["image.generate.submit"].method, "POST");
+  assert.equal(selfHostedEndpoints.actions["image.generate.submit"].path, "/api/generate");
+  assert.equal(selfHostedEndpoints.actions["image.iterate.submit"].body, "json");
+  assert.equal(selfHostedEndpoints.actions["image.batch.submit"].path, "/api/batch");
+  assert.equal(selfHostedEndpoints.actions["image.batch.refresh"].path, "/api/batch/{batch_id}/status");
+  assert.equal(selfHostedEndpoints.supporting_endpoints.batch_download.path, "/api/batch/{batch_id}/download");
+  assert.equal(findNamedObject(selfHostedStartCard, "image_generate_form")?.tag, "form");
+  assert.equal(findNamedObject(selfHostedStartCard, "image_batch_form")?.tag, "form");
+  const selfHostedActions = collectActionValues(selfHostedStartCard);
+  assert.ok(selfHostedActions.includes("image.generate.submit"));
+  assert.ok(selfHostedActions.includes("image.batch.submit"));
+  assert.equal(selfHostedActions.includes("image.iterate.submit"), false);
+  assert.equal(selfHostedActions.includes("image.batch.refresh"), false);
   for (const relativePath of [
     "adapter/cards.ts",
     "adapter/handlers.ts",
@@ -386,6 +594,107 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(embeddedOnlyDoctorJson.package_validation.checks.some((item) => item.name === "adapter:action:image.batch.refresh" && item.status === "pass"));
   assert.equal(embeddedOnlyDoctorJson.blockers.some((item) => item.includes("bot-runtime/.env")), false);
   assert.match(runExpectFailure(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--gate"]), /Embedded adapter gate failed/);
+  const embeddedLongGenerated = path.join(temp, "generated-embedded-long");
+  run(["generate", workspace, "--out", embeddedLongGenerated, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection"]);
+  const embeddedLongSummary = JSON.parse(fs.readFileSync(path.join(embeddedLongGenerated, "generation_summary.json"), "utf8"));
+  assert.equal(embeddedLongSummary.host_receive_mode, "embedded-long-connection");
+  const embeddedLongReadme = fs.readFileSync(path.join(embeddedLongGenerated, "README.md"), "utf8");
+  assert.match(embeddedLongReadme, /Host receive mode: embedded-long-connection/);
+  assert.match(embeddedLongReadme, /card\.action\.trigger/);
+  assert.doesNotMatch(embeddedLongReadme, /PUBLIC_CALLBACK_BASE_URL.*required/i);
+  const embeddedLongContext = JSON.parse(fs.readFileSync(path.join(embeddedLongGenerated, "feishu_context.template.json"), "utf8"));
+  assert.equal(embeddedLongContext.host_receive_mode, "embedded-long-connection");
+  assert.equal(embeddedLongContext.handoff_request.required_values.some((item) => item.key === "PUBLIC_CALLBACK_BASE_URL" && item.required_for_level_2), false);
+  const embeddedLongContextMarkdown = fs.readFileSync(path.join(embeddedLongGenerated, "feishu_context.template.md"), "utf8");
+  assert.match(embeddedLongContextMarkdown, /long connection/i);
+  assert.doesNotMatch(embeddedLongContextMarkdown, /\/webhook\/card/);
+  assert.doesNotMatch(embeddedLongContextMarkdown, /- VERIFICATION_TOKEN/);
+  assert.doesNotMatch(embeddedLongContextMarkdown, /- PUBLIC_CALLBACK_BASE_URL/);
+  const embeddedLongLevel2Record = fs.readFileSync(path.join(embeddedLongGenerated, "level2_verification_record.md"), "utf8");
+  assert.match(embeddedLongLevel2Record, /Host receive mode: embedded-long-connection/);
+  assert.match(embeddedLongLevel2Record, /card\.action\.trigger/);
+  assert.doesNotMatch(embeddedLongLevel2Record, /\/webhook\/card/);
+  const embeddedLongIntegrationGuide = fs.readFileSync(path.join(embeddedLongGenerated, "docs", "integration_guide.md"), "utf8");
+  assert.match(embeddedLongIntegrationGuide, /Host receive mode: embedded-long-connection/);
+  assert.match(embeddedLongIntegrationGuide, /--host-mode embedded-long-connection/);
+  assert.match(embeddedLongIntegrationGuide, /card\.action\.trigger/);
+  assert.doesNotMatch(embeddedLongIntegrationGuide, /\/webhook\/card/);
+  assert.ok(fs.existsSync(path.join(embeddedLongGenerated, "sidecar-long-connection", "README.md")));
+  assert.ok(fs.existsSync(path.join(embeddedLongGenerated, "sidecar-long-connection", "local-contract-test.mjs")));
+  const embeddedLongSidecarReadme = fs.readFileSync(path.join(embeddedLongGenerated, "sidecar-long-connection", "README.md"), "utf8");
+  assert.match(embeddedLongSidecarReadme, /FEISHU_CONNECTION_MODE=websocket/);
+  assert.match(embeddedLongSidecarReadme, /card\.action\.trigger/);
+  assert.match(embeddedLongSidecarReadme, /IMAGE_AGENT_BASE_URL/);
+  const sidecarContractOutput = runNode([path.join(embeddedLongGenerated, "sidecar-long-connection", "local-contract-test.mjs")], { cwd: embeddedLongGenerated });
+  assert.match(sidecarContractOutput, /sidecar-long-connection contract: PASS/);
+  const embeddedLongHostOutput = runExpectFailure([
+    "verify",
+    embeddedLongGenerated,
+    "--mode",
+    "embedded-adapter",
+    "--host-mode",
+    "embedded-long-connection",
+    "--host-runtime-url",
+    "http://127.0.0.1:3978",
+    "--simulate",
+    "--strict",
+  ]);
+  assert.match(embeddedLongHostOutput, /embedded:host:\/health/);
+  assert.doesNotMatch(embeddedLongHostOutput, /embedded:host:\/webhook\/card:challenge/);
+  const embeddedLongHostReport = JSON.parse(fs.readFileSync(path.join(embeddedLongGenerated, "verification_report.json"), "utf8"));
+  assert.equal(embeddedLongHostReport.context.hostReceiveMode, "embedded-long-connection");
+  assert.equal(embeddedLongHostReport.checks.some((item) => item.name === "embedded:host:/webhook/card:challenge"), false);
+  const embeddedLongHostMarkdown = fs.readFileSync(path.join(embeddedLongGenerated, "verification_report.md"), "utf8");
+  assert.doesNotMatch(embeddedLongHostMarkdown, /Provide `PUBLIC_CALLBACK_BASE_URL`/);
+  assert.doesNotMatch(embeddedLongHostMarkdown, /\/webhook\/card/);
+  const embeddedLongDoctorJson = JSON.parse(run(["doctor", embeddedLongGenerated, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection", "--json"]));
+  assert.equal(embeddedLongDoctorJson.host_receive_mode, "embedded-long-connection");
+  assert.equal(embeddedLongDoctorJson.blockers.some((item) => item.includes("/webhook/card")), false);
+  const embeddedLongReadinessOutput = run(["readiness", embeddedLongGenerated]);
+  assert.doesNotMatch(embeddedLongReadinessOutput, /Missing required values:.*PUBLIC_CALLBACK_BASE_URL/);
+  assert.doesNotMatch(embeddedLongReadinessOutput, /Missing required values:.*VERIFICATION_TOKEN/);
+  const embeddedLongHandoffStatus = fs.readFileSync(path.join(embeddedLongGenerated, "handoff_status.md"), "utf8");
+  assert.match(embeddedLongHandoffStatus, /\| `PUBLIC_CALLBACK_BASE_URL` \| optional \| none \|/);
+  assert.match(embeddedLongHandoffStatus, /\| `VERIFICATION_TOKEN` \| optional \| none \|/);
+  const embeddedHybridGenerated = path.join(temp, "generated-embedded-hybrid");
+  run(["generate", workspace, "--out", embeddedHybridGenerated, "--mode", "embedded-adapter", "--host-mode", "hybrid"]);
+  const embeddedHybridContext = JSON.parse(fs.readFileSync(path.join(embeddedHybridGenerated, "feishu_context.template.json"), "utf8"));
+  assert.equal(embeddedHybridContext.host_receive_mode, "hybrid");
+  assert.equal(embeddedHybridContext.handoff_request.required_values.find((item) => item.key === "PUBLIC_CALLBACK_BASE_URL").required_for_level_2, true);
+  assert.equal(embeddedHybridContext.handoff_request.required_values.find((item) => item.key === "VERIFICATION_TOKEN").required_for_level_2, true);
+  const embeddedHybridStartHere = fs.readFileSync(path.join(embeddedHybridGenerated, "START_HERE.md"), "utf8");
+  assert.match(embeddedHybridStartHere, /public callback URL/);
+  assert.match(embeddedHybridStartHere, /long-connection host/);
+  const embeddedHybridReadme = fs.readFileSync(path.join(embeddedHybridGenerated, "README.md"), "utf8");
+  assert.match(embeddedHybridReadme, /webhook callback path/);
+  assert.match(embeddedHybridReadme, /card\.action\.trigger/);
+  const embeddedHybridReplyTemplate = JSON.parse(fs.readFileSync(path.join(embeddedHybridGenerated, "feishu_context.reply.template.json"), "utf8"));
+  assert.ok(embeddedHybridReplyTemplate.next_local_steps.some((step) => step.includes("--host-mode hybrid")));
+  const embeddedHybridLevel2Record = fs.readFileSync(path.join(embeddedHybridGenerated, "level2_verification_record.md"), "utf8");
+  assert.match(embeddedHybridLevel2Record, /<PUBLIC_CALLBACK_BASE_URL>\/webhook\/card/);
+  assert.match(embeddedHybridLevel2Record, /Long-connection gateway\/sidecar/);
+  assert.match(embeddedHybridLevel2Record, /card\.action\.trigger/);
+  const embeddedHybridGuide = fs.readFileSync(path.join(embeddedHybridGenerated, "docs", "integration_guide.md"), "utf8");
+  assert.match(embeddedHybridGuide, /\/webhook\/card/);
+  assert.match(embeddedHybridGuide, /card\.action\.trigger/);
+  const embeddedHybridOutput = runExpectFailure([
+    "verify",
+    embeddedHybridGenerated,
+    "--mode",
+    "embedded-adapter",
+    "--host-mode",
+    "hybrid",
+    "--host-runtime-url",
+    "http://127.0.0.1:3978",
+    "--simulate",
+    "--strict",
+  ]);
+  assert.match(embeddedHybridOutput, /embedded:host:\/webhook\/card:challenge/);
+  const embeddedHybridMarkdown = fs.readFileSync(path.join(embeddedHybridGenerated, "verification_report.md"), "utf8");
+  assert.match(embeddedHybridMarkdown, /card\.action\.trigger/);
+  const embeddedHybridDoctorJson = JSON.parse(run(["doctor", embeddedHybridGenerated, "--mode", "embedded-adapter", "--host-mode", "hybrid", "--json"]));
+  assert.ok(embeddedHybridDoctorJson.blockers.some((item) => item.includes("/webhook/card") && item.includes("card.action.trigger")));
+  assert.ok(embeddedHybridDoctorJson.next_actions.some((item) => item.includes("webhook") && item.includes("long-connection")));
   const missingStatusOutput = run(["status", missingGenerated]);
   assert.match(missingStatusOutput, /MVP status: external_context_missing/);
   assert.match(missingStatusOutput, /Context request: /);
@@ -1853,8 +2162,61 @@ function run(args) {
   });
 }
 
+function runNode(args, options = {}) {
+  return execFileSync(process.execPath, args, {
+    cwd: options.cwd || root,
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+}
+
+function runPython(args, options = {}) {
+  return execFileSync("python", args, {
+    cwd: options.cwd || root,
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+}
+
+function pythonCanRunSelfHostedContract() {
+  if (!pythonCanImport("requests")) {
+    console.warn("Skipping generated feishu-host local contract execution: default Python cannot import requests");
+    return false;
+  }
+  return true;
+}
+
+function pythonCanImport(moduleName) {
+  try {
+    runPython(["-c", `import ${moduleName}`]);
+    return true;
+  } catch (error) {
+    const detail = error && typeof error === "object" && "message" in error ? error.message : String(error);
+    console.warn(`Python import check failed for ${moduleName}: ${detail}`);
+    return false;
+  }
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function collectActionValues(value) {
+  if (!value || typeof value !== "object") return [];
+  const current = value.value && typeof value.value === "object" && typeof value.value.action === "string" ? [value.value.action] : [];
+  const children = Array.isArray(value) ? value : Object.values(value);
+  return current.concat(children.flatMap(collectActionValues));
+}
+
+function findNamedObject(value, name) {
+  if (!value || typeof value !== "object") return undefined;
+  if (value.name === name) return value;
+  const children = Array.isArray(value) ? value : Object.values(value);
+  for (const child of children) {
+    const found = findNamedObject(child, name);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 function removeDryRunGuidance(rootDir) {

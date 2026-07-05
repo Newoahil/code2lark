@@ -3,6 +3,7 @@ import path from "node:path";
 import { getStringOption, hasOption } from "../args.js";
 import { writeJson, writeText } from "../fs-utils.js";
 import { getJsonWithTimeout } from "../http-utils.js";
+import { hostModeUsesLongConnection, hostModeUsesWebhook, normalizeHostReceiveMode, type HostReceiveMode } from "../host-mode.js";
 import { buildReadinessSummary, type ReadinessSummary } from "./readiness.js";
 
 type DoctorVerdict = "pass" | "not_ready";
@@ -39,6 +40,8 @@ export interface DoctorReport {
   schema_version: "0.1";
   generated_at: string;
   package_path: string;
+  integration_mode: string;
+  host_receive_mode: string;
   target_service: string;
   state: ReadinessSummary["state"];
   verdict: DoctorVerdict;
@@ -102,6 +105,7 @@ interface EmbeddedAdapterDoctorReport {
   generated_at: string;
   package_path: string;
   integration_mode: "embedded-adapter";
+  host_receive_mode: HostReceiveMode;
   gate_passed: boolean;
   package_validation: {
     status: "pass" | "fail";
@@ -111,7 +115,7 @@ interface EmbeddedAdapterDoctorReport {
   next_actions: string[];
 }
 
-function buildEmbeddedAdapterDoctorReport(packagePath: string): EmbeddedAdapterDoctorReport {
+function buildEmbeddedAdapterDoctorReport(packagePath: string, hostReceiveMode: HostReceiveMode): EmbeddedAdapterDoctorReport {
   const checks = [
     embeddedFileCheck("manifest:service_manifest", path.join(packagePath, "manifest", "service_manifest.json")),
     embeddedFileCheck("manifest:capability_map", path.join(packagePath, "manifest", "capability_map.json")),
@@ -129,10 +133,16 @@ function buildEmbeddedAdapterDoctorReport(packagePath: string): EmbeddedAdapterD
   checks.push(...embeddedActionChecks(packagePath));
   const failed = checks.filter((check) => check.status === "fail");
   const packageValid = failed.length === 0;
+  const usesWebhook = hostModeUsesWebhook(hostReceiveMode);
+  const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
   const externalBlockers = packageValid
     ? [
-      "Embedded adapter gate still requires integration into the existing Feishu SDK host and real Feishu Level 2 evidence.",
-      "Confirm the existing host receives real card callbacks, calls adapter/handlers.ts, reaches the target service, and records manual Feishu result evidence.",
+      `Embedded adapter gate still requires integration into the existing Feishu SDK host (${hostReceiveMode}) and real Feishu Level 2 evidence.`,
+      usesWebhook && usesLongConnection
+        ? "Confirm the existing host handles /webhook/card callbacks and receives card.action.trigger over long connection, calls adapter/handlers.ts, reaches the target service, and records manual Feishu result evidence."
+        : usesLongConnection
+          ? "Confirm the existing host receives card.action.trigger over long connection, calls adapter/handlers.ts, reaches the target service, and records manual Feishu result evidence."
+          : "Confirm the existing host receives real card callbacks, calls adapter/handlers.ts, reaches the target service, and records manual Feishu result evidence.",
     ]
     : [];
   return {
@@ -140,6 +150,7 @@ function buildEmbeddedAdapterDoctorReport(packagePath: string): EmbeddedAdapterD
     generated_at: new Date().toISOString(),
     package_path: packagePath,
     integration_mode: "embedded-adapter",
+    host_receive_mode: hostReceiveMode,
     gate_passed: false,
     package_validation: {
       status: packageValid ? "pass" : "fail",
@@ -150,8 +161,12 @@ function buildEmbeddedAdapterDoctorReport(packagePath: string): EmbeddedAdapterD
       ? ["Regenerate the package, then rerun `verify --mode embedded-adapter --strict`." ]
       : [
         "Integrate adapter/handlers.ts into the existing Feishu SDK service.",
-        "Run host-owned callback, simulation, and Level 2 checks against the existing Feishu SDK service.",
-        "Run `verify --mode embedded-adapter --strict` after any package regeneration.",
+        usesWebhook && usesLongConnection
+          ? "Run host-owned webhook callback, long-connection, simulation, and Level 2 checks against the existing Feishu SDK service."
+          : usesLongConnection
+            ? "Run host-owned long-connection, simulation, and Level 2 checks against the existing Feishu SDK service."
+            : "Run host-owned callback, simulation, and Level 2 checks against the existing Feishu SDK service.",
+        `Run \`verify --mode embedded-adapter --host-mode ${hostReceiveMode} --strict\` after any package regeneration.`,
         "Record real Feishu result and batch evidence in level2_verification_record.md before final handoff.",
       ],
   };
@@ -218,6 +233,7 @@ function printEmbeddedAdapterDoctorReport(report: EmbeddedAdapterDoctorReport, g
   console.log(`Package: ${report.package_path}`);
   console.log(`Gate passed: ${report.gate_passed ? "yes" : "no"}`);
   console.log("Integration mode: embedded-adapter");
+  console.log(`Host receive mode: ${report.host_receive_mode}`);
   if (report.blockers.length) {
     console.log("Blockers:");
     for (const blocker of report.blockers) console.log(`- ${blocker}`);
@@ -238,6 +254,7 @@ function buildEmbeddedAdapterDoctorMarkdown(report: EmbeddedAdapterDoctorReport)
 - Generated at: ${report.generated_at}
 - Package: ${report.package_path}
 - Integration mode: embedded-adapter
+- Host receive mode: ${report.host_receive_mode}
 - Package validation: ${report.package_validation.status}
 - Gate passed: ${report.gate_passed ? "yes" : "no"}
 
@@ -260,13 +277,14 @@ ${report.next_actions.map((action) => `- ${action}`).join("\n")}
 export async function doctorCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const packageArg = args[0];
   if (!packageArg) {
-    throw new Error("Usage: lark-deployer doctor <generated-package> [--env <file>] [--json] [--out <json-file>] [--gate] [--probe-target]");
+    throw new Error("Usage: lark-deployer doctor <generated-package> [--env <file>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime] [--json] [--out <json-file>] [--gate] [--probe-target]");
   }
 
   const packagePath = path.resolve(packageArg);
   const mode = getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime")));
   if (mode === "embedded-adapter" || mode === "embedded") {
-    const report = buildEmbeddedAdapterDoctorReport(packagePath);
+    const hostReceiveMode = normalizeHostReceiveMode(getStringOption(options, "host-mode", getStringOption(options, "hostMode", "")), "embedded-adapter");
+    const report = buildEmbeddedAdapterDoctorReport(packagePath, hostReceiveMode);
     const gateMode = hasOption(options, "gate") || hasOption(options, "check");
     const outFile = getStringOption(options, "out", "");
     if (outFile) {
@@ -351,6 +369,8 @@ function buildDoctorReportWithLiveProbe(summary: ReadinessSummary, liveProbe: Ta
     schema_version: "0.1",
     generated_at: new Date().toISOString(),
     package_path: summary.packagePath,
+    integration_mode: summary.context?.integration_mode || summary.report?.context?.mode || "standalone-runtime",
+    host_receive_mode: summary.context?.host_receive_mode || summary.report?.context?.hostReceiveMode || "standalone-runtime",
     target_service: summary.service.service.name,
     state: summary.state,
     verdict: gatePassed ? "pass" : "not_ready",
@@ -465,6 +485,7 @@ function resolveTargetBaseUrl(summary: ReadinessSummary): string {
 
 function buildBlockers(summary: ReadinessSummary, missingRequiredValues: string[], liveProbe: TargetLiveProbeReport): string[] {
   const blockers: string[] = [];
+  const selfHosted = summary.context?.integration_mode === "self-hosted-runtime" || summary.report?.context?.mode === "self-hosted-runtime";
   if (missingRequiredValues.length) {
     blockers.push(`Missing required external values: ${missingRequiredValues.join(", ")}.`);
   }
@@ -495,9 +516,9 @@ function buildBlockers(summary: ReadinessSummary, missingRequiredValues: string[
     blockers.push(`Live target probe is not passing (${liveProbe.status}): ${liveProbe.detail}. Lark-deployer does not start or manage the target service.`);
   }
 
-  if (summary.report?.context?.level2 !== true) {
+  if (!selfHosted && summary.report?.context?.level2 !== true) {
     blockers.push("Latest verification was not run in real Level 2 mode with verify --level2.");
-  } else if (summary.report.status === "warn") {
+  } else if (summary.report?.status === "warn") {
     blockers.push(`Level 2 preflight still has WARN checks: ${summary.reportCounts.warn}.`);
   }
 
@@ -580,6 +601,8 @@ function printDoctorReport(report: DoctorReport, gateMode: boolean): void {
 
   console.log(`MVP doctor: ${status}`);
   console.log(`State: ${report.state}`);
+  console.log(`Integration mode: ${report.integration_mode}`);
+  console.log(`Host receive mode: ${report.host_receive_mode}`);
   console.log(`Target service: ${report.target_service}`);
   console.log(`Package: ${report.package_path}`);
   console.log(`Gate passed: ${report.gate_passed ? "yes" : "no"}`);
@@ -696,6 +719,8 @@ This report is generated from readiness evidence. It does not include Feishu sec
 - Verdict: ${report.verdict}
 - Gate passed: ${report.gate_passed ? "yes" : "no"}
 - State: ${report.state}
+- Integration mode: ${report.integration_mode}
+- Host receive mode: ${report.host_receive_mode}
 - Target service: ${report.target_service}
 - Package: ${report.package_path}
 - Missing required values: ${missing}
