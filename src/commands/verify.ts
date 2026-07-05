@@ -1540,6 +1540,21 @@ function buildNextSteps(
   const evidenceRecordPath = getLevel2EvidenceRecordPath(context.packagePath);
   const embedded = context.mode === "embedded-adapter";
 
+  if (context.mode === "self-hosted-runtime") {
+    const selfHostedSteps: string[] = [];
+    if (byName.get("self-hosted:python")?.status !== "pass") {
+      selfHostedSteps.push("Install the host dependencies in a venv (`pip install -r feishu-host/requirements.txt`), then rerun `verify --mode self-hosted-runtime --strict` so the Python contract and selfcheck run.");
+    }
+    if (byName.get("self-hosted:python:local-contract")?.status === "fail" || byName.get("self-hosted:python:selfcheck")?.status === "fail") {
+      selfHostedSteps.push("Fix the generated host until `python feishu-host/local_contract_test.py` and `python feishu-host/app.py --selfcheck` both pass.");
+    }
+    selfHostedSteps.push("Fill `feishu-host/.env`: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_CONNECTION_MODE=websocket`, `IMAGE_AGENT_BASE_URL`, plus optional `TEST_CHAT_ID` and `FEISHU_ALLOWED_USERS`.");
+    selfHostedSteps.push("Make the target service answer `GET <IMAGE_AGENT_BASE_URL>/api/meta` from the host machine.");
+    selfHostedSteps.push("In the Feishu console, enable the bot, choose long-connection event delivery, and subscribe to `card.action.trigger` with `im:message:send_as_bot` and `im:resource:upload`.");
+    selfHostedSteps.push(`Start the host with \`python feishu-host/app.py\`, confirm the long connection is online, click the card in Feishu, and record evidence in \`${evidenceRecordPath}\`.`);
+    return [...new Set(selfHostedSteps)].map((step) => `- ${step}`).join("\n");
+  }
+
   if (!embedded && ["env:APP_ID", "env:APP_SECRET", "env:VERIFICATION_TOKEN", "env:TEST_CHAT_ID"].some((name) => byName.get(name)?.status !== "pass")) {
     steps.push("Fill Feishu app credentials and test chat values in `bot-runtime/.env`, then rerun `verify`.");
   }
