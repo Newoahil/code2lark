@@ -901,6 +901,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from typing import Any
 
@@ -930,10 +931,48 @@ def build_lark_wiring(host_config: config.HostConfig):
 
 
 def send_start_card() -> dict[str, Any]:
-    host_config = config.load_config()
-    if not host_config.test_chat_id:
+    import lark_oapi as lark
+    from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
+
+    config.load_dotenv()
+    feishu_app_id = os.environ.get("FEISHU_APP_ID", "").strip()
+    feishu_app_secret = os.environ.get("FEISHU_APP_SECRET", "").strip()
+    missing = [key for key, value in (("FEISHU_APP_ID", feishu_app_id), ("FEISHU_APP_SECRET", feishu_app_secret)) if not value]
+    if missing:
+        raise RuntimeError("Missing required environment variables for start card: " + ", ".join(missing))
+    payload = build_start_message_request()
+    client = lark.Client.builder().app_id(feishu_app_id).app_secret(feishu_app_secret).build()
+    body = CreateMessageRequestBody.builder().receive_id(payload["receive_id"]).msg_type(payload["msg_type"]).content(payload["content"]).build()
+    request = CreateMessageRequest.builder().receive_id_type(payload["receive_id_type"]).request_body(body).build()
+    try:
+        response = client.im.v1.message.create(request)
+    except Exception as exc:
+        # lark-oapi raises (for example ObtainAccessTokenException) when credentials or app state are invalid,
+        # rather than returning a response. Report the same clean way as an API error code.
+        code = getattr(exc, "code", "")
+        msg = getattr(exc, "msg", "") or str(exc)
+        print("send failed: code=" + str(code) + " msg=" + str(msg), file=sys.stderr)
+        return {"ok": False}
+    if response.success():
+        data = getattr(response, "data", None)
+        message_id = getattr(data, "message_id", "") if data is not None else ""
+        print("sent start card: message_id=" + str(message_id))
+        return {"ok": True, "message_id": message_id}
+    print("send failed: code=" + str(getattr(response, "code", "")) + " msg=" + str(getattr(response, "msg", "")), file=sys.stderr)
+    return {"ok": False}
+
+
+def build_start_message_request() -> dict[str, Any]:
+    config.load_dotenv()
+    test_chat_id = os.environ.get("TEST_CHAT_ID", "").strip()
+    if not test_chat_id:
         raise RuntimeError("TEST_CHAT_ID is required to send the start card.")
-    return {"chat_id": host_config.test_chat_id, "card": cards.load_start_card()}
+    return {
+        "receive_id": test_chat_id,
+        "receive_id_type": "chat_id",
+        "msg_type": "interactive",
+        "content": json.dumps(cards.load_start_card(), ensure_ascii=False),
+    }
 
 
 def selfcheck() -> int:
@@ -965,14 +1004,17 @@ def selfcheck() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generated Feishu Python host")
     parser.add_argument("--selfcheck", action="store_true", help="Build SDK wiring without opening a Feishu connection")
-    parser.add_argument("--send-start-card", action="store_true", help="Prepare the generated start card payload for TEST_CHAT_ID")
+    parser.add_argument("--send-start-card", action="store_true", help="Send the generated start card to TEST_CHAT_ID")
     args = parser.parse_args(argv)
     if args.selfcheck:
         return selfcheck()
     if args.send_start_card:
-        payload = send_start_card()
-        print(json.dumps({"prepared_start_card": True, "test_chat_id_present": bool(payload["chat_id"]), "card_elements": len(payload["card"].get("elements", []))}, ensure_ascii=False))
-        return 0
+        try:
+            result = send_start_card()
+        except RuntimeError as exc:
+            print("send failed: " + str(exc), file=sys.stderr)
+            return 2
+        return 0 if result.get("ok") else 1
     host_config = config.load_config()
     _event_handler, client = build_lark_wiring(host_config)
     print("Starting Feishu long-connection host for card.action.trigger")
@@ -998,11 +1040,14 @@ from __future__ import annotations
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import time
 from typing import Any, Dict, List
 from urllib.parse import parse_qs, urlparse
 
+import app
+import cards
 import handlers
 
 
@@ -1082,6 +1127,7 @@ def main() -> None:
 
 def run_contract(base_url: str) -> None:
     REQUESTS.clear()
+    assert_start_message_request()
     preset = load_spec("preset.json")
     template_id = preset["template_id"]
     size = preset["size"]
@@ -1265,6 +1311,37 @@ def deps(base_url: str, timeout_ms: int = 120000, allowed: tuple[str, ...] = ())
     return {"image_agent_base_url": base_url, "timeout_ms": timeout_ms, "allowed_operator_open_ids": allowed}
 
 
+def assert_start_message_request() -> None:
+    with temporary_env({
+        "FEISHU_APP_ID": "dummy_app_id",
+        "FEISHU_APP_SECRET": "dummy_app_secret",
+        "FEISHU_CONNECTION_MODE": "websocket",
+        "IMAGE_AGENT_BASE_URL": "http://127.0.0.1:8000",
+        "TEST_CHAT_ID": "oc_dummy_chat",
+    }):
+        request = app.build_start_message_request()
+    assert request["receive_id_type"] == "chat_id", request
+    assert request["receive_id"] == "oc_dummy_chat", request
+    assert request["msg_type"] == "interactive", request
+    assert json.loads(request["content"]) == cards.load_start_card(), request
+    assert "feishu_app_id" not in request, request
+    assert "feishu_app_secret" not in request, request
+
+    with temporary_env({
+        "FEISHU_APP_ID": "dummy_app_id",
+        "FEISHU_APP_SECRET": "dummy_app_secret",
+        "FEISHU_CONNECTION_MODE": "websocket",
+        "IMAGE_AGENT_BASE_URL": "http://127.0.0.1:8000",
+        "TEST_CHAT_ID": "",
+    }):
+        try:
+            app.build_start_message_request()
+        except RuntimeError as exc:
+            assert "TEST_CHAT_ID" in str(exc), "missing TEST_CHAT_ID should be clear: " + str(exc)
+        else:
+            raise AssertionError("missing TEST_CHAT_ID should fail")
+
+
 def only_request(method: str, path: str) -> Dict[str, Any]:
     matches = [item for item in REQUESTS if item["method"] == method and item["path"] == path]
     assert len(matches) == 1, matches
@@ -1275,6 +1352,21 @@ def assert_form_request(request: Dict[str, Any], expected: Dict[str, str]) -> No
     assert "application/x-www-form-urlencoded" in request["content_type"], request
     for key, value in expected.items():
         assert request["form"].get(key) == value, {"expected": expected, "request": request}
+
+
+@contextmanager
+def temporary_env(values: Dict[str, str]):
+    previous = {key: os.environ.get(key) for key in values}
+    try:
+        for key, value in values.items():
+            os.environ[key] = value
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 @contextmanager
@@ -1321,6 +1413,8 @@ function pythonHostReadme(service: ServiceManifest): string {
     "Copy-Item .env.example .env",
     "# Fill FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_CONNECTION_MODE=websocket, and IMAGE_AGENT_BASE_URL.",
     "python local_contract_test.py",
+    "python app.py --selfcheck",
+    "python app.py --send-start-card",
     "```",
     "",
     `The target service remains external. The Python host will call \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}\` over HTTP through the endpoint contract in \`spec/endpoints.json\`.`,
@@ -2635,11 +2729,17 @@ This package was generated in \`self-hosted-runtime\` mode. The core artifact is
 
 ## Current Slice
 
-This generated package includes configuration and executable spec artifacts only:
+This generated package includes the Python host, local contract test, Feishu SDK selfcheck, and manifest-derived specs:
 
 - \`feishu-host/.env.example\`
 - \`feishu-host/requirements.txt\`
 - \`feishu-host/config.py\`
+- \`feishu-host/cards.py\`
+- \`feishu-host/service_client.py\`
+- \`feishu-host/validation.py\`
+- \`feishu-host/handlers.py\`
+- \`feishu-host/app.py\`
+- \`feishu-host/local_contract_test.py\`
 - \`feishu-host/README.md\`
 - \`feishu-host/spec/start_card.json\`
 - \`feishu-host/spec/preset.json\`
@@ -2647,8 +2747,6 @@ This generated package includes configuration and executable spec artifacts only
 - \`feishu-host/spec/field_specs.json\`
 - \`feishu-host/spec/field_map.json\`
 - \`feishu-host/spec/endpoints.json\`
-
-Later slices emit \`cards.py\`, \`service_client.py\`, \`validation.py\`, \`handlers.py\`, \`app.py\`, and \`local_contract_test.py\`.
 
 ## Locked Environment Contract
 
@@ -2680,12 +2778,16 @@ The start card is fully rendered at generation time in \`feishu-host/spec/start_
 \`\`\`powershell
 cd feishu-host
 python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
+.\\.venv\\Scripts\\python -m pip install -r requirements.txt
 Copy-Item .env.example .env
-python -m py_compile config.py
+python local_contract_test.py
+python app.py --selfcheck
+python app.py --send-start-card
 \`\`\`
 
-Real Feishu Level 2 remains manual: enable long connection in the Feishu app, subscribe to \`card.action.trigger\`, add the bot to the test chat, and run the later emitted host entrypoint after the remaining Python runtime slices exist.
+\`python app.py --send-start-card\` sends \`spec/start_card.json\` to \`TEST_CHAT_ID\` with \`im.v1.message.create\`. If it fails, use the printed Feishu \`code/msg\` to check bot permissions, app release state, and test-chat membership.
+
+Real Feishu Level 2 remains manual: enable long connection in the Feishu app, subscribe to \`card.action.trigger\`, add the bot to the test chat, send the built-in start card, click it in Feishu, and record evidence in \`level2_verification_record.md\`.
 `;
 }
 
@@ -2884,6 +2986,48 @@ node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption}
 node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --gate
 node $env:LARK_DEPLOYER_CLI handoff .
 \`\`\`
+`;
+  }
+  if (integrationMode === "self-hosted-runtime") {
+    return `# ${service.service.name} Lark Self-Hosted Runtime Package
+
+This package was generated by Lark-deployer for the MVP-1A image generation, feedback-iteration, and batch-progress flow.
+
+## Boundary
+
+Lark-deployer generated a Python \`feishu-host/\` runtime. It keeps \`${service.service.name}\` external and calls it over HTTP; it does not import or modify the target service.
+
+- Target service: ${service.service.name}
+- Target base URL: ${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}
+- Core artifact: \`feishu-host/\`
+- Integration mode: self-hosted-runtime
+- Host receive mode: embedded-long-connection
+
+## Local Proof
+
+Run these before manual Feishu Level 2:
+
+\`\`\`powershell
+cd feishu-host
+python -m venv .venv
+.\\.venv\\Scripts\\python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+python local_contract_test.py
+python app.py --selfcheck
+python app.py --send-start-card
+\`\`\`
+
+\`python app.py --send-start-card\` sends \`spec/start_card.json\` to \`TEST_CHAT_ID\` with Feishu \`im.v1.message.create\`. If it fails, use the printed Feishu \`code/msg\` or missing-env message to check bot permissions, app release state, and test-chat membership.
+
+## Package Validation
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode self-hosted-runtime --strict
+\`\`\`
+
+## Real Level 2
+
+Real Level 2 remains manual: enable long connection in the Feishu app, subscribe to \`card.action.trigger\`, add the bot to the test chat, send the built-in start card, click it in Feishu, and record evidence in \`level2_verification_record.md\`.
 `;
   }
   return `# ${service.service.name} Lark Integration Package

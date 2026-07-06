@@ -300,6 +300,11 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.match(selfHostedHandlers, /image\.batch\.refresh/);
   const selfHostedApp = fs.readFileSync(path.join(selfHostedFeishuHost, "app.py"), "utf8");
   assert.match(selfHostedApp, /import lark_oapi as lark/);
+  assert.match(selfHostedApp, /CreateMessageRequest/);
+  assert.match(selfHostedApp, /CreateMessageRequestBody/);
+  assert.match(selfHostedApp, /def build_start_message_request/);
+  assert.match(selfHostedApp, /client\.im\.v1\.message\.create\(request\)/);
+  assert.match(selfHostedApp, /sent start card: message_id=/);
   assert.match(selfHostedApp, /register_p2_card_action_trigger\(callback\)/);
   assert.match(selfHostedApp, /lark\.ws\.Client/);
   assert.match(selfHostedApp, /card\.action\.trigger registered/);
@@ -312,11 +317,27 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.match(selfHostedContract, /\/api\/iterate/);
   assert.match(selfHostedContract, /\/api\/batch\/batch-contract\/status/);
   assert.match(selfHostedContract, /field_hero_title/);
+  assert.match(selfHostedContract, /build_start_message_request/);
+  assert.match(selfHostedContract, /receive_id_type/);
+  assert.match(selfHostedContract, /feishu_app_secret/);
+  assert.match(selfHostedContract, /missing TEST_CHAT_ID/);
   assert.match(selfHostedContract, /feishu-host contract: PASS/);
   if (pythonCanRunSelfHostedContract()) {
     const contractOutput = runPython([path.join(selfHostedFeishuHost, "local_contract_test.py")], { cwd: selfHostedFeishuHost });
     assert.match(contractOutput, /feishu-host contract: PASS/);
   }
+  const sendStartCardMissingChat = runPythonExpectFailure([path.join(selfHostedFeishuHost, "app.py"), "--send-start-card"], {
+    cwd: selfHostedFeishuHost,
+    env: {
+      ...process.env,
+      FEISHU_APP_ID: "dummy_app_id",
+      FEISHU_APP_SECRET: "dummy_app_secret",
+      TEST_CHAT_ID: "",
+      FEISHU_CONNECTION_MODE: "",
+      IMAGE_AGENT_BASE_URL: "",
+    },
+  });
+  assert.match(sendStartCardMissingChat, /TEST_CHAT_ID is required to send the start card/);
   const selfHostedVerifyOutput = pythonCanImport("requests") && pythonCanImport("lark_oapi")
     ? run(["verify", selfHostedGenerated, "--mode", "self-hosted-runtime", "--strict"])
     : run(["verify", selfHostedGenerated, "--mode", "self-hosted-runtime"]);
@@ -380,8 +401,14 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const selfHostedGuide = fs.readFileSync(path.join(selfHostedGenerated, "docs", "integration_guide.md"), "utf8");
   assert.match(selfHostedGuide, /Self-Hosted Runtime Integration Guide/);
   assert.match(selfHostedGuide, /card\.action\.trigger/);
+  assert.match(selfHostedGuide, /\.\\\.venv\\Scripts\\python -m pip install -r requirements\.txt/);
+  assert.match(selfHostedGuide, /python app\.py --send-start-card/);
   assert.match(selfHostedGuide, /spec\/start_card\.json/);
   assert.doesNotMatch(selfHostedGuide, /bot-runtime/);
+  const selfHostedRootReadme = fs.readFileSync(path.join(selfHostedGenerated, "README.md"), "utf8");
+  assert.match(selfHostedRootReadme, /Self-Hosted Runtime Package/);
+  assert.match(selfHostedRootReadme, /python app\.py --send-start-card/);
+  assert.doesNotMatch(selfHostedRootReadme, /bot-runtime/);
   const selfHostedPackageGitignore = fs.readFileSync(path.join(selfHostedGenerated, ".gitignore"), "utf8");
   assert.match(selfHostedPackageGitignore, /feishu-host\/\.env/);
   const selfHostedStartCard = JSON.parse(fs.readFileSync(path.join(selfHostedFeishuHost, "spec", "start_card.json"), "utf8"));
@@ -2173,9 +2200,26 @@ function runNode(args, options = {}) {
 function runPython(args, options = {}) {
   return execFileSync("python", args, {
     cwd: options.cwd || root,
+    env: options.env || process.env,
     encoding: "utf8",
     stdio: "pipe",
   });
+}
+
+function runPythonExpectFailure(args, options = {}) {
+  try {
+    runPython(args, options);
+  } catch (error) {
+    if (error && typeof error === "object") {
+      const output = [];
+      if ("stdout" in error && error.stdout) output.push(String(error.stdout));
+      if ("stderr" in error && error.stderr) output.push(String(error.stderr));
+      if ("message" in error && error.message) output.push(error.message);
+      return output.join("\n");
+    }
+    return String(error);
+  }
+  assert.fail(`Expected python command to fail: ${args.join(" ")}`);
 }
 
 function pythonCanRunSelfHostedContract() {
