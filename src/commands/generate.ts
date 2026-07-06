@@ -1497,9 +1497,10 @@ function buildStartCardSpec(service: ServiceManifest, data: AdapterCardTemplateD
   const { defaultPreset, templateSpecs, fieldSpecs, fieldMaps } = data;
   const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
   return {
-    config: { wide_screen_mode: true },
+    schema: "2.0",
+    config: { update_multi: true, wide_screen_mode: true },
     header: { template: "blue", title: { tag: "plain_text", content: "Image Agent MVP" } },
-    elements: [
+    body: { elements: [
       { tag: "markdown", content: `**Target service:** ${service.service.name}\n\n**Templates:** ${templateSpecs.map((template) => template.id).join(", ")}\n\nFill the parameters and submit to run /api/generate.` },
       {
         tag: "form",
@@ -1509,8 +1510,8 @@ function buildStartCardSpec(service: ServiceManifest, data: AdapterCardTemplateD
           { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
           ...fieldSpecs.map((field) => ({ tag: "input", name: fieldMaps.templateKeyToFormField[field.key] || field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
           { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
-          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", action_type: "form_submit", name: "submit_image_generate", value: { action: "image.generate.submit", preset: defaultPreset } },
-          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_generate" },
+          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", form_action_type: "submit", name: "submit_image_generate", behaviors: [{ type: "callback", value: { action: "image.generate.submit", preset: defaultPreset } }] },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", form_action_type: "reset", name: "reset_image_generate" },
         ],
       },
       { tag: "hr" },
@@ -1522,11 +1523,11 @@ function buildStartCardSpec(service: ServiceManifest, data: AdapterCardTemplateD
           { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
           { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
           { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\\"fields\\\": { ... } }]" } },
-          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", action_type: "form_submit", name: "submit_image_batch", value: { action: "image.batch.submit" } },
-          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_batch" },
+          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", form_action_type: "submit", name: "submit_image_batch", behaviors: [{ type: "callback", value: { action: "image.batch.submit" } }] },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", form_action_type: "reset", name: "reset_image_batch" },
         ],
       },
-    ],
+    ] },
   };
 }
 
