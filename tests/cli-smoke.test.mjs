@@ -439,13 +439,29 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.equal(selfHostedEndpoints.actions["image.batch.submit"].path, "/api/batch");
   assert.equal(selfHostedEndpoints.actions["image.batch.refresh"].path, "/api/batch/{batch_id}/status");
   assert.equal(selfHostedEndpoints.supporting_endpoints.batch_download.path, "/api/batch/{batch_id}/download");
+  assert.equal(selfHostedStartCard.schema, "2.0");
+  assert.equal(selfHostedStartCard.config.update_multi, true);
+  assert.equal(selfHostedStartCard.config.wide_screen_mode, true);
+  assert.ok(Array.isArray(selfHostedStartCard.body.elements));
+  assert.equal(Object.hasOwn(selfHostedStartCard, "elements"), false);
   assert.equal(findNamedObject(selfHostedStartCard, "image_generate_form")?.tag, "form");
   assert.equal(findNamedObject(selfHostedStartCard, "image_batch_form")?.tag, "form");
+  assert.equal(findNamedObject(selfHostedStartCard, "submit_image_generate")?.form_action_type, "submit");
+  assert.equal(findNamedObject(selfHostedStartCard, "submit_image_batch")?.form_action_type, "submit");
+  assert.equal(findNamedObject(selfHostedStartCard, "reset_image_generate")?.form_action_type, "reset");
+  assert.equal(findNamedObject(selfHostedStartCard, "reset_image_batch")?.form_action_type, "reset");
   const selfHostedActions = collectActionValues(selfHostedStartCard);
   assert.ok(selfHostedActions.includes("image.generate.submit"));
   assert.ok(selfHostedActions.includes("image.batch.submit"));
   assert.equal(selfHostedActions.includes("image.iterate.submit"), false);
   assert.equal(selfHostedActions.includes("image.batch.refresh"), false);
+  const selfHostedCardsPy = fs.readFileSync(path.join(selfHostedFeishuHost, "cards.py"), "utf8");
+  assert.match(selfHostedCardsPy, /"schema": "2\.0"/);
+  assert.match(selfHostedCardsPy, /"body": \{"elements": elements\}/);
+  assert.match(selfHostedCardsPy, /"form_action_type": "submit"/);
+  assert.match(selfHostedCardsPy, /"behaviors": \[\{"type": "callback", "value": \{"action": "image\.iterate\.submit"/);
+  assert.match(selfHostedCardsPy, /"behaviors": \[\{"type": "callback", "value": \{"action": "image\.batch\.refresh"/);
+  assert.doesNotMatch(selfHostedCardsPy, /"tag": "action"/);
   for (const relativePath of [
     "adapter/cards.ts",
     "adapter/handlers.ts",
@@ -2247,9 +2263,16 @@ function escapeRegExp(value) {
 
 function collectActionValues(value) {
   if (!value || typeof value !== "object") return [];
-  const current = value.value && typeof value.value === "object" && typeof value.value.action === "string" ? [value.value.action] : [];
+  const direct = value.value && typeof value.value === "object" && typeof value.value.action === "string" ? [value.value.action] : [];
+  const behaviorActions = Array.isArray(value.behaviors)
+    ? value.behaviors.flatMap((behavior) => (
+      behavior?.value && typeof behavior.value === "object" && typeof behavior.value.action === "string"
+        ? [behavior.value.action]
+        : []
+    ))
+    : [];
   const children = Array.isArray(value) ? value : Object.values(value);
-  return current.concat(children.flatMap(collectActionValues));
+  return direct.concat(behaviorActions, children.flatMap(collectActionValues));
 }
 
 function findNamedObject(value, name) {

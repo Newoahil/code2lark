@@ -664,9 +664,15 @@ function checkSelfHostedFieldMap(value: unknown): CheckResult {
 function collectCardActionValues(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];
   const record = value as Record<string, unknown>;
-  const current = isRecord(record.value) && typeof record.value.action === "string" ? [record.value.action] : [];
+  const direct = isRecord(record.value) && typeof record.value.action === "string" ? [record.value.action] : [];
+  const behaviorActions = Array.isArray(record.behaviors)
+    ? record.behaviors.flatMap((behavior) => {
+      if (!isRecord(behavior) || !isRecord(behavior.value) || typeof behavior.value.action !== "string") return [];
+      return [behavior.value.action];
+    })
+    : [];
   const children = Array.isArray(value) ? value : Object.values(record);
-  return current.concat(children.flatMap(collectCardActionValues));
+  return direct.concat(behaviorActions, children.flatMap(collectCardActionValues));
 }
 
 function runSelfHostedPythonChecks(feishuHostDir: string): CheckResult[] {
