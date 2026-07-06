@@ -448,36 +448,24 @@ def build_success_card(result: Dict[str, Any]) -> Dict[str, Any]:
                     "tag": "button",
                     "text": {"tag": "plain_text", "content": "Iterate image"},
                     "type": "primary",
-                    "action_type": "form_submit",
+                    "form_action_type": "submit",
                     "name": "submit_image_iterate",
-                    "value": {"action": "image.iterate.submit", "session_id": session_id},
+                    "behaviors": [{"type": "callback", "value": {"action": "image.iterate.submit", "session_id": session_id}}],
                 },
             ],
         })
-    return {
-        "config": {"wide_screen_mode": True},
-        "header": {"template": "green", "title": {"tag": "plain_text", "content": "Image generation complete"}},
-        "elements": elements,
-    }
+    return _card("green", "Image generation complete", elements)
 
 
 def build_failure_card(message: str) -> Dict[str, Any]:
-    return {
-        "config": {"wide_screen_mode": True},
-        "header": {"template": "red", "title": {"tag": "plain_text", "content": "Image generation failed"}},
-        "elements": [{"tag": "markdown", "content": "**What happened:** " + str(message)}],
-    }
+    return _card("red", "Image generation failed", [{"tag": "markdown", "content": "**What happened:** " + str(message)}])
 
 
 def build_running_card(action: str, trace_id: str = "") -> Dict[str, Any]:
     lines = ["The request was accepted and is running.", "**Action:** " + _string_value(action)]
     if trace_id:
         lines.append("**Trace ID:** " + trace_id)
-    return {
-        "config": {"wide_screen_mode": True},
-        "header": {"template": "blue", "title": {"tag": "plain_text", "content": "Image generation running"}},
-        "elements": [{"tag": "markdown", "content": "\\n\\n".join(lines)}],
-    }
+    return _card("blue", "Image generation running", [{"tag": "markdown", "content": "\\n\\n".join(lines)}])
 
 
 def build_batch_status_card(status: Dict[str, Any], download_url: str = "") -> Dict[str, Any]:
@@ -504,26 +492,29 @@ def build_batch_status_card(status: Dict[str, Any], download_url: str = "") -> D
         elements.append({"tag": "markdown", "content": "[Download completed images ZIP](" + download_url + ")"})
     if batch_id:
         elements.append({
-            "tag": "action",
-            "actions": [{
-                "tag": "button",
-                "text": {"tag": "plain_text", "content": "Refresh status"},
-                "type": "default",
-                "value": {"action": "image.batch.refresh", "batch_id": batch_id},
-            }],
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "Refresh status"},
+            "type": "default",
+            "behaviors": [{"type": "callback", "value": {"action": "image.batch.refresh", "batch_id": batch_id}}],
         })
-    return {
-        "config": {"wide_screen_mode": True},
-        "header": {
-            "template": "blue" if running else "red" if failed_count > 0 else "green",
-            "title": {"tag": "plain_text", "content": "Batch running" if running else "Batch finished with failures" if failed_count > 0 else "Batch complete"},
-        },
-        "elements": elements,
-    }
+    return _card(
+        "blue" if running else "red" if failed_count > 0 else "green",
+        "Batch running" if running else "Batch finished with failures" if failed_count > 0 else "Batch complete",
+        elements,
+    )
 
 
 def clone_card(card: Dict[str, Any]) -> Dict[str, Any]:
     return deepcopy(card)
+
+
+def _card(template: str, title: str, elements: list[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "schema": "2.0",
+        "config": {"update_multi": True, "wide_screen_mode": True},
+        "header": {"template": template, "title": {"tag": "plain_text", "content": title}},
+        "body": {"elements": elements},
+    }
 
 
 def _string_value(value: Any) -> str:
