@@ -57,14 +57,15 @@ Confirm the target service is reachable from the host machine:
 Invoke-WebRequest http://127.0.0.1:8000/api/meta
 ```
 
-Start the host:
+Send the start card, then start the host:
 
 ```powershell
 cd generated\image-agent-web-lark-self-hosted\feishu-host
+.\.venv\Scripts\python.exe app.py --send-start-card
 .\.venv\Scripts\python.exe app.py
 ```
 
-Keep the console logs for evidence. They should show the long connection starting and later show `card.action.trigger` events when cards are clicked.
+`app.py --send-start-card` should print `sent start card: message_id=<id>`. If it fails, use the printed Feishu `code/msg` as the first permission/chat-membership diagnostic. Keep the console logs for evidence. They should show the long connection starting and later show `card.action.trigger` events when cards are clicked.
 
 ## Manual Interaction Evidence
 
