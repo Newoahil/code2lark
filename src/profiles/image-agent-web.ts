@@ -1752,3 +1752,1373 @@ function stringScalar(value: unknown): string {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
+
+export function runtimeImageAgentClientTs(): string {
+  return `import fs from "node:fs";
+import path from "node:path";
+
+export interface GeneratePreset {
+  template_id: string;
+  size: string;
+  fields: Record<string, string>;
+  message?: string;
+}
+
+export interface BatchStatus {
+  batch_id: string;
+  template_id?: string;
+  size?: string;
+  total?: number;
+  done?: number;
+  running?: boolean;
+  completed?: Array<Record<string, unknown>>;
+  failed?: Array<Record<string, unknown>>;
+}
+
+export interface ImageAgentResult {
+  session_id?: string;
+  analysis?: string;
+  image_url?: string;
+  prompt_used?: string;
+  round?: number;
+  template_id?: string;
+  size?: string;
+}
+
+export async function getMeta(baseUrl: string, timeoutMs = 5000): Promise<unknown> {
+  const response = await fetchWithTimeout(\`\${baseUrl}/api/meta\`, {}, timeoutMs, "image-agent-web /api/meta");
+  if (!response.ok) {
+    throw new Error(\`image-agent-web /api/meta returned HTTP \${response.status}\`);
+  }
+  return response.json();
+}
+
+export function resolveImageUrl(baseUrl: string, imageUrl: string | undefined): string {
+  if (!imageUrl) return "";
+  if (/^https?:\\/\\//i.test(imageUrl)) return imageUrl;
+  return \`\${baseUrl}\${imageUrl.startsWith("/") ? "" : "/"}\${imageUrl}\`;
+}
+
+export async function downloadImageToTemp(imageUrl: string, traceId: string, timeoutMs: number): Promise<string> {
+  const response = await fetchWithTimeout(imageUrl, {}, timeoutMs, "generated image download");
+  if (!response.ok) {
+    throw new Error(\`Failed to download generated image: HTTP \${response.status}\`);
+  }
+  const contentType = response.headers.get("content-type") || "image/png";
+  const extension = contentType.includes("jpeg") ? "jpg" : "png";
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const filePath = path.join(process.cwd(), "tmp", \`\${traceId}.\${extension}\`);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, buffer);
+  return filePath;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(\`\${label} timed out after \${timeoutMs}ms.\`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+`;
+}
+
+export function runtimeCardsTs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
+  const defaultPreset = buildDefaultPreset(capabilities, meta);
+  const templateSpecs = buildTemplateSpecs(defaultPreset, meta);
+  const fieldSpecs = buildFieldSpecs(defaultPreset, meta);
+  return `import type { BatchStatus, GeneratePreset, ImageAgentResult } from "./image-agent-client.js";
+
+export const defaultPreset: GeneratePreset = ${JSON.stringify(defaultPreset, null, 2)};
+
+export const templateSpecs = ${JSON.stringify(templateSpecs, null, 2)};
+
+export const fieldSpecs = ${JSON.stringify(fieldSpecs, null, 2)};
+
+export function buildStartCard() {
+  const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: "Image Agent MVP" } },
+    elements: [
+      { tag: "markdown", content: "**Target service:** ${service.service.name}\\n\\n**Templates:** " + templateSpecs.map((template) => template.id).join(", ") + "\\n\\nFill the parameters and submit to run /api/generate." },
+      {
+        tag: "form",
+        name: "image_generate_form",
+        elements: [
+          { tag: "input", name: "param_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          ...fieldSpecs.map((field) => ({ tag: "input", name: field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
+          { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
+          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", action_type: "form_submit", name: "submit_image_generate", value: { action: "image.generate.submit", preset: defaultPreset } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_generate" },
+        ],
+      },
+      { tag: "hr" },
+      { tag: "markdown", content: "Use batch mode for long-running /api/batch jobs. Submit a JSON array of items, then refresh the returned progress card when needed." },
+      {
+        tag: "form",
+        name: "image_batch_form",
+        elements: [
+          { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\"fields\\": { ... } }]" } },
+          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", action_type: "form_submit", name: "submit_image_batch", value: { action: "image.batch.submit" } },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_batch" },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildRunningCard(traceId: string, preset: GeneratePreset) {
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: "blue",
+      title: { tag: "plain_text", content: "Generating image" },
+    },
+    elements: [
+      { tag: "markdown", content: \`**Status:** running\\n\\n**Trace:** \${traceId}\\n\\n**Template:** \${preset.template_id}\\n\\n**Size:** \${preset.size}\` },
+    ],
+  };
+}
+
+export function buildIterationRunningCard(traceId: string, sessionId: string) {
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: "blue",
+      title: { tag: "plain_text", content: "Iterating image" },
+    },
+    elements: [
+      { tag: "markdown", content: \`**Status:** running\\n\\n**Trace:** \${traceId}\\n\\n**Session:** \${escapeText(sessionId)}\` },
+    ],
+  };
+}
+
+export function buildBatchRunningCard(traceId: string, batchId: string, templateId = "", size = "", total = 0) {
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: "blue",
+      title: { tag: "plain_text", content: "Batch running" },
+    },
+    elements: [
+      {
+        tag: "markdown",
+        content: [
+          "**Status:** running",
+          \`**Trace:** \${traceId}\`,
+          \`**Batch ID:** \${escapeText(batchId)}\`,
+          templateId ? \`**Template:** \${escapeText(templateId)}\` : "",
+          size ? \`**Size:** \${escapeText(size)}\` : "",
+          total ? \`**Total:** \${total}\` : "",
+        ].filter(Boolean).join("\\n\\n"),
+      },
+    ],
+  };
+}
+
+export function buildBatchStatusCard(traceId: string, status: BatchStatus, downloadUrl: string) {
+  const total = numberOrZero(status.total);
+  const done = numberOrZero(status.done);
+  const completedCount = Array.isArray(status.completed) ? status.completed.length : 0;
+  const failedCount = Array.isArray(status.failed) ? status.failed.length : 0;
+  const running = status.running === true;
+  const finished = !running && total > 0 && done >= total;
+  const hasFailures = failedCount > 0;
+  const headerTemplate = running ? "blue" : hasFailures ? "red" : finished ? "green" : "blue";
+  const title = running ? "Batch running" : hasFailures ? "Batch finished with failures" : finished ? "Batch complete" : "Batch status";
+  const batchId = status.batch_id || "";
+  const elements: unknown[] = [
+    {
+      tag: "markdown",
+      content: [
+        \`**Status:** \${running ? "running" : finished ? "completed" : "not running"}\`,
+        \`**Trace:** \${traceId}\`,
+        \`**Batch ID:** \${escapeText(batchId)}\`,
+        \`**Progress:** \${done} / \${total}\`,
+        \`**Completed:** \${completedCount}\`,
+        \`**Failed:** \${failedCount}\`,
+        status.template_id ? \`**Template:** \${escapeText(status.template_id)}\` : "",
+        status.size ? \`**Size:** \${escapeText(status.size)}\` : "",
+      ].filter(Boolean).join("\\n\\n"),
+    },
+  ];
+
+  if (finished && downloadUrl && completedCount > 0) {
+    elements.push({
+      tag: "markdown",
+      content: \`[Download completed images ZIP](\${downloadUrl})\`,
+    });
+  }
+
+  if (batchId) {
+    elements.push({
+      tag: "action",
+      actions: [
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "Refresh status" },
+          type: "default",
+          value: {
+            action: "image.batch.refresh",
+            batch_id: batchId,
+          },
+        },
+      ],
+    });
+  }
+
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: headerTemplate,
+      title: { tag: "plain_text", content: title },
+    },
+    elements,
+  };
+}
+
+export function buildSuccessCard(traceId: string, result: ImageAgentResult, imageKey: string, fallbackUrl: string) {
+  const elements: unknown[] = [
+    { tag: "markdown", content: \`**Status:** succeeded\\n\\n**Trace:** \${traceId}\\n\\n**Analysis:** \${escapeText(result.analysis || "No analysis returned.")}\` },
+  ];
+
+  if (imageKey) {
+    elements.push({ tag: "img", img_key: imageKey, alt: { tag: "plain_text", content: "Generated image" } });
+  } else if (fallbackUrl) {
+    elements.push({ tag: "markdown", content: \`Image upload did not produce an image_key. Open target output: \${fallbackUrl}\` });
+  }
+
+  if (result.session_id) {
+    elements.push({
+      tag: "form",
+      name: "image_iterate_form",
+      elements: [
+        {
+          tag: "input",
+          name: "param_feedback",
+          required: true,
+          width: "fill",
+          input_type: "multiline_text",
+          rows: 2,
+          auto_resize: true,
+          label: { tag: "plain_text", content: "Feedback" },
+          placeholder: { tag: "plain_text", content: "Describe what to refine in the next image" },
+          fallback: {
+            tag: "fallback_text",
+            text: { tag: "plain_text", content: "Input requires Feishu 6.8 or later." },
+          },
+        },
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "Iterate image" },
+          type: "primary",
+          action_type: "form_submit",
+          name: "submit_image_iterate",
+          value: {
+            action: "image.iterate.submit",
+            session_id: result.session_id,
+          },
+        },
+      ],
+      fallback: {
+        tag: "fallback_text",
+        text: { tag: "plain_text", content: "Form input requires Feishu 6.6 or later." },
+      },
+    });
+  }
+
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: "green",
+      title: { tag: "plain_text", content: "Image generated" },
+    },
+    elements,
+  };
+}
+
+export function buildInfoCard(traceId: string, title: string, message: string) {
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: "blue",
+      title: { tag: "plain_text", content: title },
+    },
+    elements: [
+      {
+        tag: "markdown",
+        content: \`**State:** duplicate action ignored\\n\\n**Trace ID:** \${traceId}\\n\\n**Next step:** \${escapeText(message)}\`,
+      },
+    ],
+  };
+}
+
+export function buildFailureCard(traceId: string, message: string) {
+  const nextStep = failureNextStep(message);
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: "red",
+      title: { tag: "plain_text", content: "Image generation failed" },
+    },
+    elements: [
+      {
+        tag: "markdown",
+        content: \`**State:** failed\\n\\n**Trace ID:** \${traceId}\\n\\n**What happened:** \${escapeText(message)}\\n\\n**Next step:** \${nextStep}\`,
+      },
+    ],
+  };
+}
+
+function escapeText(value: string): string {
+  return value.replace(/[<>]/g, "");
+}
+
+function numberOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function failureNextStep(message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("not authorized") || normalized.includes("operator_open_id")) {
+    return "Use an allowed Feishu operator open_id or update ALLOWED_OPERATOR_OPEN_IDS, then submit again.";
+  }
+  if (normalized.includes("invalid card input") || normalized.includes("size must") || normalized.includes(" is required")) {
+    return "Correct the card parameters and submit the form again.";
+  }
+  if (normalized.includes("timed out")) {
+    return "Check target-service latency or raise IMAGE_AGENT_TIMEOUT_MS, then retry.";
+  }
+  if (normalized.includes("missing feishu") || normalized.includes("requires open_message_id")) {
+    return "Complete bot-runtime/.env and Feishu callback/message permissions, then rerun verification.";
+  }
+  if (normalized.includes("unsupported card action")) {
+    return "Refresh the start card and submit the generated form button.";
+  }
+  return "Check bot-runtime/audit.log with the trace ID, fix the target or runtime issue, then retry.";
+}
+`;
+}
+
+export function runtimeIndexTs(): string {
+  return `import http from "node:http";
+import fs from "node:fs";
+import * as lark from "@larksuiteoapi/node-sdk";
+import { audit, makeTraceId, readAuditTail } from "./audit.js";
+import { buildFailureCard, buildInfoCard, buildRunningCard, buildStartCard, buildSuccessCard, defaultPreset, fieldSpecs, templateSpecs } from "./cards.js";
+import { loadConfig } from "./config.js";
+import { downloadImageToTemp, resolveImageUrl } from "./image-agent-client.js";
+import type { BatchStatus, GeneratePreset, ImageAgentResult } from "./image-agent-client.js";
+
+const config = loadConfig();
+let cachedClient: lark.Client | undefined;
+const adapterHandlersModule = "../../adapter/handlers.js";
+const CARD_ACTION_DEDUPE_TTL_MS = 120_000;
+const cardActionDedupe = new Map<string, CardActionDedupeEntry>();
+
+interface AdapterResult {
+  ok?: boolean;
+  card?: unknown;
+  result?: unknown;
+  batchId?: string;
+  batchStatus?: unknown;
+  downloadUrl?: string;
+  auditEvents?: Array<{ event: string; detail: Record<string, unknown> }>;
+}
+
+interface AdapterHandlersModule {
+  handleImageAgentCardAction(ctx: Record<string, unknown>, deps: Record<string, unknown>): Promise<AdapterResult>;
+}
+
+interface CardActionDedupeEntry {
+  traceId: string;
+  card: unknown;
+  expiresAt: number;
+}
+
+function requireFeishuApiConfig(): void {
+  if (!config.feishuApiConfigured) {
+    throw new Error(\`Missing Feishu API config: \${config.missingFeishuApiKeys.join(", ")}\`);
+  }
+}
+
+function requireCallbackConfig(): void {
+  if (!config.callbackConfigured) {
+    throw new Error(\`Missing Feishu callback config: \${config.missingCallbackKeys.join(", ")}\`);
+  }
+}
+
+function requireSendConfig(): void {
+  if (!config.sendConfigured) {
+    throw new Error(\`Missing Feishu send config: \${config.missingSendKeys.join(", ")}\`);
+  }
+}
+
+function getClient(): lark.Client {
+  requireFeishuApiConfig();
+  if (!cachedClient) {
+    cachedClient = new lark.Client({
+      appId: config.appId,
+      appSecret: config.appSecret,
+      domain: config.feishuOpenApiBaseUrl || lark.Domain.Feishu,
+    });
+  }
+  return cachedClient;
+}
+
+async function sendCardToTestChat(card: unknown) {
+  requireSendConfig();
+  const response = await getClient().im.message.create({
+    params: { receive_id_type: "chat_id" },
+    data: {
+      receive_id: config.testChatId,
+      msg_type: "interactive",
+      content: JSON.stringify(card),
+    },
+  });
+  assertFeishuApiSuccess(response, "message.create");
+  return response;
+}
+
+async function uploadImage(imageUrl: string, traceId: string): Promise<string> {
+  if (!config.uploadImageToLark || !imageUrl) return "";
+  const filePath = await downloadImageToTemp(imageUrl, traceId, config.imageAgentTimeoutMs);
+  try {
+    const result: any = await getClient().im.image.create({
+      data: {
+        image_type: "message",
+        image: fs.createReadStream(filePath),
+      },
+    });
+    assertFeishuApiSuccess(result, "image.create");
+    const imageKey = result?.data?.image_key || result?.image_key || "";
+    return imageKey;
+  } finally {
+    fs.rmSync(filePath, { force: true });
+  }
+}
+
+async function updateCardMessage(messageId: string, card: unknown, traceId: string): Promise<void> {
+  requireFeishuApiConfig();
+  const tenantAccessToken = await getTenantAccessToken();
+  const response = await fetch(\`\${getOpenApiBaseUrl()}/open-apis/im/v1/messages/\${encodeURIComponent(messageId)}\`, {
+    method: "PATCH",
+    headers: {
+      "Authorization": \`Bearer \${tenantAccessToken}\`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({ content: JSON.stringify(card) }),
+  });
+  const body = await readResponseBody(response);
+  if (!response.ok) {
+    throw new Error(\`Feishu message.patch returned HTTP \${response.status}: \${safeJsonStringify(body)}\`);
+  }
+  assertFeishuApiSuccess(body, "message.patch");
+  audit({ trace_id: traceId, event: "message_patch_succeeded", detail: { messageId } });
+}
+
+async function getTenantAccessToken(): Promise<string> {
+  const response = await fetch(\`\${getOpenApiBaseUrl()}/open-apis/auth/v3/tenant_access_token/internal\`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({
+      app_id: config.appId,
+      app_secret: config.appSecret,
+    }),
+  });
+  const body = await readResponseBody(response);
+  if (!response.ok) {
+    throw new Error(\`Feishu tenant_access_token returned HTTP \${response.status}: \${safeJsonStringify(body)}\`);
+  }
+  assertFeishuApiSuccess(body, "tenant_access_token");
+  const token = isRecord(body) && typeof body.tenant_access_token === "string" ? body.tenant_access_token : "";
+  if (!token) {
+    throw new Error(\`Feishu tenant_access_token response did not include tenant_access_token: \${safeJsonStringify(body)}\`);
+  }
+  return token;
+}
+
+async function readResponseBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function getOpenApiBaseUrl(): string {
+  return config.feishuOpenApiBaseUrl || "https://open.feishu.cn";
+}
+
+function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+interface GenerationRun {
+  traceId: string;
+  result?: ImageAgentResult;
+  imageUrl: string;
+  imageKey: string;
+  card: unknown;
+}
+
+async function runGeneration(preset: GeneratePreset, uploadToLark: boolean, traceId = makeTraceId()): Promise<GenerationRun> {
+  audit({ trace_id: traceId, event: "generation_started", detail: { preset, uploadToLark } });
+  const running = buildRunningCard(traceId, preset);
+  audit({ trace_id: traceId, event: "running_card_built", detail: { running } });
+
+  const adapter = await loadAdapterHandlers();
+  const adapterResult = await adapter.handleImageAgentCardAction({
+    action: "image.generate.submit",
+    value: { action: "image.generate.submit", preset },
+    formValue: {},
+  }, {
+    imageAgentBaseUrl: config.imageAgentBaseUrl,
+    timeoutMs: config.imageAgentTimeoutMs,
+  });
+  for (const event of adapterResult.auditEvents || []) {
+    audit({ trace_id: traceId, event: event.event, detail: event.detail || {} });
+  }
+  if (!adapterResult.ok) {
+    throw new Error(adapterFailureMessage(adapterResult));
+  }
+  const result = normalizeImageAgentResult(adapterResult.result);
+  const imageUrl = resolveImageUrl(config.imageAgentBaseUrl, result.image_url);
+  let imageKey = "";
+  if (uploadToLark && config.feishuApiConfigured) {
+    try {
+      imageKey = await uploadImage(imageUrl, traceId);
+    } catch (error) {
+      audit({
+        trace_id: traceId,
+        event: "image_upload_failed",
+        detail: { message: error instanceof Error ? error.message : String(error), imageUrl },
+      });
+    }
+  }
+
+  audit({ trace_id: traceId, event: "generation_succeeded", detail: { imageUrl, imageKey } });
+  return {
+    traceId,
+    result,
+    imageUrl,
+    imageKey,
+    card: buildSuccessCard(traceId, result, imageKey, imageUrl),
+  };
+}
+
+async function loadAdapterHandlers(): Promise<AdapterHandlersModule> {
+  return await import(adapterHandlersModule) as AdapterHandlersModule;
+}
+
+function normalizeImageAgentResult(value: unknown): ImageAgentResult {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as ImageAgentResult : {};
+}
+
+function adapterFailureMessage(adapterResult: unknown): string {
+  if (!isRecord(adapterResult)) return "Adapter action failed.";
+  const auditEvents = Array.isArray(adapterResult.auditEvents) ? adapterResult.auditEvents : [];
+  for (let index = auditEvents.length - 1; index >= 0; index -= 1) {
+    const event = auditEvents[index];
+    if (!isRecord(event) || !isRecord(event.detail)) continue;
+    const message = event.detail.message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "Adapter action failed.";
+}
+
+interface CardActionRun {
+  ok: boolean;
+  traceId: string;
+  card: unknown;
+  error?: string;
+  batchId?: string;
+  batchStatus?: BatchStatus;
+  downloadUrl?: string;
+}
+
+async function runCardAction(data: any, options: { requireCallbackConfig: boolean; uploadToLark: boolean; asyncUpdate: boolean; dedupe: boolean }): Promise<CardActionRun> {
+  const traceId = makeTraceId();
+  const actionValue = getActionValue(data);
+  const action = typeof actionValue.action === "string" ? actionValue.action : "";
+  const formValue = getFormValue(data);
+  const preset = isPreset(actionValue.preset) ? mergePresetWithFormValue(actionValue.preset, formValue) : undefined;
+  const callbackContext = extractCallbackContext(data);
+  audit({
+    trace_id: traceId,
+    event: "card_action_received",
+    detail: {
+      action,
+      form_value_keys: isRecord(formValue) ? Object.keys(formValue) : [],
+      ...callbackContext,
+    },
+  });
+
+  if (!isSupportedCardAction(action)) {
+    return {
+      ok: false,
+      traceId,
+      card: buildFailureCard(traceId, "Unsupported card action."),
+      error: "Unsupported card action.",
+    };
+  }
+
+  const dedupeKey = options.dedupe ? buildCardActionDedupeKey(action, actionValue, formValue, callbackContext) : "";
+  if (dedupeKey) {
+    const duplicate = findDuplicateCardAction(dedupeKey, traceId, callbackContext);
+    if (duplicate) {
+      return {
+        ok: true,
+        traceId,
+        card: duplicate.card,
+      };
+    }
+    rememberCardAction(dedupeKey, traceId, buildInfoCard(traceId, "Card action already queued", "This card action is already being processed. The original request will update the card when it finishes."));
+  }
+
+  try {
+    if (options.requireCallbackConfig) {
+      requireCallbackConfig();
+    }
+    if (options.asyncUpdate && action === "image.generate.submit" && preset) {
+      requireFeishuApiConfig();
+      const messageId = typeof callbackContext.open_message_id === "string" ? callbackContext.open_message_id : "";
+      if (!messageId) {
+        throw new Error("Async card action requires open_message_id in the callback context.");
+      }
+      const runningCard = buildRunningCard(traceId, preset);
+      audit({ trace_id: traceId, event: "async_generation_queued", detail: { messageId, preset } });
+      rememberCardAction(dedupeKey, traceId, runningCard);
+      void completeAsyncCardAction(messageId, preset, options.uploadToLark, traceId, callbackContext, dedupeKey);
+      return {
+        ok: true,
+        traceId,
+        card: runningCard,
+      };
+    }
+    const adapter = await loadAdapterHandlers();
+    const adapterResult = await adapter.handleImageAgentCardAction({
+      action,
+      value: actionValue,
+      formValue: isRecord(formValue) ? formValue : {},
+      operatorOpenId: typeof callbackContext.operator_open_id === "string" ? callbackContext.operator_open_id : undefined,
+      openMessageId: typeof callbackContext.open_message_id === "string" ? callbackContext.open_message_id : undefined,
+      openChatId: typeof callbackContext.open_chat_id === "string" ? callbackContext.open_chat_id : undefined,
+    }, {
+      imageAgentBaseUrl: config.imageAgentBaseUrl,
+      timeoutMs: config.imageAgentTimeoutMs,
+      allowedOperatorOpenIds: config.allowedOperatorOpenIds,
+    });
+    for (const event of adapterResult.auditEvents || []) {
+      const translated = translateAdapterAuditEvent(event, callbackContext);
+      audit({ trace_id: traceId, event: translated.event, detail: translated.detail });
+    }
+    const card = adapterResult.ok ? decorateAdapterCard(adapterResult.card, traceId) : buildFailureCard(traceId, adapterFailureMessage(adapterResult));
+    rememberCardAction(dedupeKey, traceId, card);
+    return {
+      ok: Boolean(adapterResult.ok),
+      traceId,
+      card,
+      batchId: adapterResult.batchId,
+      batchStatus: normalizeBatchStatus(adapterResult.batchStatus, adapterResult.batchId),
+      downloadUrl: adapterResult.downloadUrl,
+      error: adapterResult.ok ? undefined : adapterFailureMessage(adapterResult),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const failureCard = buildFailureCard(traceId, message);
+    rememberCardAction(dedupeKey, traceId, failureCard);
+    audit({ trace_id: traceId, event: "generation_failed", detail: { message, ...callbackContext } });
+    return {
+      ok: false,
+      traceId,
+      card: failureCard,
+      error: message,
+    };
+  }
+}
+
+function isSupportedCardAction(action: string): boolean {
+  return action === "image.generate.submit"
+    || action === "image.iterate.submit"
+    || action === "image.batch.submit"
+    || action === "image.batch.refresh";
+}
+
+function decorateAdapterCard(card: unknown, traceId: string): unknown {
+  if (!isRecord(card) || !Array.isArray(card.elements)) return card;
+  const elements = card.elements.map((element) => isRecord(element) ? { ...element } : element);
+  elements.push({ tag: "markdown", content: "**Trace ID:** " + traceId });
+  return { ...card, elements };
+}
+
+function normalizeBatchStatus(value: unknown, batchId: string | undefined): BatchStatus | undefined {
+  if (!isRecord(value)) return undefined;
+  return { ...value, batch_id: typeof value.batch_id === "string" ? value.batch_id : batchId || "" } as BatchStatus;
+}
+
+function translateAdapterAuditEvent(
+  event: { event: string; detail: Record<string, unknown> },
+  callbackContext: Record<string, unknown>,
+): { event: string; detail: Record<string, unknown> } {
+  if (event.event === "adapter_generation_failed") {
+    const message = typeof event.detail.message === "string" ? event.detail.message : "Adapter action failed.";
+    const normalized = message.toLowerCase();
+    if (normalized.includes("not authorized") || normalized.includes("operator_open_id")) {
+      return {
+        event: "card_action_unauthorized",
+        detail: {
+          message,
+          allowed_operator_count: config.allowedOperatorOpenIds.length,
+          ...callbackContext,
+        },
+      };
+    }
+    if (normalized.includes("timed out")) {
+      return { event: "generation_failed", detail: { message, ...callbackContext } };
+    }
+    return { event: "card_action_validation_failed", detail: { errors: [message], ...callbackContext } };
+  }
+  if (event.event === "adapter_batch_submitted") {
+    return {
+      event: "batch_started",
+      detail: {
+        template_id: event.detail.template_id,
+        size: event.detail.size,
+        total: event.detail.total,
+        ...callbackContext,
+      },
+    };
+  }
+  if (event.event === "adapter_batch_status_checked") {
+    return { event: "batch_status_checked", detail: { ...event.detail, ...callbackContext } };
+  }
+  return event;
+}
+
+function buildCardActionDedupeKey(
+  action: string,
+  payload: unknown,
+  formValue: unknown,
+  callbackContext: Record<string, unknown>,
+): string {
+  return safeJsonStringify({
+    action,
+    payload,
+    formValue: isRecord(formValue) ? formValue : {},
+    operator_open_id: callbackContext.operator_open_id || "",
+    open_message_id: callbackContext.open_message_id || "",
+    open_chat_id: callbackContext.open_chat_id || "",
+  });
+}
+
+function findDuplicateCardAction(
+  dedupeKey: string,
+  traceId: string,
+  callbackContext: Record<string, unknown>,
+): CardActionDedupeEntry | undefined {
+  cleanupCardActionDedupe();
+  const duplicate = cardActionDedupe.get(dedupeKey);
+  if (!duplicate) return undefined;
+  audit({
+    trace_id: traceId,
+    event: "card_action_duplicate",
+    detail: {
+      original_trace_id: duplicate.traceId,
+      dedupe_ttl_seconds: Math.round(CARD_ACTION_DEDUPE_TTL_MS / 1000),
+      ...callbackContext,
+    },
+  });
+  return duplicate;
+}
+
+function rememberCardAction(dedupeKey: string, traceId: string, card: unknown): void {
+  if (!dedupeKey) return;
+  cardActionDedupe.set(dedupeKey, {
+    traceId,
+    card,
+    expiresAt: Date.now() + CARD_ACTION_DEDUPE_TTL_MS,
+  });
+}
+
+function cleanupCardActionDedupe(): void {
+  const now = Date.now();
+  for (const [key, value] of cardActionDedupe.entries()) {
+    if (value.expiresAt <= now) {
+      cardActionDedupe.delete(key);
+    }
+  }
+}
+
+async function completeAsyncCardAction(
+  messageId: string,
+  preset: GeneratePreset,
+  uploadToLark: boolean,
+  traceId: string,
+  callbackContext: Record<string, unknown>,
+  dedupeKey: string,
+): Promise<void> {
+  try {
+    const run = await runGeneration(preset, uploadToLark, traceId);
+    rememberCardAction(dedupeKey, traceId, run.card);
+    await updateCardMessage(messageId, run.card, traceId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const failureCard = buildFailureCard(traceId, message);
+    rememberCardAction(dedupeKey, traceId, failureCard);
+    audit({ trace_id: traceId, event: "async_generation_failed", detail: { message, ...callbackContext } });
+    try {
+      await updateCardMessage(messageId, failureCard, traceId);
+    } catch (patchError) {
+      audit({
+        trace_id: traceId,
+        event: "message_patch_failed",
+        detail: { message: patchError instanceof Error ? patchError.message : String(patchError), originalError: message },
+      });
+    }
+  }
+}
+
+const cardHandler = new lark.CardActionHandler(
+  {
+    encryptKey: config.encryptKey,
+    verificationToken: config.verificationToken,
+  },
+  async (data: any) => {
+    const run = await runCardAction(data, {
+      requireCallbackConfig: true,
+      uploadToLark: config.uploadImageToLark && config.feishuApiConfigured,
+      asyncUpdate: config.cardActionMode === "async",
+      dedupe: true,
+    });
+    return run.card;
+  },
+);
+
+const server = http.createServer(async (req, res) => {
+  const requestUrl = new URL(req.url || "/", "http://localhost");
+
+  if (req.method === "GET" && requestUrl.pathname === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({
+      ok: true,
+      service: "image-agent-web-lark-runtime",
+      feishuConfigured: config.feishuConfigured,
+      feishuApiConfigured: config.feishuApiConfigured,
+      callbackConfigured: config.callbackConfigured,
+      sendConfigured: config.sendConfigured,
+      cardActionMode: config.cardActionMode,
+      feishuOpenApiBaseUrl: config.feishuOpenApiBaseUrl,
+      uploadImageToLark: config.uploadImageToLark,
+      operatorAuthConfigured: config.allowedOperatorOpenIds.length > 0,
+      allowedOperatorCount: config.allowedOperatorOpenIds.length,
+      missingFeishuKeys: config.missingFeishuKeys,
+      missingFeishuApiKeys: config.missingFeishuApiKeys,
+      missingCallbackKeys: config.missingCallbackKeys,
+      missingSendKeys: config.missingSendKeys,
+      publicCallbackBaseUrl: config.publicCallbackBaseUrl,
+      imageAgentBaseUrl: config.imageAgentBaseUrl,
+      imageAgentTimeoutMs: config.imageAgentTimeoutMs,
+      debugEnabled: config.allowDebugWithoutFeishu,
+      debugProtected: Boolean(config.debugAccessToken),
+    }));
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith("/debug/") && !isDebugRequestAllowed(req)) {
+    writeJson(res, 403, {
+      ok: false,
+      error: config.allowDebugWithoutFeishu
+        ? "Debug endpoint access denied. Provide DEBUG_ACCESS_TOKEN with Authorization: Bearer <token> or x-lark-deployer-debug-token."
+        : "Debug endpoints are disabled. Set ALLOW_DEBUG_WITHOUT_FEISHU=1 for local verification.",
+    });
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/debug/audit-tail") {
+    const requestedLimit = Number(requestUrl.searchParams.get("limit") || "50");
+    const limit = Number.isInteger(requestedLimit) ? requestedLimit : 50;
+    const events = readAuditTail(limit);
+    writeJson(res, 200, { ok: true, count: events.length, events });
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/debug/start-card") {
+    const traceId = makeTraceId();
+    try {
+      const body = await readJsonBody(req);
+      const response = isRecord(body?.mockFeishuResponse) && config.allowDebugWithoutFeishu
+        ? assertMockFeishuResponse(body.mockFeishuResponse)
+        : await sendCardToTestChat(buildStartCard());
+      audit({
+        trace_id: traceId,
+        event: "start_card_sent",
+        detail: {
+          messageId: extractFeishuMessageId(response),
+          responseCode: isRecord(response) ? response.code : undefined,
+        },
+      });
+      writeJson(res, 200, { ok: true, traceId, response });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      audit({ trace_id: traceId, event: "start_card_failed", detail: { message } });
+      writeJson(res, 500, { ok: false, traceId, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/debug/simulate-generate") {
+    try {
+      const body = await readJsonBody(req);
+      const preset = isPreset(body?.preset) ? body.preset : defaultPreset;
+      const uploadToLark = Boolean(body?.uploadToLark) && config.feishuApiConfigured;
+      const run = await runGeneration(preset, uploadToLark);
+      writeJson(res, 200, { ok: true, ...run });
+    } catch (error) {
+      const traceId = makeTraceId();
+      const message = error instanceof Error ? error.message : String(error);
+      audit({ trace_id: traceId, event: "debug_simulate_failed", detail: { message } });
+      writeJson(res, 500, { ok: false, traceId, card: buildFailureCard(traceId, message), error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/debug/simulate-card-action") {
+    try {
+      const body = await readJsonBody(req);
+      const preset = isPreset(body?.preset) ? body.preset : defaultPreset;
+      const actionName = typeof body?.action === "string" ? body.action : "image.generate.submit";
+      const formValue = isRecord(body?.formValue) ? body.formValue : buildDefaultFormValueForAction(actionName, preset);
+      const eventShape = body?.eventShape === "v2" ? "v2" : "legacy";
+      const valueAsJsonString = body?.valueAsJsonString === true;
+      const uploadToLark = Boolean(body?.uploadToLark) && config.feishuApiConfigured;
+      const actionValue = buildDebugActionValue(body, preset);
+      const event = eventShape === "v2"
+        ? buildDebugCardActionEventV2(preset, formValue, valueAsJsonString, actionValue)
+        : buildDebugCardActionEvent(preset, formValue, valueAsJsonString, actionValue);
+      const run = await runCardAction(event, {
+        requireCallbackConfig: false,
+        uploadToLark,
+        asyncUpdate: body?.asyncUpdate === true,
+        dedupe: body?.dedupe === true,
+      });
+      writeJson(res, run.ok ? 200 : 500, run);
+    } catch (error) {
+      const traceId = makeTraceId();
+      const message = error instanceof Error ? error.message : String(error);
+      audit({ trace_id: traceId, event: "debug_card_action_failed", detail: { message } });
+      writeJson(res, 500, { ok: false, traceId, card: buildFailureCard(traceId, message), error: message });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/webhook/card") {
+    await handleCardWebhook(req, res);
+    return;
+  }
+
+  writeJson(res, 404, { ok: false, error: "Not found" });
+});
+
+server.listen(config.port, config.host, () => {
+  console.log(\`Lark bot runtime listening on http://\${config.host}:\${config.port}\`);
+  console.log("Card callback path: /webhook/card");
+  if (!config.feishuConfigured) {
+    console.log(\`Feishu config incomplete: \${config.missingFeishuKeys.join(", ")}\`);
+    console.log("Local debug endpoint available: POST /debug/simulate-generate");
+  }
+  if (config.allowDebugWithoutFeishu && config.debugAccessToken) {
+    console.log("Debug endpoints require DEBUG_ACCESS_TOKEN.");
+  }
+  if (config.allowDebugWithoutFeishu && !config.debugAccessToken) {
+    console.log("Debug endpoints are unprotected. Set DEBUG_ACCESS_TOKEN before exposing this runtime publicly.");
+  }
+});
+
+function writeJson(res: http.ServerResponse, statusCode: number, payload: unknown): void {
+  res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(payload));
+}
+
+function assertMockFeishuResponse(response: Record<string, unknown>): Record<string, unknown> {
+  assertFeishuApiSuccess(response, "mock message.create");
+  return response;
+}
+
+function extractFeishuMessageId(response: unknown): string {
+  if (!isRecord(response)) return "";
+  const data = isRecord(response.data) ? response.data : {};
+  return stringFromUnknown(data.message_id)
+    || stringFromUnknown(data.messageId)
+    || stringFromUnknown(data.open_message_id)
+    || stringFromUnknown(response.message_id)
+    || stringFromUnknown(response.messageId)
+    || stringFromUnknown(response.open_message_id);
+}
+
+function stringFromUnknown(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function isDebugRequestAllowed(req: http.IncomingMessage): boolean {
+  if (!config.allowDebugWithoutFeishu) return false;
+  if (!config.debugAccessToken) return true;
+  const headerToken = firstHeaderValue(req.headers["x-lark-deployer-debug-token"]);
+  if (headerToken === config.debugAccessToken) return true;
+  const authorization = firstHeaderValue(req.headers.authorization);
+  return authorization === \`Bearer \${config.debugAccessToken}\`;
+}
+
+function firstHeaderValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] || "";
+  return value || "";
+}
+
+function assertFeishuApiSuccess(response: unknown, operation: string): void {
+  if (!isRecord(response) || !Object.prototype.hasOwnProperty.call(response, "code")) return;
+  const rawCode = response.code;
+  const code = typeof rawCode === "number" ? rawCode : Number(rawCode);
+  if (Number.isFinite(code) && code === 0) return;
+  const message = typeof response.msg === "string"
+    ? response.msg
+    : typeof response.message === "string"
+      ? response.message
+      : "Unknown Feishu API error";
+  throw new Error(\`Feishu \${operation} failed with code \${String(rawCode)}: \${message}\`);
+}
+
+async function handleCardWebhook(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  if (req.method !== "POST") {
+    writeJson(res, 405, { ok: false, error: "Method not allowed" });
+    return;
+  }
+
+  let body: any;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    return;
+  }
+
+  const data = Object.assign(Object.create({ headers: req.headers }), body);
+  try {
+    const { isChallenge, challenge } = lark.generateChallenge(data, { encryptKey: config.encryptKey });
+    if (isChallenge) {
+      writeJson(res, 200, challenge);
+      return;
+    }
+  } catch (error) {
+    writeJson(res, 400, {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+
+  if (!config.callbackConfigured) {
+    writeJson(res, 503, {
+      ok: false,
+      error: \`Feishu callback config incomplete: \${config.missingCallbackKeys.join(", ")}\`,
+      missingFeishuKeys: config.missingCallbackKeys,
+    });
+    return;
+  }
+
+  const card = await cardHandler.invoke(data);
+  if (!card) {
+    writeJson(res, 401, { ok: false, error: "Card callback verification failed or no card was returned." });
+    return;
+  }
+  writeJson(res, 200, card);
+}
+
+function buildDebugCardActionEvent(
+  preset: GeneratePreset,
+  formValue: Record<string, unknown>,
+  valueAsJsonString = false,
+  actionValue?: Record<string, unknown>,
+): Record<string, unknown> {
+  const value = actionValue || {
+    action: "image.generate.submit",
+    preset,
+  };
+  return {
+    open_id: "debug_open_id",
+    user_id: "debug_user_id",
+    tenant_key: "debug_tenant_key",
+    open_message_id: "debug_message_id",
+    context: {
+      open_chat_id: "debug_chat_id",
+      open_message_id: "debug_message_id",
+    },
+    action: {
+      tag: "button",
+      form_value: formValue,
+      value: valueAsJsonString ? JSON.stringify(value) : value,
+    },
+  };
+}
+
+function buildDebugCardActionEventV2(
+  preset: GeneratePreset,
+  formValue: Record<string, unknown>,
+  valueAsJsonString = false,
+  actionValue?: Record<string, unknown>,
+): Record<string, unknown> {
+  const value = actionValue || {
+    action: "image.generate.submit",
+    preset,
+  };
+  return {
+    schema: "2.0",
+    header: {
+      event_type: "card.action.trigger",
+      tenant_key: "debug_v2_tenant_key",
+    },
+    event: {
+      operator: {
+        open_id: "debug_v2_open_id",
+        user_id: "debug_v2_user_id",
+      },
+      token: "debug_v2_card_update_token",
+      action: {
+        tag: "button",
+        name: "submit_image_generate",
+        form_value: formValue,
+        value: valueAsJsonString ? JSON.stringify(value) : value,
+      },
+      context: {
+        open_chat_id: "debug_v2_chat_id",
+        open_message_id: "debug_v2_message_id",
+      },
+    },
+  };
+}
+
+function buildDebugActionValue(body: any, preset: GeneratePreset): Record<string, unknown> {
+  if (body?.action === "image.iterate.submit") {
+    return {
+      action: "image.iterate.submit",
+      session_id: stringFromUnknown(body?.session_id || body?.sessionId) || "debug_session_id",
+    };
+  }
+  if (body?.action === "image.batch.submit") {
+    return {
+      action: "image.batch.submit",
+    };
+  }
+  if (body?.action === "image.batch.refresh") {
+    return {
+      action: "image.batch.refresh",
+      batch_id: stringFromUnknown(body?.batch_id || body?.batchId) || "debug_batch_id",
+    };
+  }
+  return {
+    action: "image.generate.submit",
+    preset,
+  };
+}
+
+function buildDefaultFormValueForAction(action: string, preset: GeneratePreset): Record<string, string> {
+  if (action === "image.iterate.submit") {
+    return { param_feedback: "Make the image cleaner and more conversion-focused." };
+  }
+  if (action === "image.batch.submit") {
+    return buildDefaultBatchFormValue(preset);
+  }
+  if (action === "image.batch.refresh") {
+    return {};
+  }
+  return buildDefaultFormValue(preset);
+}
+
+function buildDefaultFormValue(preset: GeneratePreset): Record<string, string> {
+  return {
+    param_template_id: preset.template_id,
+    param_size: preset.size,
+    param_message: preset.message || "",
+    ...Object.fromEntries(fieldSpecs.map((field) => [field.name, preset.fields[field.key] || ""])),
+  };
+}
+
+function buildDefaultBatchFormValue(preset: GeneratePreset): Record<string, string> {
+  return {
+    param_batch_template_id: preset.template_id,
+    param_batch_size: preset.size,
+    param_batch_items_json: JSON.stringify([{ fields: preset.fields }], null, 2),
+  };
+}
+
+function getActionValue(data: any): Record<string, unknown> {
+  const value = getActionObject(data)?.value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return isRecord(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function getFormValue(data: any): unknown {
+  const action = getActionObject(data);
+  if (isRecord(action?.form_value)) return action.form_value;
+  if (isRecord(action?.formValue)) return action.formValue;
+  if (isRecord(data?.form_value)) return data.form_value;
+  if (isRecord(data?.formValue)) return data.formValue;
+  return undefined;
+}
+
+function getActionObject(data: any): Record<string, unknown> | undefined {
+  if (isRecord(data?.action)) return data.action;
+  if (isRecord(data?.event?.action)) return data.event.action;
+  return undefined;
+}
+
+function mergePresetWithFormValue(preset: GeneratePreset, formValue: unknown): GeneratePreset {
+  if (!formValue || typeof formValue !== "object") return preset;
+  const submitted = formValue as Record<string, unknown>;
+  let templateId = preset.template_id;
+  let size = preset.size;
+  let message = preset.message || "";
+  const fields = { ...preset.fields };
+  if (Object.prototype.hasOwnProperty.call(submitted, "param_template_id")) {
+    templateId = typeof submitted.param_template_id === "string" ? submitted.param_template_id.trim() : "";
+  }
+  if (Object.prototype.hasOwnProperty.call(submitted, "param_size")) {
+    size = typeof submitted.param_size === "string" ? submitted.param_size.trim() : "";
+  }
+  if (Object.prototype.hasOwnProperty.call(submitted, "param_message")) {
+    message = typeof submitted.param_message === "string" ? submitted.param_message.trim() : "";
+  }
+  for (const field of fieldSpecs) {
+    if (Object.prototype.hasOwnProperty.call(submitted, field.name)) {
+      const submittedValue = submitted[field.name];
+      fields[field.key] = typeof submittedValue === "string" ? submittedValue.trim() : "";
+    }
+  }
+  return {
+    ...preset,
+    template_id: templateId,
+    size,
+    message,
+    fields,
+  };
+}
+
+function validatePreset(preset: GeneratePreset): string[] {
+  const errors: string[] = [];
+  const template = findTemplateSpec(preset.template_id);
+  if (!template) {
+    errors.push(\`Template ID must be one of: \${templateSpecs.map((item) => item.id).join(", ")}.\`);
+  }
+  if (!/^([1-9]\\d*)x([1-9]\\d*)$/i.test(preset.size.trim())) {
+    errors.push("Size must use WIDTHxHEIGHT, for example 1024x1024.");
+  }
+
+  const requiredKeys = template
+    ? new Set(template.requiredFieldKeys)
+    : new Set(fieldSpecs.filter((field) => field.required).map((field) => field.key));
+  for (const field of fieldSpecs) {
+    if (!requiredKeys.has(field.key)) continue;
+    const value = preset.fields[field.key];
+    if (typeof value !== "string" || !value.trim()) {
+      errors.push(field.label + " is required.");
+    }
+  }
+
+  return errors;
+}
+
+function findTemplateSpec(templateId: string): { id: string; requiredFieldKeys: string[] } | undefined {
+  return templateSpecs.find((template) => template.id === templateId);
+}
+
+function isOperatorAllowed(callbackContext: Record<string, unknown>): boolean {
+  if (!config.allowedOperatorOpenIds.length) return true;
+  const operatorOpenId = typeof callbackContext.operator_open_id === "string" ? callbackContext.operator_open_id : "";
+  return Boolean(operatorOpenId && config.allowedOperatorOpenIds.includes(operatorOpenId));
+}
+
+function extractCallbackContext(data: any): Record<string, unknown> {
+  const event = isRecord(data?.event) ? data.event : {};
+  const eventOperator = isRecord(event.operator) ? event.operator : {};
+  const eventContext = isRecord(event.context) ? event.context : {};
+  const action = getActionObject(data);
+  return compactObject({
+    operator_open_id: data?.open_id || data?.operator?.open_id || data?.operator?.openId || eventOperator.open_id || eventOperator.openId,
+    operator_user_id: data?.user_id || data?.operator?.user_id || data?.operator?.userId || eventOperator.user_id || eventOperator.userId,
+    tenant_key: data?.tenant_key || data?.header?.tenant_key || event.tenant_key,
+    open_message_id: data?.open_message_id || data?.context?.open_message_id || data?.messageId || eventContext.open_message_id || event.messageId,
+    open_chat_id: data?.open_chat_id || data?.context?.open_chat_id || data?.chatId || eventContext.open_chat_id || event.chatId,
+    action_tag: action?.tag,
+    action_option: action?.option,
+    action_name: action?.name,
+  });
+}
+
+function compactObject(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== ""));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function readJsonBody(req: http.IncomingMessage): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      raw += chunk;
+      if (raw.length > 1_000_000) {
+        reject(new Error("Request body too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      if (!raw.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(raw));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function isPreset(value: unknown): value is GeneratePreset {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as GeneratePreset;
+  return typeof candidate.template_id === "string"
+    && typeof candidate.size === "string"
+    && typeof candidate.fields === "object"
+    && candidate.fields !== null;
+}
+`;
+}
