@@ -19,6 +19,7 @@ Lark-deployer 是一个构建时（build-time）生成器：分析一个已有�
 - 体量最大的文件仍是 `generate.ts`，其中包含生成 `adapter/`、`bot-runtime/`、README 和验收文档的模板字符串；这仍是后续可维护性风险。
 - 测试：`tests/cli-smoke.test.mjs`、`tests/runtime-local-e2e.test.mjs`、`tests/unit-pure-functions.test.mjs`。CLI 冒烟测试已覆盖 adapter-first 生成与 `verify --mode embedded-adapter --strict` package validation；运行时 e2e 继续覆盖 standalone/reference host。
 - `tsconfig.json` 开启 `strict: true`，构建目标 ES2022 / NodeNext。
+- 2026-07-07 泛用化阶段新增 manifest `0.2` 契约、strategy-based analyzer、`generic_http_api` 分析路径，以及 `generic-http-api` embedded-adapter 生成/验证路径；`image-agent-web` 仍是 self-hosted-runtime 长连接回归锚点。
 
 ## 3. 命令流水线（当前已实现）
 
@@ -37,7 +38,7 @@ analyze → plan → context(生成给所有者的凭据请求) → generate(生
   - CLI 冒烟测试覆盖 analyze → plan → generate → verify 全链路。
   - CLI 冒烟测试覆盖 embedded adapter 输出：`adapter/` 文件、`docs/integration_guide.md`、`verify --mode embedded-adapter --strict`、`doctor --mode embedded-adapter --json`。
   - 运行时本地 e2e 测试覆盖：生成运行时包 → 安装/构建 → 启动 → `/webhook/card` URL 校验挑战 → `/debug/simulate-generate` → `/debug/simulate-card-action`（含表单合并、Feishu 2.0 事件形状兼容、非法输入拒绝）→ 批量任务提交/刷新 → 去重窗口 → operator 授权检查 → 签名/加密回调（当 `VERIFICATION_TOKEN` / `ENCRYPT_KEY` 设置时）。
-- **真实飞书 Level 2 验证尚未完成**：`docs/mvp-1a-image-agent-web.md` 明确写明"Real Feishu verification is still pending external app credentials, callback URL setup, and a running target service"。目前所有绿灯都来自本地模拟（mock target + 本地 webhook），尚未在真实飞书开发者应用上跑通发卡、点击回调、图片上传、批量任务下载的完整闭环。
+- **image-agent-web self-hosted-runtime 已有真实飞书长连接 MVP 验证**：2026-07-07 后以 `docs/image-agent-web-mvp-verified-summary.md` 为回归锚点，确认长连接、`card.action.trigger`、Card JSON 2.0、异步 running + patch、generate / iterate / batch / refresh、失败路径已经跑通。webhook/standalone Level 2 仍按各自生成包证据记录独立管理。
 - **self-hosted-runtime 本地 MVP 已作为目标形态落地**：生成物为 `generated/<target>-lark/feishu-host/`，包含 `.env.example`、`requirements.txt`、manifest-derived `spec/*.json`、Python card/client/validation/handler/app 文件、`local_contract_test.py` 和 `app.py --selfcheck`。最终本地完成证据必须在安装 Python 依赖后运行 strict verify，不能把缺依赖 WARN 当成绿灯。
 - 唯一一次真实目标服务联调记录：2026-07-01，临时启动 `C:\works\image-agent-web`，验证了 `GET /api/meta`、生成运行时 `/health`、本地卡片 URL 挑战等；`POST /api/generate` 之外的真实调用未覆盖（依赖外部图像/模型服务）。
 
@@ -70,3 +71,4 @@ analyze → plan → context(生成给所有者的凭据请求) → generate(生
 
 - 2026-07-02：完成首次代码审计（本文档）；创建 `docs/development-direction.md` 记录后续开发方向；执行 `git init` 首次提交，锁定当前基线。
 - 2026-07-04：按 `docs/mvp-self-hosting-task-book.md` 推进 `self-hosted-runtime`，新增 Python `feishu-host/` 长连接宿主生成、local contract/selfcheck/strict verify 路径，并明确真实飞书 Level 2 仍是人工证据步骤。
+- 2026-07-07：冻结 `image-agent-web` self-hosted-runtime 真实飞书 MVP 为回归锚点；将 manifest 契约提升到 `0.2`；把 `analyze` 拆成 strategy-based 结构；新增 `generic_http_api` 粗粒度分析路径；新增 `generic-http-api` embedded-adapter 生成、strict verify、doctor package validation 测试路径。暂未扩展 Slack/企业微信、群 @、私聊命令、全自动部署或 skill 形态。
