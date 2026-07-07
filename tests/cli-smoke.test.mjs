@@ -2308,7 +2308,23 @@ test("image-agent-web mapping profile is isolated from generator orchestration",
   assert.match(profileSource, /IMAGE_AGENT_WEB_PROFILE/);
   assert.match(profileSource, /image\.generate\.submit/);
   assert.match(profileSource, /\/api\/batch\/\{batch_id\}\/status/);
-  assert.match(generateSource, /IMAGE_AGENT_WEB_PROFILE/);
+  for (const builderName of [
+    "adapterServiceClientTs",
+    "adapterServiceClientJs",
+    "adapterCardsTs",
+    "adapterCardsJs",
+    "adapterHandlersTs",
+    "adapterHandlersJs",
+  ]) {
+    assert.match(profileSource, new RegExp(`export function ${builderName}\\b`));
+    assert.match(generateSource, new RegExp(`\\b${builderName}\\(`));
+    assert.doesNotMatch(generateSource, new RegExp(`function ${builderName}\\b`));
+  }
+  assert.match(profileSource, /export function buildBatchStatusCard/);
+  assert.match(profileSource, /export function buildSuccessCard/);
+  assert.match(profileSource, /export async function handleImageAgentCardAction/);
+  assert.doesNotMatch(generateSource, /function adapterServiceClientTs|function adapterCardsTs|function adapterHandlersTs/);
+  assert.match(generateSource, /from "\.\.\/profiles\/image-agent-web\.js"/);
 });
 
 function run(args) {
