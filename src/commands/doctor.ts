@@ -179,7 +179,7 @@ function embeddedActionChecks(packagePath: string): Array<{ name: string; status
   const interactions = readEmbeddedInteractions(interactionPath);
   const handlerSource = fs.readFileSync(handlerPath, "utf8");
   return interactions
-    .map((interaction) => ({ interaction, actionId: embeddedActionIdForInputMode(interaction.input_mode) }))
+    .map((interaction) => ({ interaction, actionId: embeddedActionIdForInteraction(interaction) }))
     .filter((item): item is { interaction: EmbeddedInteraction; actionId: string } => Boolean(item.actionId))
     .map(({ interaction, actionId }) => {
       const supportsAction = handlerSource.includes(actionId);
@@ -197,6 +197,7 @@ interface EmbeddedInteraction {
   trigger: string;
   input_mode: string;
   capability_id: string;
+  action_id?: string;
 }
 
 function readEmbeddedInteractions(filePath: string): EmbeddedInteraction[] {
@@ -214,11 +215,12 @@ function readEmbeddedInteractions(filePath: string): EmbeddedInteraction[] {
   }
 }
 
-function embeddedActionIdForInputMode(inputMode: string): string {
-  if (inputMode === "preset_card_action") return "image.generate.submit";
-  if (inputMode === "feedback_card_action") return "image.iterate.submit";
-  if (inputMode === "batch_form_action") return "image.batch.submit";
-  if (inputMode === "batch_status_action") return "image.batch.refresh";
+function embeddedActionIdForInteraction(interaction: EmbeddedInteraction): string {
+  if (interaction.action_id) return interaction.action_id;
+  if (interaction.input_mode === "preset_card_action") return "image.generate.submit";
+  if (interaction.input_mode === "feedback_card_action") return "image.iterate.submit";
+  if (interaction.input_mode === "batch_form_action") return "image.batch.submit";
+  if (interaction.input_mode === "batch_status_action") return "image.batch.refresh";
   return "";
 }
 

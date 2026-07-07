@@ -5,7 +5,7 @@ import { buildContextMarkdown, buildContextReplyMarkdown, buildContextReplyTempl
 import { copyFileIfExists, ensureDir, readJsonFile, slugify, writeJson, writeText } from "../fs-utils.js";
 import { buildFormFieldMaps, formFieldName } from "../field-mapping.js";
 import { hostModeUsesLongConnection, hostModeUsesWebhook, normalizeHostReceiveMode, type HostReceiveMode, type IntegrationMode } from "../host-mode.js";
-import type { CapabilityMap, RequiredPermissions, ServiceManifest } from "../types.js";
+import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
 import { buildDeploymentChecklist } from "./plan.js";
 
 interface ImageAgentMeta {
@@ -32,12 +32,17 @@ export async function generateCommand(args: string[], options: Record<string, st
   const manifestDir = path.join(workspace, "manifest");
   const service = readJsonFile<ServiceManifest>(path.join(manifestDir, "service_manifest.json"));
   const capabilities = readJsonFile<CapabilityMap>(path.join(manifestDir, "capability_map.json"));
+  const interactions = readJsonFile<InteractionContract>(path.join(manifestDir, "interaction_contract.json"));
   const permissions = readJsonFile<RequiredPermissions>(path.join(manifestDir, "required_permissions.json"));
   const meta = readOptionalJson<ImageAgentMeta>(path.join(manifestDir, "image_agent_meta.snapshot.json"));
+  const targetProfile = capabilities.target_profile || "image-agent-web";
   const defaultOut = path.resolve("generated", `${slugify(service.service.name)}-lark`);
   const outDir = path.resolve(getStringOption(options, "out", defaultOut));
   const integrationMode = normalizeIntegrationMode(getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime"))));
   const hostReceiveMode = normalizeHostReceiveMode(getStringOption(options, "host-mode", getStringOption(options, "hostMode", "")), integrationMode);
+  if (targetProfile === "generic-http-api" && integrationMode !== "embedded-adapter") {
+    throw new Error("generic-http-api targets currently support --mode embedded-adapter only.");
+  }
   const adapterDir = path.join(outDir, "adapter");
   const docsDir = path.join(outDir, "docs");
   const sidecarDir = path.join(outDir, "sidecar-long-connection");
@@ -64,6 +69,7 @@ export async function generateCommand(args: string[], options: Record<string, st
     runtime: integrationMode === "standalone-runtime"
       ? "node-lark-bot-runtime"
       : integrationMode === "self-hosted-runtime" ? "python-feishu-host" : "none",
+    target_profile: targetProfile,
     capability_ids: capabilities.capabilities.map((capability) => capability.id),
   });
 
@@ -76,13 +82,17 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode, hostReceiveMode));
   writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service));
   writePackageContext(workspace, outDir, service, permissions, integrationMode, hostReceiveMode);
-  writeText(path.join(adapterDir, "types.ts"), adapterTypesTs());
-  writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
-  writeText(path.join(adapterDir, "validation.ts"), adapterValidationTs());
-  writeText(path.join(adapterDir, "service-client.ts"), adapterServiceClientTs());
-  writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs(service, capabilities, meta));
-  writeText(path.join(adapterDir, "handlers.ts"), adapterHandlersTs(service, capabilities, meta));
-  writeRuntimeAdapterJs(adapterDir, service, capabilities, meta);
+  if (targetProfile === "generic-http-api") {
+    writeGenericAdapterFiles(adapterDir, service, capabilities, interactions);
+  } else {
+    writeText(path.join(adapterDir, "types.ts"), adapterTypesTs());
+    writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
+    writeText(path.join(adapterDir, "validation.ts"), adapterValidationTs());
+    writeText(path.join(adapterDir, "service-client.ts"), adapterServiceClientTs());
+    writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs(service, capabilities, meta));
+    writeText(path.join(adapterDir, "handlers.ts"), adapterHandlersTs(service, capabilities, meta));
+    writeRuntimeAdapterJs(adapterDir, service, capabilities, meta);
+  }
   if (integrationMode === "embedded-adapter" && (hostReceiveMode === "embedded-long-connection" || hostReceiveMode === "hybrid")) {
     writeText(path.join(sidecarDir, "README.md"), sidecarLongConnectionReadme(service, hostReceiveMode));
     writeText(path.join(sidecarDir, "local-contract-test.mjs"), sidecarLocalContractTestMjs(service));
@@ -138,6 +148,22 @@ function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, cap
     "export function resolveBatchDownloadUrl(baseUrl: string, batchId: string): string;",
     "",
   ].join("\n"));
+}
+
+function writeGenericAdapterFiles(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract): void {
+  writeText(path.join(adapterDir, "types.ts"), genericAdapterTypesTs());
+  writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
+  writeText(path.join(adapterDir, "validation.ts"), genericAdapterValidationTs());
+  writeText(path.join(adapterDir, "service-client.ts"), genericAdapterServiceClientTs());
+  writeText(path.join(adapterDir, "cards.ts"), genericAdapterCardsTs(service, capabilities, interactions));
+  writeText(path.join(adapterDir, "handlers.ts"), genericAdapterHandlersTs(service, capabilities, interactions));
+  writeText(path.join(adapterDir, "audit-events.js"), adapterAuditEventsJs());
+  writeText(path.join(adapterDir, "validation.js"), genericAdapterValidationJs());
+  writeText(path.join(adapterDir, "service-client.js"), genericAdapterServiceClientJs());
+  writeText(path.join(adapterDir, "cards.js"), genericAdapterCardsJs(service, capabilities, interactions));
+  writeText(path.join(adapterDir, "handlers.js"), genericAdapterHandlersJs(service, capabilities, interactions));
+  writeText(path.join(adapterDir, "handlers.d.ts"), `export function handleGenericHttpCardAction(ctx: Record<string, unknown>, deps: Record<string, unknown>): Promise<Record<string, unknown>>;\n`);
+  writeText(path.join(adapterDir, "service-client.d.ts"), `export function callGenericHttpEndpoint(baseUrl: string, method: string, pathTemplate: string, input?: Record<string, unknown>, timeoutMs?: number): Promise<Record<string, unknown>>;\n`);
 }
 
 function sidecarLongConnectionReadme(service: ServiceManifest, hostReceiveMode: HostReceiveMode): string {
@@ -587,6 +613,17 @@ def resolve_download_url(base_url: str, batch_id: str) -> str:
     return _join_url(base_url, "/api/batch/" + _quote(batch_id) + "/download")
 
 
+def resolve_image_url(base_url: str, image_url: str) -> str:
+    value = _string_value(image_url)
+    if not value:
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    if value.startswith("/"):
+        return _join_url(base_url, value)
+    return _join_url(base_url, "/" + value)
+
+
 def _post(url: str, *, data: Dict[str, str] | None = None, json_body: Dict[str, Any] | None = None, timeout_ms: int, operation: str):
     requests = _requests()
     try:
@@ -722,6 +759,7 @@ class HandlerDeps:
     call_batch_create: Callable[..., Dict[str, Any]] = service_client.call_batch_create
     call_batch_status: Callable[..., Dict[str, Any]] = service_client.call_batch_status
     resolve_download_url: Callable[..., str] = service_client.resolve_download_url
+    resolve_image_url: Callable[..., str] = service_client.resolve_image_url
 
 
 def handle_card_action(ctx: Any, deps: HandlerDeps | Mapping[str, Any]) -> Dict[str, Any]:
@@ -738,11 +776,17 @@ def handle_card_action(ctx: Any, deps: HandlerDeps | Mapping[str, Any]) -> Dict[
         if action == "image.generate.submit":
             preset = _build_generate_preset(normalized)
             result = deps_obj.call_generate(deps_obj.image_agent_base_url, preset, deps_obj.timeout_ms)
+            image_url = deps_obj.resolve_image_url(deps_obj.image_agent_base_url, _string_value(result.get("image_url")))
+            if image_url:
+                result["image_url"] = image_url
             audit_events.append(_audit("python_host_generation_succeeded", {"imageUrl": result.get("image_url", "")}))
             return _result(True, cards.build_success_card(result), audit_events, result=result)
         if action == "image.iterate.submit":
             request = _build_iterate_request(normalized)
             result = deps_obj.call_iterate(deps_obj.image_agent_base_url, request, deps_obj.timeout_ms)
+            image_url = deps_obj.resolve_image_url(deps_obj.image_agent_base_url, _string_value(result.get("image_url")))
+            if image_url:
+                result["image_url"] = image_url
             audit_events.append(_audit("python_host_iteration_succeeded", {"session_id": result.get("session_id") or request["session_id"]}))
             return _result(True, cards.build_success_card(result), audit_events, result=result)
         if action == "image.batch.submit":
@@ -858,6 +902,7 @@ def _deps_from_mapping(deps: HandlerDeps | Mapping[str, Any]) -> HandlerDeps:
         call_batch_create=deps.get("call_batch_create", service_client.call_batch_create),
         call_batch_status=deps.get("call_batch_status", service_client.call_batch_status),
         resolve_download_url=deps.get("resolve_download_url", service_client.resolve_download_url),
+        resolve_image_url=deps.get("resolve_image_url", service_client.resolve_image_url),
     )
 
 
@@ -902,19 +947,59 @@ import handlers
 
 
 def build_lark_wiring(host_config: config.HostConfig):
+    import threading
     import lark_oapi as lark
     from lark_oapi.event.callback.model.p2_card_action_trigger import (
         P2CardActionTrigger,
         P2CardActionTriggerResponse,
     )
+    from lark_oapi.api.im.v1 import PatchMessageRequest, PatchMessageRequestBody
+
+    # Separate API client for message.patch (ws.Client is ingress-only).
+    api_client = lark.Client.builder().app_id(host_config.feishu_app_id).app_secret(host_config.feishu_app_secret).build()
+
+    def _patch_card(message_id: str, card: dict) -> None:
+        if not message_id:
+            print("patch skipped: no open_message_id", file=sys.stderr)
+            return
+        try:
+            body = PatchMessageRequestBody.builder().content(json.dumps(card, ensure_ascii=False)).build()
+            req = PatchMessageRequest.builder().message_id(message_id).request_body(body).build()
+            resp = api_client.im.v1.message.patch(req)
+            if resp.success():
+                print("patch card ok message_id=" + message_id)
+            else:
+                print("patch card failed: code=" + str(getattr(resp, "code", "")) + " msg=" + str(getattr(resp, "msg", "")), file=sys.stderr)
+        except Exception as exc:
+            print("patch card exception: " + str(exc), file=sys.stderr)
 
     def callback(event: P2CardActionTrigger) -> P2CardActionTriggerResponse:
-        result = handlers.handle_card_action(event, {
-            "image_agent_base_url": host_config.image_agent_base_url,
-            "timeout_ms": host_config.image_agent_timeout_ms,
-            "allowed_operator_open_ids": host_config.feishu_allowed_users,
-        })
-        return P2CardActionTriggerResponse({"card": result["card"]})
+        # Extract action and message_id quickly before returning.
+        action = ""
+        message_id = ""
+        try:
+            normalized_quick = handlers.normalize_card_action(event)
+            action = normalized_quick["action"]
+            message_id = normalized_quick["openMessageId"]
+        except Exception:
+            pass
+
+        # Return a running card immediately to satisfy Feishu's 3-second callback deadline.
+        # The actual generation runs in a background thread and patches the card when done.
+        def _process() -> None:
+            result = handlers.handle_card_action(event, {
+                "image_agent_base_url": host_config.image_agent_base_url,
+                "timeout_ms": host_config.image_agent_timeout_ms,
+                "allowed_operator_open_ids": host_config.feishu_allowed_users,
+            })
+            print("card action done ok=" + str(bool(result.get("ok"))) + (" action=" + action if action else ""))
+            for item in result.get("auditEvents") or []:
+                print("audit " + json.dumps(item, ensure_ascii=False, sort_keys=True))
+            _patch_card(message_id, result["card"])
+
+        threading.Thread(target=_process, daemon=True).start()
+        print("card.action.trigger action=" + (action or "unknown") + " message_id=" + (message_id or "none") + " → async running")
+        return P2CardActionTriggerResponse({"card": {"type": "raw", "data": cards.build_running_card(action)}})
 
     event_handler = lark.EventDispatcherHandler.builder('', '').register_p2_card_action_trigger(callback).build()
     client = lark.ws.Client(host_config.feishu_app_id, host_config.feishu_app_secret, event_handler=event_handler, log_level=lark.LogLevel.INFO)
@@ -1071,10 +1156,10 @@ class MockImageAgentHandler(BaseHTTPRequestHandler):
                 return
             if parsed_form.get("message") == "target-timeout":
                 time.sleep(0.25)
-            self._json(200, {"image_url": "https://example.invalid/generated.png", "session_id": "session-contract", "trace_id": "trace-generate"})
+            self._json(200, {"image_url": "/outputs/generated.png", "session_id": "session-contract", "trace_id": "trace-generate"})
             return
         if self.path == "/api/iterate":
-            self._json(200, {"image_url": "https://example.invalid/iterated.png", "session_id": parsed_json.get("session_id", ""), "trace_id": "trace-iterate"})
+            self._json(200, {"image_url": "/outputs/iterated.png", "session_id": parsed_json.get("session_id", ""), "trace_id": "trace-iterate"})
             return
         if self.path == "/api/batch":
             self._json(200, {"batch_id": "batch-contract"})
@@ -1124,7 +1209,8 @@ def run_contract(base_url: str) -> None:
     size = preset["size"]
     generate_result = handlers.handle_card_action(generate_ctx(), deps(base_url))
     assert generate_result["ok"] is True, generate_result
-    assert "generated.png" in json.dumps(generate_result["card"])
+    assert "http://127.0.0.1:" in json.dumps(generate_result["card"]), generate_result
+    assert "/outputs/generated.png" in json.dumps(generate_result["card"]), generate_result
     generate_request = only_request("POST", "/api/generate")
     assert_form_request(generate_request, {
         "template_id": template_id,
@@ -2153,6 +2239,142 @@ function stringValue(value) {
 `;
 }
 
+function genericAdapterTypesTs(): string {
+  return `export interface GenericAdapterActionContext {
+  action: string;
+  value?: Record<string, unknown>;
+  formValue?: Record<string, unknown>;
+  operatorOpenId?: string;
+  openMessageId?: string;
+  openChatId?: string;
+}
+
+export interface GenericAdapterDependencies {
+  targetBaseUrl: string;
+  timeoutMs?: number;
+  allowedOperatorOpenIds?: string[];
+}
+
+export interface AdapterAuditEvent {
+  event: string;
+  detail: Record<string, unknown>;
+}
+
+export interface GenericAdapterResult {
+  ok: boolean;
+  card: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  auditEvents: AdapterAuditEvent[];
+}
+`;
+}
+
+function genericAdapterValidationTs(): string {
+  return `export function assertAllowedOperator(operatorOpenId: string | undefined, allowedOperatorOpenIds: string[] | undefined): void {
+  if (!allowedOperatorOpenIds?.length) return;
+  if (!operatorOpenId || !allowedOperatorOpenIds.includes(operatorOpenId)) {
+    throw new Error("Operator is not authorized to execute this card action.");
+  }
+}
+
+export function readFormInput(value: Record<string, unknown> | undefined): Record<string, unknown> {
+  return value && typeof value === "object" ? value : {};
+}
+`;
+}
+
+function genericAdapterValidationJs(): string {
+  return `export function assertAllowedOperator(operatorOpenId, allowedOperatorOpenIds) {
+  if (!Array.isArray(allowedOperatorOpenIds) || allowedOperatorOpenIds.length === 0) return;
+  if (!operatorOpenId || !allowedOperatorOpenIds.includes(operatorOpenId)) {
+    throw new Error("Operator is not authorized to execute this card action.");
+  }
+}
+
+export function readFormInput(value) {
+  return value && typeof value === "object" ? value : {};
+}
+`;
+}
+
+function genericAdapterServiceClientTs(): string {
+  return `export async function callGenericHttpEndpoint(baseUrl: string, method: string, pathTemplate: string, input: Record<string, unknown> = {}, timeoutMs = 30000): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = new URL(renderPath(baseUrl, pathTemplate, input));
+    const init: RequestInit = { method, signal: controller.signal };
+    if (method !== "GET") {
+      init.headers = { "Content-Type": "application/json; charset=utf-8" };
+      init.body = JSON.stringify(input.body_json && typeof input.body_json === "object" ? input.body_json : input);
+    }
+    const response = await fetch(url, init);
+    const text = await response.text();
+    const parsed = parseJson(text);
+    if (!response.ok) {
+      throw new Error(method + " " + pathTemplate + " returned HTTP " + response.status + ": " + text);
+    }
+    return parsed;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function renderPath(baseUrl: string, pathTemplate: string, input: Record<string, unknown>): string {
+  const path = pathTemplate.replace(/\{([^}]+)\}/g, (_match, key: string) => encodeURIComponent(String(input[key] || "")));
+  return baseUrl.replace(/\\/+$/, "") + path;
+}
+
+function parseJson(text: string): Record<string, unknown> {
+  try {
+    const parsed = text ? JSON.parse(text) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : { value: parsed };
+  } catch {
+    return { text };
+  }
+}
+`;
+}
+
+function genericAdapterServiceClientJs(): string {
+  return `export async function callGenericHttpEndpoint(baseUrl, method, pathTemplate, input = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = new URL(renderPath(baseUrl, pathTemplate, input));
+    const init = { method, signal: controller.signal };
+    if (method !== "GET") {
+      init.headers = { "Content-Type": "application/json; charset=utf-8" };
+      init.body = JSON.stringify(input.body_json && typeof input.body_json === "object" ? input.body_json : input);
+    }
+    const response = await fetch(url, init);
+    const text = await response.text();
+    const parsed = parseJson(text);
+    if (!response.ok) {
+      throw new Error(method + " " + pathTemplate + " returned HTTP " + response.status + ": " + text);
+    }
+    return parsed;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function renderPath(baseUrl, pathTemplate, input) {
+  const path = pathTemplate.replace(/\{([^}]+)\}/g, (_match, key) => encodeURIComponent(String(input[key] || "")));
+  return baseUrl.replace(/\\/+$/, "") + path;
+}
+
+function parseJson(text) {
+  try {
+    const parsed = text ? JSON.parse(text) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : { value: parsed };
+  } catch {
+    return { text };
+  }
+}
+`;
+}
+
 function adapterServiceClientJs(): string {
   return `export async function callImageGenerate(baseUrl, preset, timeoutMs = 120000) {
   const controller = new AbortController();
@@ -2252,6 +2474,138 @@ async function readJsonResponse(response, label) {
   return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
 }
 `;
+}
+
+function genericAdapterCardsTs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract): string {
+  const specs = buildGenericActionSpecs(capabilities, interactions);
+  return `const actionSpecs = ${JSON.stringify(specs, null, 2)} as const;
+
+export function buildStartCard(): Record<string, unknown> {
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: ${JSON.stringify(service.service.name + " actions")} } },
+    elements: actionSpecs.map((spec) => ({
+      tag: "div",
+      text: { tag: "lark_md", content: "**" + spec.label + "**\\n" + spec.method + " " + spec.path },
+      extra: { tag: "button", text: { tag: "plain_text", content: "Run" }, type: "primary", value: { action: spec.actionId } },
+    })),
+  };
+}
+
+export function buildSuccessCard(label: string, result: Record<string, unknown>): Record<string, unknown> {
+  return card("green", label + " complete", [{ tag: "markdown", content: "\`\`\`json\\n" + JSON.stringify(result, null, 2) + "\\n\`\`\`" }]);
+}
+
+export function buildFailureCard(message: string): Record<string, unknown> {
+  return card("red", "HTTP action failed", [{ tag: "markdown", content: "**What happened:** " + message }]);
+}
+
+function card(template: string, title: string, elements: Array<Record<string, unknown>>): Record<string, unknown> {
+  return { config: { wide_screen_mode: true }, header: { template, title: { tag: "plain_text", content: title } }, elements };
+}
+`;
+}
+
+function genericAdapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract): string {
+  const specs = buildGenericActionSpecs(capabilities, interactions);
+  return `const actionSpecs = ${JSON.stringify(specs, null, 2)};
+
+export function buildStartCard() {
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: ${JSON.stringify(service.service.name + " actions")} } },
+    elements: actionSpecs.map((spec) => ({
+      tag: "div",
+      text: { tag: "lark_md", content: "**" + spec.label + "**\\n" + spec.method + " " + spec.path },
+      extra: { tag: "button", text: { tag: "plain_text", content: "Run" }, type: "primary", value: { action: spec.actionId } },
+    })),
+  };
+}
+
+export function buildSuccessCard(label, result) {
+  return card("green", label + " complete", [{ tag: "markdown", content: "\`\`\`json\\n" + JSON.stringify(result, null, 2) + "\\n\`\`\`" }]);
+}
+
+export function buildFailureCard(message) {
+  return card("red", "HTTP action failed", [{ tag: "markdown", content: "**What happened:** " + message }]);
+}
+
+function card(template, title, elements) {
+  return { config: { wide_screen_mode: true }, header: { template, title: { tag: "plain_text", content: title } }, elements };
+}
+`;
+}
+
+function genericAdapterHandlersTs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract): string {
+  const specs = buildGenericActionSpecs(capabilities, interactions);
+  return `import { auditEvent } from "./audit-events.js";
+import { buildFailureCard, buildSuccessCard } from "./cards.js";
+import { callGenericHttpEndpoint } from "./service-client.js";
+import type { GenericAdapterActionContext, GenericAdapterDependencies, GenericAdapterResult } from "./types.js";
+import { assertAllowedOperator, readFormInput } from "./validation.js";
+
+const actionSpecs = ${JSON.stringify(specs, null, 2)} as const;
+
+export async function handleGenericHttpCardAction(ctx: GenericAdapterActionContext, deps: GenericAdapterDependencies): Promise<GenericAdapterResult> {
+  const action = typeof ctx.action === "string" ? ctx.action : "";
+  const auditEvents = [auditEvent("generic_http_card_action_received", { action, service: ${JSON.stringify(service.service.name)} })];
+  try {
+    assertAllowedOperator(ctx.operatorOpenId, deps.allowedOperatorOpenIds);
+    const spec = actionSpecs.find((item) => item.actionId === action);
+    if (!spec) throw new Error("Unsupported adapter action: " + action);
+    const input = { ...readFormInput(ctx.value), ...readFormInput(ctx.formValue) };
+    const result = await callGenericHttpEndpoint(deps.targetBaseUrl, spec.method, spec.path, input, deps.timeoutMs);
+    auditEvents.push(auditEvent("generic_http_action_succeeded", { action, capability_id: spec.capabilityId }));
+    return { ok: true, card: buildSuccessCard(spec.label, result), result, auditEvents };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    auditEvents.push(auditEvent("generic_http_action_failed", { action, message }));
+    return { ok: false, card: buildFailureCard(message), auditEvents };
+  }
+}
+`;
+}
+
+function genericAdapterHandlersJs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract): string {
+  const specs = buildGenericActionSpecs(capabilities, interactions);
+  return `import { auditEvent } from "./audit-events.js";
+import { buildFailureCard, buildSuccessCard } from "./cards.js";
+import { callGenericHttpEndpoint } from "./service-client.js";
+import { assertAllowedOperator, readFormInput } from "./validation.js";
+
+const actionSpecs = ${JSON.stringify(specs, null, 2)};
+
+export async function handleGenericHttpCardAction(ctx, deps) {
+  const action = typeof ctx?.action === "string" ? ctx.action : "";
+  const auditEvents = [auditEvent("generic_http_card_action_received", { action, service: ${JSON.stringify(service.service.name)} })];
+  try {
+    assertAllowedOperator(ctx?.operatorOpenId, deps?.allowedOperatorOpenIds);
+    const spec = actionSpecs.find((item) => item.actionId === action);
+    if (!spec) throw new Error("Unsupported adapter action: " + action);
+    const input = { ...readFormInput(ctx?.value), ...readFormInput(ctx?.formValue) };
+    const result = await callGenericHttpEndpoint(String(deps?.targetBaseUrl || ""), spec.method, spec.path, input, Number(deps?.timeoutMs || 30000));
+    auditEvents.push(auditEvent("generic_http_action_succeeded", { action, capability_id: spec.capabilityId }));
+    return { ok: true, card: buildSuccessCard(spec.label, result), result, auditEvents };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    auditEvents.push(auditEvent("generic_http_action_failed", { action, message }));
+    return { ok: false, card: buildFailureCard(message), auditEvents };
+  }
+}
+`;
+}
+
+function buildGenericActionSpecs(capabilities: CapabilityMap, interactions: InteractionContract): Array<{ actionId: string; capabilityId: string; label: string; method: string; path: string }> {
+  return interactions.interactions.map((interaction) => {
+    const capability = capabilities.capabilities.find((item) => item.id === interaction.capability_id);
+    return {
+      actionId: interaction.action_id,
+      capabilityId: interaction.capability_id,
+      label: capability?.name || interaction.capability_id,
+      method: capability?.source.method || "POST",
+      path: capability?.source.path || "/",
+    };
+  });
 }
 
 interface AdapterCardTemplateData {

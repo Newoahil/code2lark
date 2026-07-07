@@ -96,6 +96,8 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
 
   run(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace]);
   const serviceManifest = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "service_manifest.json"), "utf8"));
+  assert.equal(serviceManifest.schema_version, "0.2");
+  assert.equal(serviceManifest.source_scan.analysis_strategy, "http_api_python_image_agent_web");
   assert.ok(serviceManifest.source_scan.secret_findings.some((item) => (
     item.file === "agent.py"
     && item.kind === "openai_api_key_literal"
@@ -2109,6 +2111,8 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const verificationReport = fs.readFileSync(path.join(generated, "verification_report.md"), "utf8");
   assert.ok(verificationReport.includes(`Level 2 evidence record: ${path.join(generated, "level2_verification_record.md")}`));
   const capabilityMap = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "capability_map.json"), "utf8"));
+  assert.equal(capabilityMap.schema_version, "0.2");
+  assert.equal(capabilityMap.target_profile, "image-agent-web");
   assert.deepEqual(capabilityMap.capabilities[0].input_schema.properties.template_id.enum, ["launch-banner", "square-social"]);
   assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "image.iterate"));
   assert.equal(capabilityMap.capabilities.find((capability) => capability.id === "image.iterate").source.path, "/api/iterate");
@@ -2195,6 +2199,95 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.match(level2Record, /im:message:send_as_bot/);
   assert.match(level2Record, /card\.action\.trigger/);
   assert.match(level2Record, /Invalid card input returns a red failure card/);
+});
+
+test("generic HTTP API target can analyze generate and verify", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-generic-http-"));
+  const target = path.join(temp, "support-desk-api");
+  const workspace = path.join(temp, "out");
+  const generated = path.join(temp, "generated");
+
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, "requirements.txt"), "fastapi==0.115.0\nuvicorn==0.30.0\n", "utf8");
+  fs.writeFileSync(
+    path.join(target, "README.md"),
+    [
+      "# Support Desk API",
+      "",
+      "A non-image HTTP service for querying and creating support tickets.",
+      "",
+      "- GET /health",
+      "- GET /api/tickets/{ticket_id}",
+      "- POST /api/tickets",
+    ].join("\n"),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(target, "main.py"),
+    [
+      "from fastapi import FastAPI",
+      "app = FastAPI()",
+      "@app.get(\"/health\")",
+      "async def health(): pass",
+      "@app.get(\"/api/tickets/{ticket_id}\")",
+      "async def get_ticket(ticket_id: str): pass",
+      "@app.post(\"/api/tickets\")",
+      "async def create_ticket(): pass",
+    ].join("\n"),
+    "utf8",
+  );
+
+  run(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--name", "support-desk-api"]);
+
+  const serviceManifest = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "service_manifest.json"), "utf8"));
+  const capabilityMap = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "capability_map.json"), "utf8"));
+  const interactionContract = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "interaction_contract.json"), "utf8"));
+  const permissions = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "required_permissions.json"), "utf8"));
+
+  assert.equal(serviceManifest.schema_version, "0.2");
+  assert.equal(serviceManifest.source_scan.analysis_strategy, "generic_http_api");
+  assert.equal(fs.existsSync(path.join(workspace, "manifest", "image_agent_meta.snapshot.json")), false);
+  assert.equal(capabilityMap.schema_version, "0.2");
+  assert.equal(capabilityMap.target_profile, "generic-http-api");
+  assert.equal(capabilityMap.capabilities.some((capability) => capability.id.startsWith("image.")), false);
+  assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.get.api.tickets.ticket_id" && capability.kind === "query"));
+  assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.post.api.tickets" && capability.kind === "action"));
+  assert.ok(capabilityMap.capabilities.some((capability) => capability.source.method === "GET"));
+  assert.ok(capabilityMap.capabilities.some((capability) => capability.artifacts.some((artifact) => artifact.type === "structured_data" && artifact.delivery === "card_json")));
+  assert.equal(interactionContract.schema_version, "0.2");
+  assert.ok(interactionContract.interactions.some((interaction) => (
+    interaction.capability_id === "http.post.api.tickets"
+    && interaction.action_id === "http.post.api.tickets.submit"
+    && interaction.input_mode === "form_action"
+  )));
+  assert.equal(JSON.stringify(permissions).includes("Slack"), false);
+  assert.equal(JSON.stringify(permissions).includes("WeCom"), false);
+
+  run(["generate", workspace, "--out", generated, "--mode", "embedded-adapter"]);
+  const summary = JSON.parse(fs.readFileSync(path.join(generated, "generation_summary.json"), "utf8"));
+  assert.equal(summary.target_profile, "generic-http-api");
+  for (const relativePath of [
+    "adapter/handlers.ts",
+    "adapter/service-client.ts",
+    "adapter/cards.ts",
+    "adapter/types.ts",
+    "docs/integration_guide.md",
+  ]) {
+    assert.ok(fs.existsSync(path.join(generated, relativePath)), `${relativePath} should be generated`);
+  }
+  const generatedAdapter = [
+    fs.readFileSync(path.join(generated, "adapter", "handlers.ts"), "utf8"),
+    fs.readFileSync(path.join(generated, "adapter", "service-client.ts"), "utf8"),
+    fs.readFileSync(path.join(generated, "adapter", "cards.ts"), "utf8"),
+  ].join("\n");
+  assert.match(generatedAdapter, /http\.post\.api\.tickets\.submit/);
+  assert.doesNotMatch(generatedAdapter, /image\.generate|image\.iterate|image\.batch|image_url|session_id/);
+
+  const verifyOutput = run(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
+  assert.match(verifyOutput, /adapter:action:http\.post\.api\.tickets\.submit/);
+  const doctorJson = JSON.parse(run(["doctor", generated, "--mode", "embedded-adapter", "--json"]));
+  assert.equal(doctorJson.package_validation.status, "pass");
+  assert.ok(doctorJson.package_validation.checks.some((item) => item.name === "adapter:action:http.post.api.tickets.submit" && item.status === "pass"));
 });
 
 function run(args) {

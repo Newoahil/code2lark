@@ -522,7 +522,7 @@ function buildEmbeddedAdapterChecks(packagePath: string, interactions: Interacti
   ];
   const cardActionInteractions = interactions?.interactions.filter((item) => item.trigger === "card_action") || [];
   for (const interaction of cardActionInteractions) {
-    const actionId = adapterActionIdForInteraction(interaction.input_mode);
+    const actionId = adapterActionIdForInteraction(interaction);
     if (!actionId) continue;
     const supportsAction = handlerSource.includes(actionId);
     checks.push({
@@ -738,9 +738,8 @@ function checkAdapterStartCardBuilder(packagePath: string): CheckResult {
   const cardsPath = path.join(packagePath, "adapter", "cards.ts");
   const source = fs.existsSync(cardsPath) ? fs.readFileSync(cardsPath, "utf8") : "";
   const hasBuilder = source.includes("export function buildStartCard")
-    && source.includes("image_generate_form")
-    && source.includes("image.batch.submit")
-    && source.includes("param_batch_items_json");
+    && (source.includes("image_generate_form") || source.includes("actionSpecs"))
+    && (source.includes("image.batch.submit") || source.includes("actionId"));
   return {
     name: "adapter:start-card-builder",
     status: hasBuilder ? "pass" : "fail",
@@ -785,9 +784,11 @@ function executeEmbeddedAdapterSmoke(packagePath: string): CheckResult[] {
       const cards = await import(${JSON.stringify(cardsUrl)});
       const handlers = await import(${JSON.stringify(handlersUrl)});
       const startCard = cards.buildStartCard();
-      if (!startCard?.elements?.some((item) => item?.name === "image_generate_form")) throw new Error("missing image_generate_form");
-      if (!JSON.stringify(startCard).includes("image.batch.submit")) throw new Error("missing image.batch.submit");
-      const result = await handlers.handleImageAgentCardAction({ action: "unsupported.action" }, { imageAgentBaseUrl: "http://127.0.0.1:1" });
+      const startCardText = JSON.stringify(startCard);
+      if (!startCardText.includes("image_generate_form") && !startCardText.includes("actionId") && !startCardText.includes('action"')) throw new Error("missing card action controls");
+      if (!startCardText.includes("image.batch.submit") && !startCardText.includes("http.")) throw new Error("missing expected card action id");
+      const handler = handlers.handleGenericHttpCardAction || handlers.handleImageAgentCardAction;
+      const result = await handler({ action: "unsupported.action" }, { imageAgentBaseUrl: "http://127.0.0.1:1", targetBaseUrl: "http://127.0.0.1:1" });
       if (result?.ok !== false || !result?.card) throw new Error("handler did not return a failure card for unsupported action");
     `;
     execFileSync(process.execPath, ["--input-type=module", "--eval", script], { cwd: packagePath, stdio: "pipe" });
@@ -936,11 +937,12 @@ function isExpectedSimulation(value: unknown): boolean {
   return value.ok === true || isExpectedAcceptedActionCard(value.card);
 }
 
-function adapterActionIdForInteraction(inputMode: string): string {
-  if (inputMode === "preset_card_action") return "image.generate.submit";
-  if (inputMode === "feedback_card_action") return "image.iterate.submit";
-  if (inputMode === "batch_form_action") return "image.batch.submit";
-  if (inputMode === "batch_status_action") return "image.batch.refresh";
+function adapterActionIdForInteraction(interaction: InteractionContract["interactions"][number]): string {
+  if (interaction.action_id) return interaction.action_id;
+  if (interaction.input_mode === "preset_card_action") return "image.generate.submit";
+  if (interaction.input_mode === "feedback_card_action") return "image.iterate.submit";
+  if (interaction.input_mode === "batch_form_action") return "image.batch.submit";
+  if (interaction.input_mode === "batch_status_action") return "image.batch.refresh";
   return "";
 }
 
