@@ -75,13 +75,15 @@ export interface InteractionContract {
   schema_version: ManifestSchemaVersion;
   channel: "lark";
   service_name: string;
+  supported_triggers: Array<"card_action" | "http_request" | "scheduled_poll" | "manual_review">;
+  supported_result_modes: Array<"interactive_card" | "structured_result" | "artifact" | "state_update">;
   interactions: Array<{
     id: string;
     capability_id: string;
     action_id: string;
-    trigger: "card_action";
+    trigger: "card_action" | "http_request" | "scheduled_poll" | "manual_review";
     input_mode: "preset_card_action" | "feedback_card_action" | "batch_form_action" | "batch_status_action" | "form_action" | "button_action";
-    result_mode: "interactive_card";
+    result_mode: "interactive_card" | "structured_result" | "artifact" | "state_update";
     states: string[];
     audit_fields: string[];
     error_handling: string[];

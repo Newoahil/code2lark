@@ -3,6 +3,7 @@ import path from "node:path";
 import { getStringOption } from "../args.js";
 import { ensureDir, readTextIfExists, slugify, writeJson, writeText } from "../fs-utils.js";
 import { getJsonWithTimeout, normalizeBaseUrl } from "../http-utils.js";
+import { IMAGE_AGENT_WEB_PROFILE } from "../profiles/image-agent-web.js";
 import type { CapabilityMap, InteractionContract, JsonObject, RequiredPermissions, ServiceManifest } from "../types.js";
 
 interface AnalyzeOptions {
@@ -360,11 +361,13 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
     schema_version: "0.2",
     channel: "lark",
     service_name: name,
+    supported_triggers: ["card_action", "http_request", "scheduled_poll", "manual_review"],
+    supported_result_modes: ["interactive_card", "structured_result", "artifact", "state_update"],
     interactions: [
       {
         id: "image.generate.card",
         capability_id: "image.generate",
-        action_id: "image.generate.submit",
+        action_id: IMAGE_AGENT_WEB_PROFILE.actions.generate,
         trigger: "card_action",
         input_mode: "preset_card_action",
         result_mode: "interactive_card",
@@ -379,7 +382,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
       {
         id: "image.iterate.card",
         capability_id: "image.iterate",
-        action_id: "image.iterate.submit",
+        action_id: IMAGE_AGENT_WEB_PROFILE.actions.iterate,
         trigger: "card_action",
         input_mode: "feedback_card_action",
         result_mode: "interactive_card",
@@ -394,7 +397,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
       {
         id: "image.batch.card",
         capability_id: "image.batch",
-        action_id: "image.batch.submit",
+        action_id: IMAGE_AGENT_WEB_PROFILE.actions.batchSubmit,
         trigger: "card_action",
         input_mode: "batch_form_action",
         result_mode: "interactive_card",
@@ -409,7 +412,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
       {
         id: "image.batch.status.card",
         capability_id: "image.batch",
-        action_id: "image.batch.refresh",
+        action_id: IMAGE_AGENT_WEB_PROFILE.actions.batchRefresh,
         trigger: "card_action",
         input_mode: "batch_status_action",
         result_mode: "interactive_card",
@@ -588,6 +591,8 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name }: Anal
     schema_version: "0.2",
     channel: "lark",
     service_name: name,
+    supported_triggers: ["card_action", "http_request", "scheduled_poll", "manual_review"],
+    supported_result_modes: ["interactive_card", "structured_result", "artifact", "state_update"],
     interactions: capabilityMap.capabilities.map((capability) => ({
       id: `${capability.id}.card`,
       capability_id: capability.id,
