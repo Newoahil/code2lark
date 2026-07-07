@@ -2255,6 +2255,10 @@ test("generic HTTP API target can analyze generate and verify", () => {
   assert.ok(capabilityMap.capabilities.some((capability) => capability.source.method === "GET"));
   assert.ok(capabilityMap.capabilities.some((capability) => capability.artifacts.some((artifact) => artifact.type === "structured_data" && artifact.delivery === "card_json")));
   assert.equal(interactionContract.schema_version, "0.2");
+  assert.ok(interactionContract.supported_triggers.includes("card_action"));
+  assert.ok(interactionContract.supported_triggers.includes("http_request"));
+  assert.ok(interactionContract.supported_result_modes.includes("interactive_card"));
+  assert.ok(interactionContract.supported_result_modes.includes("structured_result"));
   assert.ok(interactionContract.interactions.some((interaction) => (
     interaction.capability_id === "http.post.api.tickets"
     && interaction.action_id === "http.post.api.tickets.submit"
@@ -2296,6 +2300,15 @@ test("generic HTTP API target can analyze generate and verify", () => {
   const doctorJson = JSON.parse(run(["doctor", generated, "--mode", "embedded-adapter", "--json"]));
   assert.equal(doctorJson.package_validation.status, "pass");
   assert.ok(doctorJson.package_validation.checks.some((item) => item.name === "adapter:action:http.post.api.tickets.submit" && item.status === "pass"));
+});
+
+test("image-agent-web mapping profile is isolated from generator orchestration", () => {
+  const profileSource = fs.readFileSync(path.join(root, "src", "profiles", "image-agent-web.ts"), "utf8");
+  const generateSource = fs.readFileSync(path.join(root, "src", "commands", "generate.ts"), "utf8");
+  assert.match(profileSource, /IMAGE_AGENT_WEB_PROFILE/);
+  assert.match(profileSource, /image\.generate\.submit/);
+  assert.match(profileSource, /\/api\/batch\/\{batch_id\}\/status/);
+  assert.match(generateSource, /IMAGE_AGENT_WEB_PROFILE/);
 });
 
 function run(args) {

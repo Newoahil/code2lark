@@ -5,6 +5,7 @@ import { buildContextMarkdown, buildContextReplyMarkdown, buildContextReplyTempl
 import { copyFileIfExists, ensureDir, readJsonFile, slugify, writeJson, writeText } from "../fs-utils.js";
 import { buildFormFieldMaps, formFieldName } from "../field-mapping.js";
 import { hostModeUsesLongConnection, hostModeUsesWebhook, normalizeHostReceiveMode, type HostReceiveMode, type IntegrationMode } from "../host-mode.js";
+import { IMAGE_AGENT_WEB_PROFILE } from "../profiles/image-agent-web.js";
 import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
 import { buildDeploymentChecklist } from "./plan.js";
 
@@ -1524,34 +1525,34 @@ function buildPythonHostEndpointsSpec(): Record<string, unknown> {
     schema_version: "0.1",
     target: "image-agent-web",
     actions: {
-      "image.generate.submit": {
+      [IMAGE_AGENT_WEB_PROFILE.actions.generate]: {
         operation: "generate",
-        method: "POST",
-        path: "/api/generate",
+        method: IMAGE_AGENT_WEB_PROFILE.endpoints.generate.method,
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.generate.path,
         content_type: "multipart/form-data",
         body: "form",
         fields: ["template_id", "size", "fields_json", "message", "reference_types_json"],
       },
-      "image.iterate.submit": {
+      [IMAGE_AGENT_WEB_PROFILE.actions.iterate]: {
         operation: "iterate",
-        method: "POST",
-        path: "/api/iterate",
+        method: IMAGE_AGENT_WEB_PROFILE.endpoints.iterate.method,
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.iterate.path,
         content_type: "application/json",
         body: "json",
         fields: ["session_id", "feedback"],
       },
-      "image.batch.submit": {
+      [IMAGE_AGENT_WEB_PROFILE.actions.batchSubmit]: {
         operation: "batch",
-        method: "POST",
-        path: "/api/batch",
+        method: IMAGE_AGENT_WEB_PROFILE.endpoints.batchSubmit.method,
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.batchSubmit.path,
         content_type: "multipart/form-data",
         body: "form",
         fields: ["template_id", "size", "items_json", "reference_types_json"],
       },
-      "image.batch.refresh": {
+      [IMAGE_AGENT_WEB_PROFILE.actions.batchRefresh]: {
         operation: "batch_status",
-        method: "GET",
-        path: "/api/batch/{batch_id}/status",
+        method: IMAGE_AGENT_WEB_PROFILE.endpoints.batchStatus.method,
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.batchStatus.path,
         body: "none",
         path_params: ["batch_id"],
       },
@@ -1559,7 +1560,7 @@ function buildPythonHostEndpointsSpec(): Record<string, unknown> {
     supporting_endpoints: {
       batch_download: {
         method: "GET",
-        path: "/api/batch/{batch_id}/download",
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.batchDownload.path,
         path_params: ["batch_id"],
       },
       meta: {
@@ -1587,7 +1588,7 @@ function buildStartCardSpec(service: ServiceManifest, data: AdapterCardTemplateD
           { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
           ...fieldSpecs.map((field) => ({ tag: "input", name: fieldMaps.templateKeyToFormField[field.key] || field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
           { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
-          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", form_action_type: "submit", name: "submit_image_generate", behaviors: [{ type: "callback", value: { action: "image.generate.submit", preset: defaultPreset } }] },
+          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", form_action_type: "submit", name: "submit_image_generate", behaviors: [{ type: "callback", value: { action: IMAGE_AGENT_WEB_PROFILE.actions.generate, preset: defaultPreset } }] },
           { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", form_action_type: "reset", name: "reset_image_generate" },
         ],
       },
@@ -1600,7 +1601,7 @@ function buildStartCardSpec(service: ServiceManifest, data: AdapterCardTemplateD
           { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
           { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
           { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\\"fields\\\": { ... } }]" } },
-          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", form_action_type: "submit", name: "submit_image_batch", behaviors: [{ type: "callback", value: { action: "image.batch.submit" } }] },
+          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", form_action_type: "submit", name: "submit_image_batch", behaviors: [{ type: "callback", value: { action: IMAGE_AGENT_WEB_PROFILE.actions.batchSubmit } }] },
           { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", form_action_type: "reset", name: "reset_image_batch" },
         ],
       },
