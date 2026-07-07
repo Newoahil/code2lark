@@ -2315,6 +2315,12 @@ test("image-agent-web mapping profile is isolated from generator orchestration",
     "adapterCardsJs",
     "adapterHandlersTs",
     "adapterHandlersJs",
+    "pythonHostCardsPy",
+    "pythonHostServiceClientPy",
+    "pythonHostHandlersPy",
+    "pythonHostLocalContractTestPy",
+    "buildPythonHostEndpointsSpec",
+    "buildStartCardSpec",
   ]) {
     assert.match(profileSource, new RegExp(`export function ${builderName}\\b`));
     assert.match(generateSource, new RegExp(`\\b${builderName}\\(`));
@@ -2323,7 +2329,7 @@ test("image-agent-web mapping profile is isolated from generator orchestration",
   assert.match(profileSource, /export function buildBatchStatusCard/);
   assert.match(profileSource, /export function buildSuccessCard/);
   assert.match(profileSource, /export async function handleImageAgentCardAction/);
-  assert.doesNotMatch(generateSource, /function adapterServiceClientTs|function adapterCardsTs|function adapterHandlersTs/);
+  assert.doesNotMatch(generateSource, /function adapterServiceClientTs|function adapterCardsTs|function adapterHandlersTs|function pythonHostCardsPy|function pythonHostServiceClientPy|function pythonHostHandlersPy|function pythonHostLocalContractTestPy|function buildPythonHostEndpointsSpec|function buildStartCardSpec/);
   assert.match(generateSource, /from "\.\.\/profiles\/image-agent-web\.js"/);
 });
 

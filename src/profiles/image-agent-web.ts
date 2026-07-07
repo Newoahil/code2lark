@@ -709,6 +709,916 @@ function stringValue(value) {
 `;
 }
 
+
+
+export function pythonHostCardsPy(): string {
+  return `"""Card builders for the generated Feishu Python host."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+import json
+from pathlib import Path
+from typing import Any, Dict
+
+
+SPEC_DIR = Path(__file__).with_name("spec")
+
+
+def load_start_card() -> Dict[str, Any]:
+    with (SPEC_DIR / "start_card.json").open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def build_success_card(result: Dict[str, Any]) -> Dict[str, Any]:
+    image_url = _string_value(result.get("image_url"))
+    session_id = _string_value(result.get("session_id"))
+    trace_id = _string_value(result.get("trace_id"))
+    elements = [
+        {"tag": "markdown", "content": "**Image:** " + image_url if image_url else "Image generation completed."},
+    ]
+    if trace_id:
+        elements.append({"tag": "markdown", "content": "**Trace ID:** " + trace_id})
+    if session_id:
+        elements.append({
+            "tag": "form",
+            "name": "image_iterate_form",
+            "elements": [
+                {
+                    "tag": "input",
+                    "name": "param_feedback",
+                    "required": True,
+                    "width": "fill",
+                    "input_type": "multiline_text",
+                    "rows": 2,
+                    "auto_resize": True,
+                    "label": {"tag": "plain_text", "content": "Feedback"},
+                    "placeholder": {"tag": "plain_text", "content": "Describe what to refine in the next image"},
+                },
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "Iterate image"},
+                    "type": "primary",
+                    "form_action_type": "submit",
+                    "name": "submit_image_iterate",
+                    "behaviors": [{"type": "callback", "value": {"action": "image.iterate.submit", "session_id": session_id}}],
+                },
+            ],
+        })
+    return _card("green", "Image generation complete", elements)
+
+
+def build_failure_card(message: str) -> Dict[str, Any]:
+    return _card("red", "Image generation failed", [{"tag": "markdown", "content": "**What happened:** " + str(message)}])
+
+
+def build_running_card(action: str, trace_id: str = "") -> Dict[str, Any]:
+    lines = ["The request was accepted and is running.", "**Action:** " + _string_value(action)]
+    if trace_id:
+        lines.append("**Trace ID:** " + trace_id)
+    return _card("blue", "Image generation running", [{"tag": "markdown", "content": "\\n\\n".join(lines)}])
+
+
+def build_batch_status_card(status: Dict[str, Any], download_url: str = "") -> Dict[str, Any]:
+    total = _number_value(status.get("total"))
+    done = _number_value(status.get("done"))
+    completed_count = len(status.get("completed")) if isinstance(status.get("completed"), list) else 0
+    failed_count = len(status.get("failed")) if isinstance(status.get("failed"), list) else 0
+    running = status.get("running") is True
+    finished = not running and total > 0 and done >= total
+    batch_id = _string_value(status.get("batch_id"))
+    lines = [
+        "**Status:** " + ("running" if running else "completed" if finished else "not running"),
+        "**Batch ID:** " + batch_id,
+        "**Done:** " + str(done) + "/" + str(total),
+        "**Completed:** " + str(completed_count),
+        "**Failed:** " + str(failed_count),
+    ]
+    if _string_value(status.get("template_id")):
+        lines.append("**Template:** " + _string_value(status.get("template_id")))
+    if _string_value(status.get("size")):
+        lines.append("**Size:** " + _string_value(status.get("size")))
+    elements = [{"tag": "markdown", "content": "\\n\\n".join(lines)}]
+    if finished and download_url and completed_count > 0:
+        elements.append({"tag": "markdown", "content": "[Download completed images ZIP](" + download_url + ")"})
+    if batch_id:
+        elements.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "Refresh status"},
+            "type": "default",
+            "behaviors": [{"type": "callback", "value": {"action": "image.batch.refresh", "batch_id": batch_id}}],
+        })
+    return _card(
+        "blue" if running else "red" if failed_count > 0 else "green",
+        "Batch running" if running else "Batch finished with failures" if failed_count > 0 else "Batch complete",
+        elements,
+    )
+
+
+def clone_card(card: Dict[str, Any]) -> Dict[str, Any]:
+    return deepcopy(card)
+
+
+def _card(template: str, title: str, elements: list[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "schema": "2.0",
+        "config": {"update_multi": True, "wide_screen_mode": True},
+        "header": {"template": template, "title": {"tag": "plain_text", "content": title}},
+        "body": {"elements": elements},
+    }
+
+
+def _string_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _number_value(value: Any) -> int:
+    return int(value) if isinstance(value, (int, float)) and value == value else 0
+`;
+}
+
+export function pythonHostServiceClientPy(): string {
+  return `"""HTTP client for image-agent-web target calls."""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Dict
+
+
+class TargetServiceError(RuntimeError):
+    def __init__(self, operation: str, message: str, status_code: int | None = None, detail: Any = None):
+        super().__init__(message)
+        self.operation = operation
+        self.status_code = status_code
+        self.detail = detail
+
+    def to_audit_detail(self) -> Dict[str, Any]:
+        return {"operation": self.operation, "status_code": self.status_code, "detail": self.detail}
+
+
+def call_generate(base_url: str, preset: Dict[str, Any], timeout_ms: int = 120000) -> Dict[str, Any]:
+    data = {
+        "template_id": _string_value(preset.get("template_id")),
+        "size": _string_value(preset.get("size")),
+        "fields_json": json.dumps(preset.get("fields") if isinstance(preset.get("fields"), dict) else {}, ensure_ascii=False),
+        "message": _string_value(preset.get("message")),
+        "reference_types_json": "[]",
+    }
+    response = _post(_join_url(base_url, "/api/generate"), data=data, timeout_ms=timeout_ms, operation="generate")
+    return _read_json_response(response, "generate")
+
+
+def call_iterate(base_url: str, request: Dict[str, Any], timeout_ms: int = 120000) -> Dict[str, Any]:
+    payload = {"session_id": _string_value(request.get("session_id")), "feedback": _string_value(request.get("feedback"))}
+    response = _post(_join_url(base_url, "/api/iterate"), json_body=payload, timeout_ms=timeout_ms, operation="iterate")
+    return _read_json_response(response, "iterate")
+
+
+def call_batch_create(base_url: str, request: Dict[str, Any], timeout_ms: int = 120000) -> Dict[str, Any]:
+    data = {
+        "template_id": _string_value(request.get("template_id")),
+        "size": _string_value(request.get("size")),
+        "items_json": json.dumps(request.get("items") if isinstance(request.get("items"), list) else [], ensure_ascii=False),
+        "reference_types_json": "[]",
+    }
+    response = _post(_join_url(base_url, "/api/batch"), data=data, timeout_ms=timeout_ms, operation="batch")
+    parsed = _read_json_response(response, "batch")
+    if not _string_value(parsed.get("batch_id")):
+        raise TargetServiceError("batch", "image-agent-web /api/batch response did not include batch_id", detail=parsed)
+    return parsed
+
+
+def call_batch_status(base_url: str, batch_id: str, timeout_ms: int = 120000) -> Dict[str, Any]:
+    response = _get(_join_url(base_url, "/api/batch/" + _quote(batch_id) + "/status"), timeout_ms=timeout_ms, operation="batch_status")
+    return _read_json_response(response, "batch_status")
+
+
+def resolve_download_url(base_url: str, batch_id: str) -> str:
+    return _join_url(base_url, "/api/batch/" + _quote(batch_id) + "/download")
+
+
+def resolve_image_url(base_url: str, image_url: str) -> str:
+    value = _string_value(image_url)
+    if not value:
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    if value.startswith("/"):
+        return _join_url(base_url, value)
+    return _join_url(base_url, "/" + value)
+
+
+def _post(url: str, *, data: Dict[str, str] | None = None, json_body: Dict[str, Any] | None = None, timeout_ms: int, operation: str):
+    requests = _requests()
+    try:
+        return requests.post(url, data=data, json=json_body, timeout=_timeout_seconds(timeout_ms))
+    except requests.exceptions.Timeout as exc:
+        raise TargetServiceError(operation, operation + " timed out after " + str(timeout_ms) + "ms") from exc
+    except requests.exceptions.RequestException as exc:
+        raise TargetServiceError(operation, operation + " request failed: " + str(exc)) from exc
+
+
+def _get(url: str, *, timeout_ms: int, operation: str):
+    requests = _requests()
+    try:
+        return requests.get(url, timeout=_timeout_seconds(timeout_ms))
+    except requests.exceptions.Timeout as exc:
+        raise TargetServiceError(operation, operation + " timed out after " + str(timeout_ms) + "ms") from exc
+    except requests.exceptions.RequestException as exc:
+        raise TargetServiceError(operation, operation + " request failed: " + str(exc)) from exc
+
+
+def _read_json_response(response: Any, operation: str) -> Dict[str, Any]:
+    text = getattr(response, "text", "") or ""
+    try:
+        parsed = response.json() if text else {}
+    except ValueError:
+        parsed = {"raw": text}
+    status_code = int(getattr(response, "status_code", 0) or 0)
+    if status_code < 200 or status_code >= 300:
+        message = parsed.get("detail") if isinstance(parsed, dict) else text
+        raise TargetServiceError(operation, "image-agent-web " + operation + " returned HTTP " + str(status_code) + ": " + str(message), status_code=status_code, detail=parsed)
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _requests():
+    import requests
+    return requests
+
+
+def _timeout_seconds(timeout_ms: int) -> float:
+    return max(int(timeout_ms), 1) / 1000.0
+
+
+def _join_url(base_url: str, path: str) -> str:
+    return str(base_url).rstrip("/") + path
+
+
+def _quote(value: str) -> str:
+    from urllib.parse import quote
+    return quote(str(value), safe="")
+
+
+def _string_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+`;
+}
+
+export function pythonHostHandlersPy(): string {
+  return `"""Card action handler for the generated Feishu Python host."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Mapping
+
+import cards
+import service_client
+import validation
+
+
+SPEC_DIR = Path(__file__).with_name("spec")
+
+
+@dataclass(frozen=True)
+class HandlerDeps:
+    image_agent_base_url: str
+    timeout_ms: int = 120000
+    allowed_operator_open_ids: tuple[str, ...] = ()
+    call_generate: Callable[..., Dict[str, Any]] = service_client.call_generate
+    call_iterate: Callable[..., Dict[str, Any]] = service_client.call_iterate
+    call_batch_create: Callable[..., Dict[str, Any]] = service_client.call_batch_create
+    call_batch_status: Callable[..., Dict[str, Any]] = service_client.call_batch_status
+    resolve_download_url: Callable[..., str] = service_client.resolve_download_url
+    resolve_image_url: Callable[..., str] = service_client.resolve_image_url
+
+
+def handle_card_action(ctx: Any, deps: HandlerDeps | Mapping[str, Any]) -> Dict[str, Any]:
+    normalized = normalize_card_action(ctx)
+    deps_obj = _deps_from_mapping(deps)
+    audit_events = [_audit("python_host_card_action_received", {"action": normalized["action"]})]
+    try:
+        validation.assert_allowed_operator(normalized["operatorOpenId"], deps_obj.allowed_operator_open_ids)
+        endpoints = _load_json("endpoints.json")
+        actions = endpoints.get("actions") if isinstance(endpoints.get("actions"), dict) else {}
+        action = normalized["action"]
+        if action not in actions:
+            raise ValueError("Unsupported card action: " + action)
+        if action == "image.generate.submit":
+            preset = _build_generate_preset(normalized)
+            result = deps_obj.call_generate(deps_obj.image_agent_base_url, preset, deps_obj.timeout_ms)
+            image_url = deps_obj.resolve_image_url(deps_obj.image_agent_base_url, _string_value(result.get("image_url")))
+            if image_url:
+                result["image_url"] = image_url
+            audit_events.append(_audit("python_host_generation_succeeded", {"imageUrl": result.get("image_url", "")}))
+            return _result(True, cards.build_success_card(result), audit_events, result=result)
+        if action == "image.iterate.submit":
+            request = _build_iterate_request(normalized)
+            result = deps_obj.call_iterate(deps_obj.image_agent_base_url, request, deps_obj.timeout_ms)
+            image_url = deps_obj.resolve_image_url(deps_obj.image_agent_base_url, _string_value(result.get("image_url")))
+            if image_url:
+                result["image_url"] = image_url
+            audit_events.append(_audit("python_host_iteration_succeeded", {"session_id": result.get("session_id") or request["session_id"]}))
+            return _result(True, cards.build_success_card(result), audit_events, result=result)
+        if action == "image.batch.submit":
+            request = _build_batch_request(normalized)
+            created = deps_obj.call_batch_create(deps_obj.image_agent_base_url, request, deps_obj.timeout_ms)
+            batch_id = _string_value(created.get("batch_id"))
+            status = deps_obj.call_batch_status(deps_obj.image_agent_base_url, batch_id, deps_obj.timeout_ms)
+            download_url = _batch_download_url(deps_obj, status)
+            audit_events.append(_audit("python_host_batch_submitted", {"batchId": batch_id, "total": len(request["items"])}))
+            return _result(True, cards.build_batch_status_card(status, download_url), audit_events, batchId=batch_id, batchStatus=status, downloadUrl=download_url)
+        if action == "image.batch.refresh":
+            batch_id = _string_value(normalized["value"].get("batch_id") or normalized["value"].get("batchId") or normalized["formValue"].get("param_batch_id"))
+            if not batch_id:
+                raise ValueError("batch_id is required.")
+            status = deps_obj.call_batch_status(deps_obj.image_agent_base_url, batch_id, deps_obj.timeout_ms)
+            download_url = _batch_download_url(deps_obj, status)
+            audit_events.append(_audit("python_host_batch_status_checked", {"batchId": batch_id, "downloadUrl": download_url or None}))
+            return _result(True, cards.build_batch_status_card(status, download_url), audit_events, batchId=batch_id, batchStatus=status, downloadUrl=download_url)
+        raise ValueError("Unsupported card action: " + action)
+    except Exception as exc:
+        message = str(exc)
+        audit_events.append(_audit("python_host_card_action_failed", {"message": message}))
+        return _result(False, cards.build_failure_card(message), audit_events)
+
+
+def normalize_card_action(ctx: Any) -> Dict[str, Any]:
+    if isinstance(ctx, Mapping):
+        value = _object_value(ctx.get("value"))
+        form_value = _object_value(ctx.get("formValue") or ctx.get("form_value"))
+        action = _string_value(ctx.get("action") or value.get("action"))
+        return {
+            "action": action,
+            "value": value,
+            "formValue": form_value,
+            "operatorOpenId": _string_value(ctx.get("operatorOpenId") or ctx.get("operator_open_id")),
+            "openMessageId": _string_value(ctx.get("openMessageId") or ctx.get("open_message_id")),
+            "openChatId": _string_value(ctx.get("openChatId") or ctx.get("open_chat_id")),
+        }
+    event = getattr(ctx, "event", None)
+    action_obj = getattr(event, "action", None)
+    raw_value = getattr(action_obj, "value", None)
+    value = _object_value(json.loads(raw_value) if isinstance(raw_value, str) and raw_value.strip().startswith("{") else raw_value)
+    form_value = _object_value(getattr(action_obj, "form_value", None))
+    operator = getattr(event, "operator", None)
+    context = getattr(event, "context", None)
+    return {
+        "action": _string_value(value.get("action")),
+        "value": value,
+        "formValue": form_value,
+        "operatorOpenId": _string_value(getattr(operator, "open_id", "")),
+        "openMessageId": _string_value(getattr(context, "open_message_id", "")),
+        "openChatId": _string_value(getattr(context, "open_chat_id", "")),
+    }
+
+
+def _build_generate_preset(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    base = normalized["value"].get("preset") if isinstance(normalized["value"].get("preset"), dict) else _load_json("preset.json")
+    form_value = normalized["formValue"]
+    fields = dict(base.get("fields") if isinstance(base.get("fields"), dict) else {})
+    field_map = _load_json("field_map.json").get("formFieldToTemplateKey", {})
+    for key, value in form_value.items():
+        if key.startswith("field_") and isinstance(value, str):
+            fields[str(field_map.get(key) or key.removeprefix("field_"))] = value.strip()
+    preset = {
+        "template_id": _string_value(form_value.get("param_template_id")) or _string_value(base.get("template_id")),
+        "size": _string_value(form_value.get("param_size")) or _string_value(base.get("size")),
+        "fields": fields,
+        "message": _string_value(form_value.get("param_message")) or _string_value(base.get("message")),
+    }
+    validation.validate_size(preset["size"])
+    validation.validate_required_fields(preset["template_id"], preset["fields"], _load_json("template_specs.json"), _load_json("field_specs.json"))
+    return preset
+
+
+def _build_iterate_request(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    session_id = _string_value(normalized["value"].get("session_id") or normalized["value"].get("sessionId") or normalized["formValue"].get("param_session_id"))
+    feedback = _string_value(normalized["formValue"].get("param_feedback") or normalized["value"].get("feedback"))
+    if not session_id or not feedback:
+        raise ValueError("session_id and feedback are required.")
+    return {"session_id": session_id, "feedback": feedback}
+
+
+def _build_batch_request(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    preset = _load_json("preset.json")
+    form_value = normalized["formValue"]
+    value = normalized["value"]
+    template_id = _string_value(form_value.get("param_batch_template_id") or value.get("template_id") or value.get("templateId") or preset.get("template_id"))
+    size = _string_value(form_value.get("param_batch_size") or value.get("size") or preset.get("size"))
+    validation.validate_size(size)
+    items_json = _string_value(form_value.get("param_batch_items_json") or value.get("items_json") or value.get("itemsJson"))
+    raw_items = json.loads(items_json) if items_json else value.get("items")
+    items = validation.validate_batch_items(raw_items)
+    return {"template_id": template_id, "size": size, "items": items}
+
+
+def _batch_download_url(deps: HandlerDeps, status: Dict[str, Any]) -> str:
+    batch_id = _string_value(status.get("batch_id"))
+    completed = status.get("completed")
+    if batch_id and status.get("running") is not True and isinstance(completed, list) and completed:
+        return deps.resolve_download_url(deps.image_agent_base_url, batch_id)
+    return ""
+
+
+def _deps_from_mapping(deps: HandlerDeps | Mapping[str, Any]) -> HandlerDeps:
+    if isinstance(deps, HandlerDeps):
+        return deps
+    return HandlerDeps(
+        image_agent_base_url=_string_value(deps.get("imageAgentBaseUrl") or deps.get("image_agent_base_url")),
+        timeout_ms=int(deps.get("timeoutMs") or deps.get("timeout_ms") or 120000),
+        allowed_operator_open_ids=tuple(deps.get("allowedOperatorOpenIds") or deps.get("allowed_operator_open_ids") or ()),
+        call_generate=deps.get("call_generate", service_client.call_generate),
+        call_iterate=deps.get("call_iterate", service_client.call_iterate),
+        call_batch_create=deps.get("call_batch_create", service_client.call_batch_create),
+        call_batch_status=deps.get("call_batch_status", service_client.call_batch_status),
+        resolve_download_url=deps.get("resolve_download_url", service_client.resolve_download_url),
+        resolve_image_url=deps.get("resolve_image_url", service_client.resolve_image_url),
+    )
+
+
+def _result(ok: bool, card: Dict[str, Any], audit_events: List[Dict[str, Any]], **extra: Any) -> Dict[str, Any]:
+    result = {"ok": ok, "card": card, "auditEvents": audit_events, "response": {"card": card}}
+    result.update(extra)
+    return result
+
+
+def _audit(event: str, detail: Dict[str, Any]) -> Dict[str, Any]:
+    return {"event": event, "detail": detail}
+
+
+def _load_json(name: str) -> Any:
+    with (SPEC_DIR / name).open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _object_value(value: Any) -> Dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _string_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+`;
+}
+
+export function pythonHostLocalContractTestPy(): string {
+  return `"""Local contract test for the generated Feishu Python host.
+
+This test starts a stdlib localhost mock of image-agent-web and drives
+handlers.handle_card_action directly. It does not import lark-oapi, does not
+use real Feishu credentials, and does not contact any non-local network.
+"""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import os
+from pathlib import Path
+import time
+from typing import Any, Dict, List
+from urllib.parse import parse_qs, urlparse
+
+import app
+import cards
+import handlers
+
+
+REQUESTS: List[Dict[str, Any]] = []
+
+
+class MockImageAgentHandler(BaseHTTPRequestHandler):
+    def log_message(self, _format: str, *_args: Any) -> None:
+        return
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("content-length") or "0")
+        raw = self.rfile.read(length).decode("utf-8")
+        content_type = self.headers.get("content-type", "")
+        parsed_form = {key: values[-1] for key, values in parse_qs(raw, keep_blank_values=True).items()}
+        parsed_json: Dict[str, Any] = {}
+        if "application/json" in content_type:
+            parsed_json = json.loads(raw or "{}")
+        REQUESTS.append({
+            "method": "POST",
+            "path": self.path,
+            "content_type": content_type,
+            "raw": raw,
+            "form": parsed_form,
+            "json": parsed_json,
+        })
+        if self.path == "/api/generate":
+            if parsed_form.get("message") == "target-500":
+                self._json(500, {"detail": "mock target failure"})
+                return
+            if parsed_form.get("message") == "target-timeout":
+                time.sleep(0.25)
+            self._json(200, {"image_url": "/outputs/generated.png", "session_id": "session-contract", "trace_id": "trace-generate"})
+            return
+        if self.path == "/api/iterate":
+            self._json(200, {"image_url": "/outputs/iterated.png", "session_id": parsed_json.get("session_id", ""), "trace_id": "trace-iterate"})
+            return
+        if self.path == "/api/batch":
+            self._json(200, {"batch_id": "batch-contract"})
+            return
+        self._json(404, {"detail": "not found"})
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        REQUESTS.append({"method": "GET", "path": parsed.path, "content_type": self.headers.get("content-type", ""), "raw": "", "form": {}, "json": {}})
+        if parsed.path == "/api/batch/batch-contract/status":
+            self._json(200, {
+                "batch_id": "batch-contract",
+                "template_id": "launch-banner",
+                "size": "1200x628",
+                "total": 1,
+                "done": 1,
+                "running": False,
+                "completed": [{"image_url": "https://example.invalid/batch.png"}],
+                "failed": [],
+            })
+            return
+        self._json(404, {"detail": "not found"})
+
+    def _json(self, status: int, body: Dict[str, Any]) -> None:
+        payload = json.dumps(body).encode("utf-8")
+        self.send_response(status)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(payload)))
+        self.end_headers()
+        try:
+            self.wfile.write(payload)
+        except (BrokenPipeError, OSError):
+            return
+
+
+def main() -> None:
+    with mock_server() as base_url:
+        run_contract(base_url)
+    print("feishu-host contract: PASS")
+
+
+def run_contract(base_url: str) -> None:
+    REQUESTS.clear()
+    assert_start_message_request()
+    preset = load_spec("preset.json")
+    template_id = preset["template_id"]
+    size = preset["size"]
+    generate_result = handlers.handle_card_action(generate_ctx(), deps(base_url))
+    assert generate_result["ok"] is True, generate_result
+    assert "http://127.0.0.1:" in json.dumps(generate_result["card"]), generate_result
+    assert "/outputs/generated.png" in json.dumps(generate_result["card"]), generate_result
+    generate_request = only_request("POST", "/api/generate")
+    assert_form_request(generate_request, {
+        "template_id": template_id,
+        "size": size,
+        "message": "contract generate",
+        "reference_types_json": "[]",
+    })
+    generate_fields = json.loads(generate_request["form"]["fields_json"])
+    primary_key = primary_template_key()
+    secondary_key = secondary_template_key()
+    assert generate_fields[primary_key] == "Contract primary", generate_fields
+    if secondary_key:
+        assert generate_fields[secondary_key] == "Contract secondary", generate_fields
+
+    before = len(REQUESTS)
+    iterate_result = handlers.handle_card_action({
+        "action": "image.iterate.submit",
+        "value": {"action": "image.iterate.submit", "session_id": "session-contract"},
+        "formValue": {"param_feedback": "make it brighter"},
+        "operatorOpenId": "operator-ok",
+    }, deps(base_url))
+    assert iterate_result["ok"] is True, iterate_result
+    iterate_request = REQUESTS[before]
+    assert iterate_request["method"] == "POST" and iterate_request["path"] == "/api/iterate", iterate_request
+    assert "application/json" in iterate_request["content_type"], iterate_request
+    assert iterate_request["json"] == {"session_id": "session-contract", "feedback": "make it brighter"}, iterate_request
+
+    before = len(REQUESTS)
+    batch_result = handlers.handle_card_action({
+        "action": "image.batch.submit",
+        "value": {"action": "image.batch.submit"},
+        "formValue": {
+            "param_batch_template_id": template_id,
+            "param_batch_size": size,
+            "param_batch_items_json": json.dumps([{"fields": {primary_key: "Batch primary"}}]),
+        },
+        "operatorOpenId": "operator-ok",
+    }, deps(base_url))
+    assert batch_result["ok"] is True, batch_result
+    assert batch_result["downloadUrl"].endswith("/api/batch/batch-contract/download"), batch_result
+    batch_create = REQUESTS[before]
+    batch_status = REQUESTS[before + 1]
+    assert batch_create["method"] == "POST" and batch_create["path"] == "/api/batch", batch_create
+    assert_form_request(batch_create, {"template_id": template_id, "size": size, "reference_types_json": "[]"})
+    assert json.loads(batch_create["form"]["items_json"])[0]["fields"][primary_key] == "Batch primary", batch_create
+    assert batch_status["method"] == "GET" and batch_status["path"] == "/api/batch/batch-contract/status", batch_status
+
+    before = len(REQUESTS)
+    refresh_result = handlers.handle_card_action({
+        "action": "image.batch.refresh",
+        "value": {"action": "image.batch.refresh", "batch_id": "batch-contract"},
+        "formValue": {},
+        "operatorOpenId": "operator-ok",
+    }, deps(base_url))
+    assert refresh_result["ok"] is True, refresh_result
+    assert refresh_result["downloadUrl"].endswith("/api/batch/batch-contract/download"), refresh_result
+    assert REQUESTS[before]["method"] == "GET" and REQUESTS[before]["path"] == "/api/batch/batch-contract/status", REQUESTS[before]
+    assert "Download completed images ZIP" in json.dumps(refresh_result["card"]), refresh_result
+
+    assert_no_target_call(base_url, invalid_size_ctx(), "Size must use")
+    prove_missing_required_no_call(base_url)
+    assert_no_target_call(base_url, generate_ctx(), "not authorized", allowed=("someone-else",))
+    assert_no_target_call(base_url, {"action": "unknown.action", "value": {"action": "unknown.action"}, "formValue": {}, "operatorOpenId": "operator-ok"}, "Unsupported card action")
+
+    before = len(REQUESTS)
+    target_500 = handlers.handle_card_action(generate_ctx(message="target-500"), deps(base_url))
+    assert target_500["ok"] is False, target_500
+    assert len(REQUESTS) == before + 1, REQUESTS[before:]
+    assert "HTTP 500" in json.dumps(target_500), target_500
+
+    before = len(REQUESTS)
+    timeout_result = handlers.handle_card_action(generate_ctx(message="target-timeout"), deps(base_url, timeout_ms=50))
+    assert timeout_result["ok"] is False, timeout_result
+    assert len(REQUESTS) == before + 1, REQUESTS[before:]
+    assert "timed out" in json.dumps(timeout_result), timeout_result
+
+    prove_special_field_mapping(base_url)
+
+
+def prove_special_field_mapping(base_url: str) -> None:
+    field_map_path = Path(__file__).with_name("spec") / "field_map.json"
+    original = json.loads(field_map_path.read_text(encoding="utf-8"))
+    patched = json.loads(json.dumps(original))
+    patched.setdefault("formFieldToTemplateKey", {})["field_hero_title"] = "hero-title"
+    patched.setdefault("templateKeyToFormField", {})["hero-title"] = "field_hero_title"
+    field_map_path.write_text(json.dumps(patched, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
+    try:
+        before = len(REQUESTS)
+        result = handlers.handle_card_action(generate_ctx(extra_form={"field_hero_title": "Mapped Hero"}), deps(base_url))
+        assert result["ok"] is True, result
+        request = REQUESTS[before]
+        fields = json.loads(request["form"]["fields_json"])
+        assert fields["hero-title"] == "Mapped Hero", fields
+    finally:
+        field_map_path.write_text(json.dumps(original, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
+
+
+def prove_missing_required_no_call(base_url: str) -> None:
+    template_specs_path = Path(__file__).with_name("spec") / "template_specs.json"
+    original = json.loads(template_specs_path.read_text(encoding="utf-8"))
+    patched = json.loads(json.dumps(original))
+    template_id = load_spec("preset.json")["template_id"]
+    required_key = primary_template_key()
+    for template in patched:
+        if template.get("id") == template_id:
+            keys = list(template.get("requiredFieldKeys") or [])
+            if required_key not in keys:
+                keys.append(required_key)
+            template["requiredFieldKeys"] = keys
+            break
+    template_specs_path.write_text(json.dumps(patched, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
+    try:
+        assert_no_target_call(base_url, missing_required_ctx(required_key), "is required")
+    finally:
+        template_specs_path.write_text(json.dumps(original, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
+
+
+def generate_ctx(message: str = "contract generate", extra_form: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    preset = load_spec("preset.json")
+    template_id = preset["template_id"]
+    size = preset["size"]
+    primary_key = primary_template_key()
+    secondary_key = secondary_template_key()
+    field_map = load_spec("field_map.json")["templateKeyToFormField"]
+    form = {
+        "param_template_id": template_id,
+        "param_size": size,
+        field_map[primary_key]: "Contract primary",
+        "param_message": message,
+    }
+    if secondary_key:
+        form[field_map[secondary_key]] = "Contract secondary"
+    if extra_form:
+        form.update(extra_form)
+    return {"action": "image.generate.submit", "value": {"action": "image.generate.submit"}, "formValue": form, "operatorOpenId": "operator-ok"}
+
+
+def invalid_size_ctx() -> Dict[str, Any]:
+    ctx = generate_ctx()
+    ctx["formValue"] = dict(ctx["formValue"])
+    ctx["formValue"]["param_size"] = "0xbad"
+    return ctx
+
+
+def missing_required_ctx(required_key: str) -> Dict[str, Any]:
+    ctx = generate_ctx()
+    ctx["formValue"] = dict(ctx["formValue"])
+    ctx["formValue"][load_spec("field_map.json")["templateKeyToFormField"][required_key]] = ""
+    return ctx
+
+
+def primary_template_key() -> str:
+    field_map = load_spec("field_map.json")["templateKeyToFormField"]
+    return next(iter(field_map.keys()))
+
+
+def secondary_template_key() -> str:
+    keys = list(load_spec("field_map.json")["templateKeyToFormField"].keys())
+    return keys[1] if len(keys) > 1 else ""
+
+
+def load_spec(name: str) -> Any:
+    return json.loads((Path(__file__).with_name("spec") / name).read_text(encoding="utf-8"))
+
+
+def assert_no_target_call(base_url: str, ctx: Dict[str, Any], expected_message: str, allowed: tuple[str, ...] = ()) -> None:
+    before = len(REQUESTS)
+    result = handlers.handle_card_action(ctx, deps(base_url, allowed=allowed))
+    assert result["ok"] is False, result
+    assert expected_message in json.dumps(result, ensure_ascii=False), result
+    assert len(REQUESTS) == before, REQUESTS[before:]
+
+
+def deps(base_url: str, timeout_ms: int = 120000, allowed: tuple[str, ...] = ()) -> Dict[str, Any]:
+    return {"image_agent_base_url": base_url, "timeout_ms": timeout_ms, "allowed_operator_open_ids": allowed}
+
+
+def assert_start_message_request() -> None:
+    with temporary_env({
+        "FEISHU_APP_ID": "dummy_app_id",
+        "FEISHU_APP_SECRET": "dummy_app_secret",
+        "FEISHU_CONNECTION_MODE": "websocket",
+        "IMAGE_AGENT_BASE_URL": "http://127.0.0.1:8000",
+        "TEST_CHAT_ID": "oc_dummy_chat",
+    }):
+        request = app.build_start_message_request()
+    assert request["receive_id_type"] == "chat_id", request
+    assert request["receive_id"] == "oc_dummy_chat", request
+    assert request["msg_type"] == "interactive", request
+    assert json.loads(request["content"]) == cards.load_start_card(), request
+    assert "feishu_app_id" not in request, request
+    assert "feishu_app_secret" not in request, request
+
+    with temporary_env({
+        "FEISHU_APP_ID": "dummy_app_id",
+        "FEISHU_APP_SECRET": "dummy_app_secret",
+        "FEISHU_CONNECTION_MODE": "websocket",
+        "IMAGE_AGENT_BASE_URL": "http://127.0.0.1:8000",
+        "TEST_CHAT_ID": "",
+    }):
+        try:
+            app.build_start_message_request()
+        except RuntimeError as exc:
+            assert "TEST_CHAT_ID" in str(exc), "missing TEST_CHAT_ID should be clear: " + str(exc)
+        else:
+            raise AssertionError("missing TEST_CHAT_ID should fail")
+
+
+def only_request(method: str, path: str) -> Dict[str, Any]:
+    matches = [item for item in REQUESTS if item["method"] == method and item["path"] == path]
+    assert len(matches) == 1, matches
+    return matches[0]
+
+
+def assert_form_request(request: Dict[str, Any], expected: Dict[str, str]) -> None:
+    assert "application/x-www-form-urlencoded" in request["content_type"], request
+    for key, value in expected.items():
+        assert request["form"].get(key) == value, {"expected": expected, "request": request}
+
+
+@contextmanager
+def temporary_env(values: Dict[str, str]):
+    previous = {key: os.environ.get(key) for key in values}
+    try:
+        for key, value in values.items():
+            os.environ[key] = value
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+@contextmanager
+def mock_server():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), MockImageAgentHandler)
+    host, port = server.server_address
+    import threading
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield "http://" + host + ":" + str(port)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+if __name__ == "__main__":
+    main()
+`;
+}
+
+
+export function buildPythonHostEndpointsSpec(): Record<string, unknown> {
+  return {
+    schema_version: "0.1",
+    target: "image-agent-web",
+    actions: {
+      [IMAGE_AGENT_WEB_PROFILE.actions.generate]: {
+        operation: "generate",
+        method: IMAGE_AGENT_WEB_PROFILE.endpoints.generate.method,
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.generate.path,
+        content_type: "multipart/form-data",
+        body: "form",
+        fields: ["template_id", "size", "fields_json", "message", "reference_types_json"],
+      },
+      [IMAGE_AGENT_WEB_PROFILE.actions.iterate]: {
+        operation: "iterate",
+        method: IMAGE_AGENT_WEB_PROFILE.endpoints.iterate.method,
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.iterate.path,
+        content_type: "application/json",
+        body: "json",
+        fields: ["session_id", "feedback"],
+      },
+      [IMAGE_AGENT_WEB_PROFILE.actions.batchSubmit]: {
+        operation: "batch",
+        method: IMAGE_AGENT_WEB_PROFILE.endpoints.batchSubmit.method,
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.batchSubmit.path,
+        content_type: "multipart/form-data",
+        body: "form",
+        fields: ["template_id", "size", "items_json", "reference_types_json"],
+      },
+      [IMAGE_AGENT_WEB_PROFILE.actions.batchRefresh]: {
+        operation: "batch_status",
+        method: IMAGE_AGENT_WEB_PROFILE.endpoints.batchStatus.method,
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.batchStatus.path,
+        body: "none",
+        path_params: ["batch_id"],
+      },
+    },
+    supporting_endpoints: {
+      batch_download: {
+        method: "GET",
+        path: IMAGE_AGENT_WEB_PROFILE.endpoints.batchDownload.path,
+        path_params: ["batch_id"],
+      },
+      meta: {
+        method: "GET",
+        path: "/api/meta",
+      },
+    },
+  };
+}
+
+
+export function buildStartCardSpec(service: ServiceManifest, data: AdapterCardTemplateData): Record<string, unknown> {
+  const { defaultPreset, templateSpecs, fieldSpecs, fieldMaps } = data;
+  const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
+  return {
+    schema: "2.0",
+    config: { update_multi: true, wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: "Image Agent MVP" } },
+    body: { elements: [
+      { tag: "markdown", content: `**Target service:** ${service.service.name}\n\n**Templates:** ${templateSpecs.map((template) => template.id).join(", ")}\n\nFill the parameters and submit to run /api/generate.` },
+      {
+        tag: "form",
+        name: "image_generate_form",
+        elements: [
+          { tag: "input", name: "param_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          ...fieldSpecs.map((field) => ({ tag: "input", name: fieldMaps.templateKeyToFormField[field.key] || field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
+          { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
+          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", form_action_type: "submit", name: "submit_image_generate", behaviors: [{ type: "callback", value: { action: IMAGE_AGENT_WEB_PROFILE.actions.generate, preset: defaultPreset } }] },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", form_action_type: "reset", name: "reset_image_generate" },
+        ],
+      },
+      { tag: "hr" },
+      { tag: "markdown", content: "Use batch mode for long-running /api/batch jobs. Submit a JSON array of items, then refresh the returned progress card when needed." },
+      {
+        tag: "form",
+        name: "image_batch_form",
+        elements: [
+          { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
+          { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
+          { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\\"fields\\\": { ... } }]" } },
+          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", form_action_type: "submit", name: "submit_image_batch", behaviors: [{ type: "callback", value: { action: IMAGE_AGENT_WEB_PROFILE.actions.batchSubmit } }] },
+          { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", form_action_type: "reset", name: "reset_image_batch" },
+        ],
+      },
+    ] },
+  };
+}
+
+
 function buildDefaultPreset(capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): {
   template_id: string;
   size: string;
