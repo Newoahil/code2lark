@@ -67,9 +67,9 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(outDir, ".gitignore"), generatedPackageGitignore());
   writeText(path.join(outDir, "package.json"), generatedPackageJson(service.service.name));
   writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode, hostReceiveMode));
-  writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode, hostReceiveMode));
+  writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode, hostReceiveMode, targetProfile, interactions));
   writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions, integrationMode));
-  writeText(path.join(docsDir, "integration_guide.md"), integrationMode === "self-hosted-runtime" ? buildSelfHostedIntegrationGuide(service) : buildEmbeddedIntegrationGuide(service, permissions, hostReceiveMode));
+  writeText(path.join(docsDir, "integration_guide.md"), integrationMode === "self-hosted-runtime" ? buildSelfHostedIntegrationGuide(service) : buildEmbeddedIntegrationGuide(service, permissions, hostReceiveMode, targetProfile, interactions));
   writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode, hostReceiveMode));
   writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service));
   writePackageContext(workspace, outDir, service, permissions, integrationMode, hostReceiveMode);
@@ -1657,11 +1657,76 @@ Real Feishu Level 2 remains manual: enable long connection in the Feishu app, su
 `;
 }
 
-function buildEmbeddedIntegrationGuide(service: ServiceManifest, permissions: RequiredPermissions, hostReceiveMode: HostReceiveMode): string {
+function buildEmbeddedIntegrationGuide(service: ServiceManifest, permissions: RequiredPermissions, hostReceiveMode: HostReceiveMode, targetProfile: string, interactions: InteractionContract): string {
   const longConnection = hostReceiveMode === "embedded-long-connection";
   const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
   const hybrid = hostReceiveMode === "hybrid";
   const hostModeOption = hostReceiveMode === "embedded-webhook" ? "" : ` --host-mode ${hostReceiveMode}`;
+  if (targetProfile === "generic-http-api") {
+    const actions = interactions.interactions.map((interaction) => `- \`${interaction.action_id}\` -> \`${interaction.capability_id}\``).join("\n") || "- No card actions were discovered.";
+    return `# Embedded Adapter Integration Guide
+
+This package is adapter-first. The core artifact is \`adapter/\`. It contains a generic HTTP adapter for \`${service.service.name}\` and is intended for an existing Feishu SDK host.
+
+- Host receive mode: ${hostReceiveMode}
+- Card action ingress: ${longConnection ? "Feishu SDK long connection subscription to `card.action.trigger`." : hybrid ? "Hybrid: webhook callback route such as `/webhook/card` plus Feishu SDK long connection subscription to `card.action.trigger`." : "Webhook callback route such as `/webhook/card`."}
+
+## Adapter Files
+
+- \`adapter/handlers.ts\`: exports \`handleGenericHttpCardAction()\`.
+- \`adapter/cards.ts\`: builds generic HTTP start/result/failure cards.
+- \`adapter/service-client.ts\`: renders relative target endpoint paths and calls \`targetBaseUrl\`.
+- \`adapter/validation.ts\`: operator allowlist and form input helpers.
+- \`adapter/types.ts\`: host-facing generic adapter interfaces.
+
+## Generic Actions
+
+${actions}
+
+The generated start card renders one form per discovered HTTP action. Path parameters such as \`ticket_id\` and request JSON bodies such as \`body_json\` are submitted through Feishu form values.
+
+## Handler Shape
+
+\`\`\`ts
+import { handleGenericHttpCardAction } from "./adapter/handlers";
+
+const result = await handleGenericHttpCardAction({
+  action: "${interactions.interactions[0]?.action_id || "http.post.example.submit"}",
+  formValue,
+  operatorOpenId,
+  openMessageId,
+  openChatId,
+}, {
+  targetBaseUrl,
+  timeoutMs,
+  allowedOperatorOpenIds,
+});
+
+return result.card;
+\`\`\`
+
+The host owns Feishu SDK initialization, ${longConnection ? "long-connection lifecycle, `card.action.trigger` subscription" : hybrid ? "callback verification, route registration, long-connection lifecycle, `card.action.trigger` subscription" : "callback verification and route registration"}, secret storage, deployment, and audit persistence. The adapter returns \`ok\`, \`card\`, \`result\`, and \`auditEvents\`; it does not manage the target service lifecycle.
+
+## Feishu Capabilities To Confirm
+
+${permissions.scopes.map((scope) => `- \`${scope.scope}\`: ${scope.reason}`).join("\n")}
+${permissions.callbacks.map((callback) => `- Callback \`${callback.callback}\`: ${callback.reason}`).join("\n")}
+
+## Verification
+
+\`\`\`powershell
+node ..\\..\\dist\\index.js verify . --mode embedded-adapter${hostModeOption} --strict
+\`\`\`
+
+After mounting the adapter in your existing host, run host validation against that host:
+
+\`\`\`powershell
+node ..\\..\\dist\\index.js verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate
+\`\`\`
+
+Real Level 2 still requires your host service to receive a real Feishu ${usesLongConnection ? "`card.action.trigger` event" : "card callback"}${hybrid ? " and maintain the webhook callback path" : ""}, call \`handleGenericHttpCardAction()\`, call \`${service.service.name}\`, return the result card, and record manual evidence in \`level2_verification_record.md\`.
+`;
+  }
   return `# Embedded Adapter Integration Guide
 
 This package is adapter-first. The core artifact is \`adapter/\`. In embedded-adapter mode, this package is intended for an existing Feishu SDK host and does not include a generated \`bot-runtime/\` directory. If a standalone reference host is needed, regenerate with \`--mode standalone-runtime\`.
@@ -1785,13 +1850,61 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function buildGeneratedReadme(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode): string {
+function buildGeneratedReadme(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode, targetProfile: string, interactions: InteractionContract): string {
   if (integrationMode === "embedded-adapter") {
     const longConnection = hostReceiveMode === "embedded-long-connection";
     const usesWebhook = hostModeUsesWebhook(hostReceiveMode);
     const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
     const hybrid = hostReceiveMode === "hybrid";
     const hostModeOption = hostReceiveMode === "embedded-webhook" ? "" : ` --host-mode ${hostReceiveMode}`;
+    if (targetProfile === "generic-http-api") {
+      const actions = interactions.interactions.map((interaction) => `- \`${interaction.action_id}\` handles \`${interaction.capability_id}\``).join("\n") || "- No generic HTTP card actions were discovered.";
+      return `# ${service.service.name} Lark Generic HTTP Adapter Package
+
+This package was generated by Lark-deployer for a generic HTTP API target. It exposes generic card-action forms that call discovered target endpoints and render structured JSON results.
+
+## Boundary
+
+Lark-deployer generated an embeddable adapter package. It does not run or manage the target service lifecycle and this embedded-adapter package does not include a standalone \`bot-runtime/\` host.
+
+- Target service: ${service.service.name}
+- Target base URL: ${service.service.base_url || "<TARGET_BASE_URL>"}
+- Target profile: generic-http-api
+- Core artifact: \`adapter/\`
+- Integration mode: embedded-adapter
+- Host receive mode: ${hostReceiveMode}
+
+## What The Embedded Adapter Does
+
+1. Exports \`handleGenericHttpCardAction()\` for Feishu/Lark card actions.
+2. Maps generic action IDs to discovered HTTP endpoints for \`${service.service.name}\`.
+3. Reads path parameters and \`body_json\` from card form values.
+4. Calls the configured \`targetBaseUrl\` and returns generic success/failure cards plus audit events.
+5. Leaves ${usesLongConnection && usesWebhook ? "long-connection ingress, callback routing, Feishu SDK lifecycle" : usesLongConnection ? "long-connection ingress, Feishu SDK lifecycle" : "callback routing, Feishu SDK verification"}, secret storage, deployment, and Level 2 evidence collection to the existing host service.
+
+## Generated Actions
+
+${actions}
+
+## Required Context
+
+${permissions.context_requirements.map((item) => `- ${item}`).join("\n")}
+
+## Package Validation
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --strict
+\`\`\`
+
+## Host Validation
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate
+\`\`\`
+
+Use \`docs/integration_guide.md\` for the exact \`handleGenericHttpCardAction()\` call shape. Real Level 2 still requires your host to receive a real Feishu ${hybrid ? "webhook callback and `card.action.trigger` long-connection event" : longConnection ? "`card.action.trigger` long-connection event" : "card callback"}, call the adapter, call \`${service.service.name}\`, return the result card, and record manual evidence.
+`;
+    }
     return `# ${service.service.name} Lark Embedded Adapter Package
 
 This package was generated by Lark-deployer for the MVP-1A image generation, feedback-iteration, and batch-progress flow.

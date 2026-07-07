@@ -2284,10 +2284,18 @@ test("generic HTTP API target can analyze generate and verify", () => {
     fs.readFileSync(path.join(generated, "adapter", "service-client.ts"), "utf8"),
     fs.readFileSync(path.join(generated, "adapter", "cards.ts"), "utf8"),
   ].join("\n");
+  const genericReadme = fs.readFileSync(path.join(generated, "README.md"), "utf8");
+  const genericIntegrationGuide = fs.readFileSync(path.join(generated, "docs", "integration_guide.md"), "utf8");
   assert.match(generatedAdapter, /http\.post\.api\.tickets\.submit/);
   assert.match(generatedAdapter, /"name": "ticket_id"/);
   assert.match(generatedAdapter, /"name": "body_json"/);
   assert.doesNotMatch(generatedAdapter, /image\.generate|image\.iterate|image\.batch|image_url|session_id/);
+  for (const generatedDoc of [genericReadme, genericIntegrationGuide]) {
+    assert.match(generatedDoc, /handleGenericHttpCardAction/);
+    assert.match(generatedDoc, /http\.post\.api\.tickets\.submit/);
+    assert.match(generatedDoc, /targetBaseUrl/);
+    assert.doesNotMatch(generatedDoc, /handleImageAgentCardAction|image_generate_form|image_batch_form|image\.generate|image\.iterate|image\.batch|MVP-1A image generation|image_url|session_id/);
+  }
   const genericContractOutput = runNode([
     "--input-type=module",
     "--eval",
