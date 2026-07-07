@@ -3,13 +3,19 @@ import path from "node:path";
 import { getStringOption } from "../args.js";
 import { ensureDir, readTextIfExists, slugify, writeJson, writeText } from "../fs-utils.js";
 import { getJsonWithTimeout, normalizeBaseUrl } from "../http-utils.js";
-import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
+import type { CapabilityMap, InteractionContract, JsonObject, RequiredPermissions, ServiceManifest } from "../types.js";
 
 interface AnalyzeOptions {
   targetPath: string;
   baseUrl: string;
   outDir: string;
   name: string;
+}
+
+interface AnalyzerStrategy {
+  id: ServiceManifest["source_scan"]["analysis_strategy"];
+  canAnalyze(options: AnalyzeOptions): boolean;
+  analyze(options: AnalyzeOptions): Promise<void>;
 }
 
 interface ImageAgentMeta {
@@ -43,6 +49,26 @@ const SECRET_PATTERNS: Array<{ kind: string; pattern: RegExp }> = [
   },
 ];
 
+const ANALYZER_STRATEGIES: AnalyzerStrategy[] = [
+  {
+    id: "http_api_python_image_agent_web",
+    canAnalyze: ({ targetPath }) => isImageAgentWebTarget(targetPath),
+    analyze: analyzeImageAgentWeb,
+  },
+  {
+    id: "generic_http_api",
+    canAnalyze: ({ targetPath }) => discoverHttpEndpoints(targetPath).length > 0,
+    analyze: analyzeGenericHttpApi,
+  },
+  {
+    id: "generic_cli",
+    canAnalyze: () => false,
+    analyze: async () => {
+      throw new Error("generic_cli analyzer is a reserved strategy skeleton and cannot analyze this target yet.");
+    },
+  },
+];
+
 export async function analyzeCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const targetArg = args[0];
   if (!targetArg) {
@@ -59,12 +85,17 @@ export async function analyzeCommand(args: string[], options: Record<string, str
   const outDir = path.resolve(getStringOption(options, "out", defaultOut));
   const baseUrl = normalizeBaseUrl(getStringOption(options, "base-url", getStringOption(options, "baseUrl", "")));
 
-  await analyzeImageAgentWeb({
+  const analyzeOptions = {
     targetPath,
     baseUrl,
     outDir,
     name,
-  });
+  };
+  const strategy = ANALYZER_STRATEGIES.find((item) => item.canAnalyze(analyzeOptions));
+  if (!strategy) {
+    throw new Error("No analyzer strategy matched this target. Provide a target with a clear HTTP API or CLI surface.");
+  }
+  await strategy.analyze(analyzeOptions);
 }
 
 async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: AnalyzeOptions): Promise<void> {
@@ -96,7 +127,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
   const templateFieldMetadata = buildTemplateFieldMetadata(meta);
 
   const serviceManifest: ServiceManifest = {
-    schema_version: "0.1",
+    schema_version: "0.2",
     generated_at: new Date().toISOString(),
     service: {
       name,
@@ -118,6 +149,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
       ],
     },
     source_scan: {
+      analysis_strategy: "http_api_python_image_agent_web",
       files_checked: [
         path.relative(targetPath, requirementsPath),
         path.relative(targetPath, mainPath),
@@ -137,8 +169,9 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
   };
 
   const capabilityMap: CapabilityMap = {
-    schema_version: "0.1",
+    schema_version: "0.2",
     service_name: name,
+    target_profile: "image-agent-web",
     capabilities: [
       {
         id: "image.generate",
@@ -324,13 +357,14 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
   };
 
   const interactionContract: InteractionContract = {
-    schema_version: "0.1",
+    schema_version: "0.2",
     channel: "lark",
     service_name: name,
     interactions: [
       {
         id: "image.generate.card",
         capability_id: "image.generate",
+        action_id: "image.generate.submit",
         trigger: "card_action",
         input_mode: "preset_card_action",
         result_mode: "interactive_card",
@@ -345,6 +379,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
       {
         id: "image.iterate.card",
         capability_id: "image.iterate",
+        action_id: "image.iterate.submit",
         trigger: "card_action",
         input_mode: "feedback_card_action",
         result_mode: "interactive_card",
@@ -359,6 +394,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
       {
         id: "image.batch.card",
         capability_id: "image.batch",
+        action_id: "image.batch.submit",
         trigger: "card_action",
         input_mode: "batch_form_action",
         result_mode: "interactive_card",
@@ -373,6 +409,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
       {
         id: "image.batch.status.card",
         capability_id: "image.batch",
+        action_id: "image.batch.refresh",
         trigger: "card_action",
         input_mode: "batch_status_action",
         result_mode: "interactive_card",
@@ -387,7 +424,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
   };
 
   const requiredPermissions: RequiredPermissions = {
-    schema_version: "0.1",
+    schema_version: "0.2",
     app: {
       type: "custom_app",
       bot_required: true,
@@ -463,6 +500,238 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
   if (secretFindings.length) {
     console.log(`Source security findings: ${secretFindings.length} potential target-side secret literal(s); values were not copied.`);
   }
+}
+
+async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name }: AnalyzeOptions): Promise<void> {
+  const manifestDir = path.join(outDir, "manifest");
+  ensureDir(manifestDir);
+
+  const secretFindings = scanPotentialSecrets(targetPath);
+  const discovered = discoverHttpEndpoints(targetPath);
+  const endpoints = dedupeEndpoints(discovered);
+  const capabilityEndpoints = endpoints.filter((endpoint) => !isHealthEndpoint(endpoint));
+  const healthPath = endpoints.find(isHealthEndpoint)?.path || endpoints.find((endpoint) => endpoint.method === "GET")?.path || "/";
+  const healthProbe = await getJsonWithTimeout(baseUrl ? `${baseUrl}${healthPath}` : "", 5000);
+  const frameworks = detectFrameworks(targetPath);
+
+  const serviceManifest: ServiceManifest = {
+    schema_version: "0.2",
+    generated_at: new Date().toISOString(),
+    service: {
+      name,
+      target_path: targetPath,
+      type: "http_api",
+      detected_frameworks: frameworks,
+      runtime_mode: "external_service",
+      managed_by_lark_deployer: false,
+      base_url: baseUrl,
+      healthcheck: {
+        method: "GET",
+        path: healthPath,
+        status: healthProbe.status,
+        detail: healthProbe.detail,
+      },
+      start_hints: [
+        "The target service lifecycle is owned by the user or target project.",
+        "The generic HTTP analyzer only inspects source files and optional health probes; it does not start or manage the target service.",
+      ],
+    },
+    source_scan: {
+      analysis_strategy: "generic_http_api",
+      files_checked: collectGenericFilesChecked(targetPath),
+      endpoints,
+      endpoint_coverage: endpoints.map((endpoint) => {
+        if (isHealthEndpoint(endpoint)) {
+          return { ...endpoint, status: "supporting" as const, reason: "Used as a generic target healthcheck." };
+        }
+        return {
+          ...endpoint,
+          status: "supported" as const,
+          capability_id: capabilityIdForEndpoint(endpoint),
+          reason: "Generic HTTP API endpoint exposed as a card-action backed capability.",
+        };
+      }),
+      notes: [
+        "Analyzer strategy: generic_http_api.",
+        "Generated manifest is a coarse HTTP API draft; review input and output schemas before production use.",
+        secretFindings.length
+          ? `Potential target-side secret literals found: ${secretFindings.length}. Values were not copied into Lark-deployer artifacts.`
+          : "",
+      ].filter(Boolean),
+      secret_findings: secretFindings,
+    },
+  };
+
+  const capabilityMap: CapabilityMap = {
+    schema_version: "0.2",
+    service_name: name,
+    target_profile: "generic-http-api",
+    capabilities: capabilityEndpoints.map((endpoint) => ({
+      id: capabilityIdForEndpoint(endpoint),
+      name: `${endpoint.method} ${endpoint.path}`,
+      kind: endpoint.method === "GET" ? "query" : "action",
+      risk: endpoint.method === "GET" ? "read_only" : "write",
+      source: {
+        type: "http",
+        method: endpoint.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+        path: endpoint.path,
+        content_type: endpoint.method === "GET" ? "application/json" : "application/json",
+      },
+      input_schema: buildGenericInputSchema(endpoint),
+      output_schema: { type: "object", additionalProperties: true },
+      artifacts: [{ name: "response", type: "structured_data", source_field: "$", delivery: "card_json" }],
+      timeout_seconds: 30,
+    })),
+  };
+
+  const interactionContract: InteractionContract = {
+    schema_version: "0.2",
+    channel: "lark",
+    service_name: name,
+    interactions: capabilityMap.capabilities.map((capability) => ({
+      id: `${capability.id}.card`,
+      capability_id: capability.id,
+      action_id: `${capability.id}.submit`,
+      trigger: "card_action",
+      input_mode: "form_action",
+      result_mode: "interactive_card",
+      states: ["idle", "running", "succeeded", "failed"],
+      audit_fields: ["operator_open_id", "chat_id", "trace_id", "capability_id"],
+      error_handling: [
+        "Target service unavailable -> return failure card with base URL and endpoint detail.",
+        "Invalid form input -> return failure card and do not call target service.",
+      ],
+    })),
+  };
+
+  const requiredPermissions: RequiredPermissions = {
+    schema_version: "0.2",
+    app: {
+      type: "custom_app",
+      bot_required: true,
+      availability_recommendation: "Limit the app to the target API operator group until the generated adapter is reviewed.",
+    },
+    context_requirements: [
+      "Existing Feishu/Lark custom app or permission to create/update one.",
+      "APP_ID and APP_SECRET.",
+      "Card callback verification token and optional encrypt key.",
+      "Target HTTP API base_url reachable from the selected host/runtime.",
+    ],
+    token_strategy: {
+      default: "tenant_access_token",
+      user_access_token_required: false,
+    },
+    scopes: [
+      {
+        scope: "im:message:send_as_bot",
+        identity: "tenant",
+        required_by: interactionContract.interactions.map((interaction) => interaction.id),
+        reason: "Send generic HTTP API start, success, and failure interactive cards as the bot.",
+        risk: "low",
+      },
+    ],
+    events: [],
+    callbacks: [
+      {
+        callback: "card.action.trigger",
+        required_by: interactionContract.interactions.map((interaction) => interaction.id),
+        reason: "Receive interactive card button clicks from the generated start card.",
+        security: ["verification_token", "encrypt_key_optional"],
+      },
+    ],
+    manual_steps: [
+      "Enable bot capability in the Feishu developer console.",
+      "Apply message send scope and configure card.action.trigger callback handling in the selected host mode.",
+      "Publish the app version after permission or callback changes.",
+    ],
+    review_flags: [
+      "Generic HTTP schemas are coarse drafts. Review endpoint inputs, authorization, and result rendering before broad usage.",
+      ...secretFindings.map((finding) => `Potential target-side secret literal in ${finding.file}:${finding.line} (${finding.kind}). ${finding.action}`),
+    ],
+  };
+
+  writeJson(path.join(manifestDir, "service_manifest.json"), serviceManifest);
+  writeJson(path.join(manifestDir, "capability_map.json"), capabilityMap);
+  writeJson(path.join(manifestDir, "interaction_contract.json"), interactionContract);
+  writeJson(path.join(manifestDir, "required_permissions.json"), requiredPermissions);
+  writeText(path.join(outDir, "analysis_report.md"), buildGenericAnalysisReport(serviceManifest, capabilityMap));
+
+  console.log(`Analysis written to ${outDir}`);
+  console.log(`Analyzer strategy: generic_http_api`);
+  console.log(`Target healthcheck: ${serviceManifest.service.healthcheck.status} (${serviceManifest.service.healthcheck.detail})`);
+}
+
+function isImageAgentWebTarget(targetPath: string): boolean {
+  const endpoints = extractFastApiEndpoints(readTextIfExists(path.join(targetPath, "main.py")));
+  return fs.existsSync(path.join(targetPath, "templates.py"))
+    || endpoints.some((endpoint) => endpoint.method === "POST" && endpoint.path === "/api/generate");
+}
+
+function discoverHttpEndpoints(targetPath: string): Array<{ method: string; path: string }> {
+  const candidates = ["main.py", "app.py", "server.py", "README.md", "readme.md"];
+  return candidates.flatMap((file) => {
+    const source = readTextIfExists(path.join(targetPath, file));
+    return file.toLowerCase().endsWith(".md") ? extractDocumentedEndpoints(source) : extractFastApiEndpoints(source);
+  });
+}
+
+function detectFrameworks(targetPath: string): string[] {
+  const requirements = readTextIfExists(path.join(targetPath, "requirements.txt"));
+  const main = readTextIfExists(path.join(targetPath, "main.py"));
+  return [
+    requirements.includes("fastapi") || main.includes("FastAPI") ? "fastapi" : "",
+    requirements.includes("flask") || main.includes("Flask") ? "flask" : "",
+  ].filter(Boolean);
+}
+
+function collectGenericFilesChecked(targetPath: string): string[] {
+  return ["requirements.txt", "main.py", "app.py", "server.py", "README.md", "readme.md"]
+    .filter((file) => fs.existsSync(path.join(targetPath, file)));
+}
+
+function dedupeEndpoints(endpoints: Array<{ method: string; path: string }>): Array<{ method: string; path: string }> {
+  const seen = new Set<string>();
+  return endpoints.filter((endpoint) => {
+    const normalized = { method: endpoint.method.toUpperCase(), path: endpoint.path };
+    const key = `${normalized.method} ${normalized.path}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    endpoint.method = normalized.method;
+    endpoint.path = normalized.path;
+    return true;
+  });
+}
+
+function isHealthEndpoint(endpoint: { method: string; path: string }): boolean {
+  return endpoint.method === "GET" && /^\/(health|api\/health|status|api\/status)$/.test(endpoint.path);
+}
+
+function capabilityIdForEndpoint(endpoint: { method: string; path: string }): string {
+  const parts = endpoint.path
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/[{}]/g, "")
+    .split("/")
+    .map((part) => part.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase())
+    .filter(Boolean);
+  return ["http", endpoint.method.toLowerCase(), ...parts].join(".") || `http.${endpoint.method.toLowerCase()}.root`;
+}
+
+function buildGenericInputSchema(endpoint: { method: string; path: string }): JsonObject {
+  const pathParams = [...endpoint.path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]);
+  const properties: Record<string, unknown> = Object.fromEntries(pathParams.map((param) => [param, { type: "string", description: `Path parameter for ${endpoint.path}.` }]));
+  if (endpoint.method !== "GET") {
+    properties.body_json = { type: "object", description: "JSON request body sent to the target endpoint." };
+  }
+  return {
+    type: "object",
+    required: pathParams,
+    properties,
+  };
+}
+
+function extractDocumentedEndpoints(source: string): Array<{ method: string; path: string }> {
+  return [...source.matchAll(/\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[A-Za-z0-9_./{}:-]+)/g)]
+    .map((match) => ({ method: match[1].toUpperCase(), path: match[2] }));
 }
 
 function buildEndpointCoverage(endpoints: Array<{ method: string; path: string }>): NonNullable<ServiceManifest["source_scan"]["endpoint_coverage"]> {
@@ -876,6 +1145,49 @@ Lark-deployer records only finding metadata here. It does not copy matched secre
 - Lark-deployer does not start or manage the target service lifecycle.
 - The generated bot runtime expects image-agent-web to be reachable from its own environment.
 - templates.py was ${templatesSource ? "found" : "not found"} during static scan.
+`;
+}
+
+function buildGenericAnalysisReport(manifest: ServiceManifest, capabilities: CapabilityMap): string {
+  const coverageLines = manifest.source_scan.endpoint_coverage?.length
+    ? manifest.source_scan.endpoint_coverage.map((item) => {
+      const capability = item.capability_id ? `, capability=${item.capability_id}` : "";
+      return `- ${item.method} ${item.path}: ${item.status}${capability} - ${item.reason}`;
+    }).join("\n")
+    : "- No endpoint coverage metadata generated.";
+  return `# Lark-deployer Analysis Report
+
+## Target
+
+- Name: ${manifest.service.name}
+- Path: ${manifest.service.target_path}
+- Base URL: ${manifest.service.base_url || "not provided"}
+- Analyzer strategy: ${manifest.source_scan.analysis_strategy}
+- Runtime mode: external service
+- Managed by Lark-deployer: false
+
+## Healthcheck
+
+- ${manifest.service.healthcheck.method} ${manifest.service.healthcheck.path}
+- Status: ${manifest.service.healthcheck.status}
+- Detail: ${manifest.service.healthcheck.detail}
+
+## Detected Endpoints
+
+${manifest.source_scan.endpoints.map((endpoint) => `- ${endpoint.method} ${endpoint.path}`).join("\n") || "- None detected"}
+
+## Endpoint Coverage
+
+${coverageLines}
+
+## Draft Capabilities
+
+${capabilities.capabilities.map((capability) => `- ${capability.id}: ${capability.name} (${capability.kind}, risk=${capability.risk})`).join("\n") || "- None generated"}
+
+## Notes
+
+- Generic HTTP API analysis emits coarse schemas from observable routes and documentation.
+- Review generated input and output schemas before production use.
 `;
 }
 

@@ -1,12 +1,14 @@
 export type JsonObject = Record<string, unknown>;
 
+export type ManifestSchemaVersion = "0.2";
+
 export interface ServiceManifest {
-  schema_version: "0.1";
+  schema_version: ManifestSchemaVersion;
   generated_at: string;
   service: {
     name: string;
     target_path: string;
-    type: "http_api";
+    type: "http_api" | "cli";
     detected_frameworks: string[];
     runtime_mode: "external_service";
     managed_by_lark_deployer: false;
@@ -20,6 +22,7 @@ export interface ServiceManifest {
     start_hints: string[];
   };
   source_scan: {
+    analysis_strategy: "http_api_python_image_agent_web" | "generic_http_api" | "generic_cli";
     files_checked: string[];
     endpoints: Array<{ method: string; path: string }>;
     endpoint_coverage?: Array<{
@@ -40,19 +43,20 @@ export interface ServiceManifest {
 }
 
 export interface CapabilityMap {
-  schema_version: "0.1";
+  schema_version: ManifestSchemaVersion;
   service_name: string;
+  target_profile: "image-agent-web" | "generic-http-api" | "generic-cli";
   capabilities: Capability[];
 }
 
 export interface Capability {
   id: string;
   name: string;
-  kind: "image_generation";
+  kind: "image_generation" | "action" | "query" | "artifact_generation" | "long_task";
   risk: "read_only" | "write" | "destructive";
   source: {
     type: "http";
-    method: "POST";
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     path: string;
     content_type: string;
   };
@@ -60,22 +64,23 @@ export interface Capability {
   output_schema: JsonObject;
   artifacts: Array<{
     name: string;
-    type: "image" | "json" | "text";
+    type: "image" | "json" | "text" | "structured_data" | "file" | "url";
     source_field: string;
-    delivery: "lark_image" | "card_text" | "audit";
+    delivery: "lark_image" | "card_text" | "card_json" | "audit";
   }>;
   timeout_seconds: number;
 }
 
 export interface InteractionContract {
-  schema_version: "0.1";
+  schema_version: ManifestSchemaVersion;
   channel: "lark";
   service_name: string;
   interactions: Array<{
     id: string;
     capability_id: string;
+    action_id: string;
     trigger: "card_action";
-    input_mode: "preset_card_action" | "feedback_card_action" | "batch_form_action" | "batch_status_action";
+    input_mode: "preset_card_action" | "feedback_card_action" | "batch_form_action" | "batch_status_action" | "form_action" | "button_action";
     result_mode: "interactive_card";
     states: string[];
     audit_fields: string[];
@@ -84,7 +89,7 @@ export interface InteractionContract {
 }
 
 export interface RequiredPermissions {
-  schema_version: "0.1";
+  schema_version: ManifestSchemaVersion;
   app: {
     type: "custom_app";
     bot_required: true;
