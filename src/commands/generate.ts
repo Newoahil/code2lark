@@ -66,12 +66,12 @@ export async function generateCommand(args: string[], options: Record<string, st
 
   writeText(path.join(outDir, ".gitignore"), generatedPackageGitignore());
   writeText(path.join(outDir, "package.json"), generatedPackageJson(service.service.name));
-  writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode, hostReceiveMode));
+  writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode, hostReceiveMode, targetProfile));
   writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode, hostReceiveMode, targetProfile, interactions));
   writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions, integrationMode));
   writeText(path.join(docsDir, "integration_guide.md"), integrationMode === "self-hosted-runtime" ? buildSelfHostedIntegrationGuide(service) : buildEmbeddedIntegrationGuide(service, permissions, hostReceiveMode, targetProfile, interactions));
-  writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode, hostReceiveMode));
-  writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service));
+  writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode, hostReceiveMode, targetProfile, interactions));
+  writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service, targetProfile));
   writePackageContext(workspace, outDir, service, permissions, integrationMode, hostReceiveMode);
   if (targetProfile === "generic-http-api") {
     writeGenericAdapterFiles(adapterDir, service, capabilities, interactions);
@@ -85,8 +85,8 @@ export async function generateCommand(args: string[], options: Record<string, st
     writeRuntimeAdapterJs(adapterDir, service, capabilities, meta);
   }
   if (integrationMode === "embedded-adapter" && (hostReceiveMode === "embedded-long-connection" || hostReceiveMode === "hybrid")) {
-    writeText(path.join(sidecarDir, "README.md"), sidecarLongConnectionReadme(service, hostReceiveMode));
-    writeText(path.join(sidecarDir, "local-contract-test.mjs"), sidecarLocalContractTestMjs(service));
+    writeText(path.join(sidecarDir, "README.md"), sidecarLongConnectionReadme(service, hostReceiveMode, targetProfile));
+    writeText(path.join(sidecarDir, "local-contract-test.mjs"), sidecarLocalContractTestMjs(service, capabilities, interactions, targetProfile));
   } else if (fs.existsSync(sidecarDir)) {
     fs.rmSync(sidecarDir, { recursive: true, force: true });
   }
@@ -157,7 +157,38 @@ function writeGenericAdapterFiles(adapterDir: string, service: ServiceManifest, 
   writeText(path.join(adapterDir, "service-client.d.ts"), `export function callGenericHttpEndpoint(baseUrl: string, method: string, pathTemplate: string, input?: Record<string, unknown>, timeoutMs?: number): Promise<Record<string, unknown>>;\n`);
 }
 
-function sidecarLongConnectionReadme(service: ServiceManifest, hostReceiveMode: HostReceiveMode): string {
+function sidecarLongConnectionReadme(service: ServiceManifest, hostReceiveMode: HostReceiveMode, targetProfile: string): string {
+  if (targetProfile === "generic-http-api") {
+    return `# Sidecar Long-Connection Gateway Starter
+
+This directory is a starter contract for an external Feishu SDK host/gateway. It keeps \`${service.service.name}\` as a standalone generic HTTP service and keeps Feishu ingress in a sidecar process.
+
+## Host Receive Mode
+
+- Generated host receive mode: ${hostReceiveMode}
+- Feishu ingress: SDK long connection with \`FEISHU_CONNECTION_MODE=websocket\`
+- Event to subscribe: \`card.action.trigger\`
+- Business target: \`TARGET_BASE_URL=${service.service.base_url || "http://127.0.0.1:8000"}\`
+
+## Sidecar Responsibilities
+
+1. Load \`FEISHU_APP_ID\`, \`FEISHU_APP_SECRET\`, \`FEISHU_CONNECTION_MODE=websocket\`, \`TARGET_BASE_URL\`, and optional operator allowlist config.
+2. Start the Feishu SDK long-connection client and keep it supervised independently of \`${service.service.name}\`.
+3. Subscribe to \`card.action.trigger\` and normalize each event into the generated adapter context: \`action\`, \`formValue\`, \`operatorOpenId\`, \`openMessageId\`, and \`openChatId\`.
+4. Call \`handleGenericHttpCardAction()\` from \`adapter/handlers.js\` or \`adapter/handlers.ts\` with \`targetBaseUrl\` and return or patch the card produced by the adapter.
+5. Send the start card with \`buildStartCard()\`; do not recreate the generated card schema by hand.
+
+## Local Contract Check
+
+Run this from the generated package root after generation:
+
+\`\`\`powershell
+node sidecar-long-connection/local-contract-test.mjs
+\`\`\`
+
+The script starts an in-process mock \`${service.service.name}\` HTTP API and proves the sidecar contract path: \`card.action.trigger\`-shaped action context -> generic adapter -> discovered HTTP endpoint -> generic success card.
+`;
+  }
   return `# Sidecar Long-Connection Gateway Starter
 
 This directory is a starter contract for an external Feishu SDK host/gateway. It keeps \`${service.service.name}\` as a standalone business service and keeps Feishu ingress in a sidecar process.
@@ -189,7 +220,77 @@ The script starts an in-process mock \`${service.service.name}\` HTTP API and pr
 `;
 }
 
-function sidecarLocalContractTestMjs(service: ServiceManifest): string {
+function sidecarLocalContractTestMjs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract, targetProfile: string): string {
+  if (targetProfile === "generic-http-api") {
+    const specs = buildGenericActionSpecs(capabilities, interactions);
+    return `import http from "node:http";
+import { buildStartCard } from "../adapter/cards.js";
+import { handleGenericHttpCardAction } from "../adapter/handlers.js";
+
+const actionSpecs = ${JSON.stringify(specs, null, 2)};
+const actionSpec = actionSpecs.find((item) => item.method === "POST") || actionSpecs[0];
+if (!actionSpec) throw new Error("No generic HTTP action specs were generated.");
+
+const requests = [];
+const server = http.createServer((req, res) => {
+  const chunks = [];
+  req.on("data", (chunk) => chunks.push(chunk));
+  req.on("end", () => {
+    const body = Buffer.concat(chunks).toString("utf8");
+    requests.push({ method: req.method, url: req.url, body });
+    if (req.url && req.url.startsWith("/api/tickets")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, ticket_id: "contract-ticket", trace_id: "trace-generic-sidecar" }));
+      return;
+    }
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+  });
+});
+
+const listen = () => new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+const close = () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+
+try {
+  await listen();
+  const address = server.address();
+  const targetBaseUrl = "http://127.0.0.1:" + address.port;
+  const startCard = buildStartCard();
+  if (!JSON.stringify(startCard).includes(actionSpec.actionId)) throw new Error("start card did not include generic action");
+  const formValue = buildGenericFormValue(actionSpec);
+  const result = await handleGenericHttpCardAction({
+    action: actionSpec.actionId,
+    formValue,
+    value: {},
+    operatorOpenId: "sidecar-contract-operator",
+    openMessageId: "sidecar-contract-message",
+    openChatId: "sidecar-contract-chat",
+  }, {
+    targetBaseUrl,
+    timeoutMs: 5000,
+    allowedOperatorOpenIds: [],
+  });
+
+  const targetRequest = requests.find((item) => item.url && item.url.startsWith("/api/tickets"));
+  if (!targetRequest) throw new Error("generic adapter did not call the mock target endpoint");
+  if (!result.ok) throw new Error("generic adapter returned failure: " + JSON.stringify(result.card));
+  if (!JSON.stringify(result.card).includes("trace-generic-sidecar")) throw new Error("success card did not include target JSON result");
+  console.log("sidecar-long-connection generic contract: PASS for ${service.service.name}");
+} finally {
+  await close();
+}
+
+function buildGenericFormValue(spec) {
+  const formValue = {};
+  for (const input of spec.inputs || []) {
+    if (input.name === "ticket_id") formValue[input.name] = "contract-ticket";
+    else if (input.name === "body_json") formValue[input.name] = JSON.stringify({ title: "Sidecar contract ticket" });
+    else formValue[input.name] = "sidecar-contract-value";
+  }
+  return formValue;
+}
+`;
+  }
   return `import http from "node:http";
 import { buildStartCard } from "../adapter/cards.js";
 import { handleImageAgentCardAction } from "../adapter/handlers.js";
@@ -961,7 +1062,36 @@ audit.log
 `;
 }
 
-function buildLevel2ManualEvidenceTemplate(service: ServiceManifest): Record<string, unknown> {
+function buildLevel2ManualEvidenceTemplate(service: ServiceManifest, targetProfile: string): Record<string, unknown> {
+  if (targetProfile === "generic-http-api") {
+    return {
+      schema_version: "0.1",
+      purpose: "Copy this file to level2_manual_evidence.local.json and fill real Feishu Level 2 observations for this generic HTTP adapter. The local file is ignored by git and sanitized handoff.",
+      target_service: service.service.name,
+      target_profile: targetProfile,
+      instructions: [
+        "Do not paste APP_SECRET, VERIFICATION_TOKEN, ENCRYPT_KEY, DEBUG_ACCESS_TOKEN, target API tokens, or private response payloads here.",
+        "Use result_message_id when you can read the Feishu message id; use result_screenshot for a local screenshot path or shared evidence URL.",
+        "Use generic_action_id and target_request_summary to record which generated HTTP adapter action was clicked and which target endpoint was reached without exposing sensitive request data.",
+        "Run `node $env:LARK_DEPLOYER_CLI evidence . --manual-evidence level2_manual_evidence.local.json --update-record` from the generated package root to copy blank fields into level2_verification_record.md.",
+        "This helper never checks completion boxes; the human verifier still decides final sign-off.",
+      ],
+      values: {
+        date: "",
+        operator: "",
+        feishu_app_name: "",
+        test_chat: "",
+        start_message_id: "",
+        generic_action_id: "",
+        target_request_summary: "",
+        target_response_summary: "",
+        result_message_id: "",
+        result_screenshot: "",
+        trace_id: "",
+        notes: "",
+      },
+    };
+  }
   return {
     schema_version: "0.1",
     purpose: "Copy this file to level2_manual_evidence.local.json and fill real Feishu Level 2 observations. The local file is ignored by git and sanitized handoff.",
@@ -994,7 +1124,7 @@ function buildLevel2ManualEvidenceTemplate(service: ServiceManifest): Record<str
   };
 }
 
-function buildStartHere(service: ServiceManifest, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode): string {
+function buildStartHere(service: ServiceManifest, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode, targetProfile: string): string {
   const hostModeOption = integrationMode === "embedded-adapter" && hostReceiveMode !== "embedded-webhook" ? ` --host-mode ${hostReceiveMode}` : "";
   const usesWebhook = hostModeUsesWebhook(hostReceiveMode);
   const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
@@ -1033,9 +1163,29 @@ node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --
 node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate
 node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --gate
 \`\`\``;
+  const evidenceItems = targetProfile === "generic-http-api"
+    ? [
+      "- Start card message ID.",
+      "- Generic action ID clicked, for example `http.post.api.tickets.submit`.",
+      "- Target request summary: method, relative path, and redacted form/body field names.",
+      "- Target response summary or result card screenshot.",
+      "- Result card message ID or screenshot.",
+      "- Runtime or host trace ID.",
+      "- Final checked completion section in `level2_verification_record.md`.",
+    ].join("\n")
+    : [
+      "- Start card message ID.",
+      "- Result card message ID or screenshot.",
+      "- Generated image URL or Feishu image key.",
+      "- Batch ID.",
+      "- Batch status card message ID or screenshot.",
+      "- Batch download URL or screenshot.",
+      "- Runtime trace ID.",
+      "- Final checked completion section in `level2_verification_record.md`.",
+    ].join("\n");
   return `# Start Here
 
-This generated package connects \`${service.service.name}\` to Feishu/Lark card actions for MVP-1A verification. The core generated artifact is \`adapter/\`${integrationMode === "standalone-runtime" ? "; \`bot-runtime/\` is the optional standalone reference host." : ". This package was generated in embedded-adapter mode and does not include \`bot-runtime/\`."}
+  This generated package connects \`${service.service.name}\` to Feishu/Lark card actions for verification. The core generated artifact is \`adapter/\`${integrationMode === "standalone-runtime" ? "; \`bot-runtime/\` is the optional standalone reference host." : ". This package was generated in embedded-adapter mode and does not include \`bot-runtime/\`."}
 
 Host receive mode: ${hostReceiveMode}
 
@@ -1072,14 +1222,7 @@ ${afterContext}
 
 ## Evidence To Capture
 
-- Start card message ID.
-- Result card message ID or screenshot.
-- Generated image URL or Feishu image key.
-- Batch ID.
-- Batch status card message ID or screenshot.
-- Batch download URL or screenshot.
-- Runtime trace ID.
-- Final checked completion section in \`level2_verification_record.md\`.
+${evidenceItems}
 `;
 }
 
@@ -2223,7 +2366,7 @@ When a runtime check fails, \`verification_report.md\` includes a short response
 `;
 }
 
-function buildLevel2VerificationRecord(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode): string {
+function buildLevel2VerificationRecord(service: ServiceManifest, permissions: RequiredPermissions, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode, targetProfile: string, interactions: InteractionContract): string {
   const scopes = permissions.scopes.length
     ? permissions.scopes.map((scope) => `  - [ ] \`${scope.scope}\` - ${scope.reason}`).join("\n")
     : "  - [ ] No explicit scopes were generated.";
@@ -2285,6 +2428,82 @@ function buildLevel2VerificationRecord(service: ServiceManifest, permissions: Re
       `- [ ] \`verify . --mode embedded-adapter${hostModeOption} --host-runtime-url <host_runtime_url> --simulate\` records host health checks and either passes host-owned simulation or records the manual-check warning for the host debug surface.`,
       "- [ ] `verification_report.md` has no unexpected FAIL checks.",
     ].join("\n");
+    if (targetProfile === "generic-http-api") {
+      const genericActions = interactions.interactions.map((interaction) => `- [ ] \`${interaction.action_id}\` was rendered in the start card and routed to \`${interaction.capability_id}\`.`).join("\n") || "- [ ] At least one generated generic HTTP action is present in the start card.";
+      return `# Level 2 Verification Record
+
+Use this file to record the real Feishu/Lark verification for this generic HTTP embedded adapter package.
+
+## Environment
+
+${environmentRows.replace("<IMAGE_AGENT_BASE_URL>", "<TARGET_BASE_URL>")}
+
+## Required Feishu Setup
+
+${setupRows}
+
+## Required Scopes
+
+${scopes}
+
+## Required Callbacks
+
+${callbacks}
+
+## CLI Command Style
+
+- If this package still lives under the original Lark-deployer repository, run commands as \`node ..\\..\\dist\\index.js <command> .\`.
+- If this package was copied elsewhere, set \`$env:LARK_DEPLOYER_CLI="C:\\path\\to\\Lark-deployer\\dist\\index.js"\` and run commands as \`node $env:LARK_DEPLOYER_CLI <command> .\`.
+
+## Preflight Evidence
+
+${preflightRows}
+
+## Generic HTTP Action Evidence
+
+${genericActions}
+- [ ] Existing host sends the generated start card or equivalent entry card.
+- [ ] Test chat receives the start card.
+- [ ] Start card shows generated form inputs for required path parameters and request bodies, such as \`ticket_id\` or \`body_json\` when present.
+- [ ] Operator submits a valid generic HTTP form in Feishu.
+- [ ] Existing host receives the ${hybrid ? "card callback and `card.action.trigger` long-connection event" : longConnection ? "`card.action.trigger` long-connection event" : "card callback"}.
+- [ ] Existing host calls \`handleGenericHttpCardAction()\` and records a generic adapter audit event.
+- [ ] If \`ALLOWED_OPERATOR_OPEN_IDS\` is set, an unlisted operator gets a red failure card and the target service is not called.
+- [ ] Existing host calls the configured \`targetBaseUrl\` using the generated action's method and relative path.
+- [ ] Submitted path parameters and JSON body fields are reflected in the target request without exposing secrets in shared evidence.
+- [ ] Target service returns a structured response.
+- [ ] Test chat receives a generic success card that renders the target JSON result or a clear failure card for target errors.
+- [ ] Success or failure card includes enough trace/audit context to correlate the Feishu click with the target request.
+
+## Failure-Path Evidence
+
+At least one failure path should be observed before considering this package stable:
+
+- [ ] Invalid JSON in \`body_json\` returns a red failure card and does not call the target service.
+- [ ] Missing required path/form input returns a readable failure card or target-side validation failure.
+- [ ] Missing or invalid \`targetBaseUrl\` returns a readable failure card.
+- [ ] Slow or stuck target response returns a readable timeout failure card.
+- [ ] Unsupported card action returns a red failure card.
+
+## Artifacts
+
+- \`verification_report.md\` path:
+- Existing host audit/log evidence path:
+- Start card message ID:
+- Generic action ID:
+- Target request summary:
+- Target response summary:
+- Result card message ID or screenshot:
+- Trace ID:
+- Notes:
+
+## Completion Decision
+
+- [ ] Level 2 verified.
+- [ ] Remaining issues documented.
+- [ ] This generated package can be handed to another FDE using \`README.md\`, \`deployment_checklist.md\`, and this file.
+`;
+    }
     return `# Level 2 Verification Record
 
 Use this file to record the real Feishu/Lark verification for this embedded adapter package.

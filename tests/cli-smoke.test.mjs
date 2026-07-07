@@ -2284,8 +2284,11 @@ test("generic HTTP API target can analyze generate and verify", () => {
     fs.readFileSync(path.join(generated, "adapter", "service-client.ts"), "utf8"),
     fs.readFileSync(path.join(generated, "adapter", "cards.ts"), "utf8"),
   ].join("\n");
+  const genericStartHere = fs.readFileSync(path.join(generated, "START_HERE.md"), "utf8");
   const genericReadme = fs.readFileSync(path.join(generated, "README.md"), "utf8");
   const genericIntegrationGuide = fs.readFileSync(path.join(generated, "docs", "integration_guide.md"), "utf8");
+  const genericLevel2Record = fs.readFileSync(path.join(generated, "level2_verification_record.md"), "utf8");
+  const genericManualEvidence = JSON.parse(fs.readFileSync(path.join(generated, "level2_manual_evidence.template.json"), "utf8"));
   assert.match(generatedAdapter, /http\.post\.api\.tickets\.submit/);
   assert.match(generatedAdapter, /"name": "ticket_id"/);
   assert.match(generatedAdapter, /"name": "body_json"/);
@@ -2296,6 +2299,16 @@ test("generic HTTP API target can analyze generate and verify", () => {
     assert.match(generatedDoc, /targetBaseUrl/);
     assert.doesNotMatch(generatedDoc, /handleImageAgentCardAction|image_generate_form|image_batch_form|image\.generate|image\.iterate|image\.batch|MVP-1A image generation|image_url|session_id/);
   }
+  for (const generatedDoc of [genericStartHere, genericLevel2Record]) {
+    assert.match(generatedDoc, /Generic action ID|generic HTTP action|Generic HTTP Action Evidence/i);
+    assert.match(generatedDoc, /target request summary|target response summary/i);
+    assert.doesNotMatch(generatedDoc, /Generated image URL|Feishu image key|Batch ID|Batch download URL|image_url|session_id|image\.generate|image\.iterate|image\.batch/);
+  }
+  assert.equal(genericManualEvidence.target_profile, "generic-http-api");
+  assert.ok(Object.prototype.hasOwnProperty.call(genericManualEvidence.values, "generic_action_id"));
+  assert.ok(Object.prototype.hasOwnProperty.call(genericManualEvidence.values, "target_request_summary"));
+  assert.equal(Object.prototype.hasOwnProperty.call(genericManualEvidence.values, "generated_image_url"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(genericManualEvidence.values, "batch_id"), false);
   const genericContractOutput = runNode([
     "--input-type=module",
     "--eval",
@@ -2308,6 +2321,17 @@ test("generic HTTP API target can analyze generate and verify", () => {
   const doctorJson = JSON.parse(run(["doctor", generated, "--mode", "embedded-adapter", "--json"]));
   assert.equal(doctorJson.package_validation.status, "pass");
   assert.ok(doctorJson.package_validation.checks.some((item) => item.name === "adapter:action:http.post.api.tickets.submit" && item.status === "pass"));
+
+  const generatedLong = path.join(temp, "generated-long");
+  run(["generate", workspace, "--out", generatedLong, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection"]);
+  const genericSidecarReadme = fs.readFileSync(path.join(generatedLong, "sidecar-long-connection", "README.md"), "utf8");
+  const genericSidecarTest = fs.readFileSync(path.join(generatedLong, "sidecar-long-connection", "local-contract-test.mjs"), "utf8");
+  assert.match(genericSidecarReadme, /handleGenericHttpCardAction/);
+  assert.match(genericSidecarReadme, /TARGET_BASE_URL/);
+  assert.match(genericSidecarTest, /handleGenericHttpCardAction/);
+  assert.doesNotMatch(`${genericSidecarReadme}\n${genericSidecarTest}`, /handleImageAgentCardAction|IMAGE_AGENT_BASE_URL|imageAgentBaseUrl|image\.generate|image_url|session_id|\/api\/generate/);
+  const genericSidecarOutput = runNode([path.join(generatedLong, "sidecar-long-connection", "local-contract-test.mjs")], { cwd: generatedLong });
+  assert.match(genericSidecarOutput, /sidecar-long-connection generic contract: PASS/);
 });
 
 test("image-agent-web mapping profile is isolated from generator orchestration", () => {
