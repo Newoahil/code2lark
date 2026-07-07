@@ -2484,11 +2484,28 @@ export function buildStartCard(): Record<string, unknown> {
   return {
     config: { wide_screen_mode: true },
     header: { template: "blue", title: { tag: "plain_text", content: ${JSON.stringify(service.service.name + " actions")} } },
-    elements: actionSpecs.map((spec) => ({
-      tag: "div",
-      text: { tag: "lark_md", content: "**" + spec.label + "**\\n" + spec.method + " " + spec.path },
-      extra: { tag: "button", text: { tag: "plain_text", content: "Run" }, type: "primary", value: { action: spec.actionId } },
-    })),
+    elements: actionSpecs.map(buildActionForm),
+  };
+}
+
+function buildActionForm(spec: typeof actionSpecs[number]): Record<string, unknown> {
+  return {
+    tag: "form",
+    name: "generic_http_form_" + spec.actionId.replace(/[^a-zA-Z0-9_]+/g, "_"),
+    elements: [
+      { tag: "markdown", content: "**" + spec.label + "**\\n" + spec.method + " " + spec.path },
+      ...spec.inputs.map((input) => ({
+        tag: "input",
+        name: input.name,
+        required: input.required,
+        width: "fill",
+        input_type: input.multiline ? "multiline_text" : "text",
+        rows: input.multiline ? 3 : undefined,
+        label: { tag: "plain_text", content: input.label },
+        placeholder: { tag: "plain_text", content: input.placeholder },
+      })),
+      { tag: "button", text: { tag: "plain_text", content: "Run" }, type: "primary", form_action_type: "submit", name: "submit_" + spec.actionId.replace(/[^a-zA-Z0-9_]+/g, "_"), behaviors: [{ type: "callback", value: { action: spec.actionId } }] },
+    ],
   };
 }
 
@@ -2514,11 +2531,28 @@ export function buildStartCard() {
   return {
     config: { wide_screen_mode: true },
     header: { template: "blue", title: { tag: "plain_text", content: ${JSON.stringify(service.service.name + " actions")} } },
-    elements: actionSpecs.map((spec) => ({
-      tag: "div",
-      text: { tag: "lark_md", content: "**" + spec.label + "**\\n" + spec.method + " " + spec.path },
-      extra: { tag: "button", text: { tag: "plain_text", content: "Run" }, type: "primary", value: { action: spec.actionId } },
-    })),
+    elements: actionSpecs.map(buildActionForm),
+  };
+}
+
+function buildActionForm(spec) {
+  return {
+    tag: "form",
+    name: "generic_http_form_" + spec.actionId.replace(/[^a-zA-Z0-9_]+/g, "_"),
+    elements: [
+      { tag: "markdown", content: "**" + spec.label + "**\\n" + spec.method + " " + spec.path },
+      ...spec.inputs.map((input) => ({
+        tag: "input",
+        name: input.name,
+        required: input.required,
+        width: "fill",
+        input_type: input.multiline ? "multiline_text" : "text",
+        rows: input.multiline ? 3 : undefined,
+        label: { tag: "plain_text", content: input.label },
+        placeholder: { tag: "plain_text", content: input.placeholder },
+      })),
+      { tag: "button", text: { tag: "plain_text", content: "Run" }, type: "primary", form_action_type: "submit", name: "submit_" + spec.actionId.replace(/[^a-zA-Z0-9_]+/g, "_"), behaviors: [{ type: "callback", value: { action: spec.actionId } }] },
+    ],
   };
 }
 
@@ -2553,7 +2587,7 @@ export async function handleGenericHttpCardAction(ctx: GenericAdapterActionConte
     assertAllowedOperator(ctx.operatorOpenId, deps.allowedOperatorOpenIds);
     const spec = actionSpecs.find((item) => item.actionId === action);
     if (!spec) throw new Error("Unsupported adapter action: " + action);
-    const input = { ...readFormInput(ctx.value), ...readFormInput(ctx.formValue) };
+    const input = normalizeGenericInput({ ...readFormInput(ctx.value), ...readFormInput(ctx.formValue) });
     const result = await callGenericHttpEndpoint(deps.targetBaseUrl, spec.method, spec.path, input, deps.timeoutMs);
     auditEvents.push(auditEvent("generic_http_action_succeeded", { action, capability_id: spec.capabilityId }));
     return { ok: true, card: buildSuccessCard(spec.label, result), result, auditEvents };
@@ -2561,6 +2595,20 @@ export async function handleGenericHttpCardAction(ctx: GenericAdapterActionConte
     const message = error instanceof Error ? error.message : String(error);
     auditEvents.push(auditEvent("generic_http_action_failed", { action, message }));
     return { ok: false, card: buildFailureCard(message), auditEvents };
+  }
+}
+
+function normalizeGenericInput(input: Record<string, unknown>): Record<string, unknown> {
+  if (typeof input.body_json !== "string") return input;
+  const text = input.body_json.trim();
+  if (!text) return { ...input, body_json: {} };
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("body_json must be a JSON object.");
+    return { ...input, body_json: parsed };
+  } catch (error) {
+    if (error instanceof Error && error.message === "body_json must be a JSON object.") throw error;
+    throw new Error("body_json must be valid JSON.");
   }
 }
 `;
@@ -2582,7 +2630,7 @@ export async function handleGenericHttpCardAction(ctx, deps) {
     assertAllowedOperator(ctx?.operatorOpenId, deps?.allowedOperatorOpenIds);
     const spec = actionSpecs.find((item) => item.actionId === action);
     if (!spec) throw new Error("Unsupported adapter action: " + action);
-    const input = { ...readFormInput(ctx?.value), ...readFormInput(ctx?.formValue) };
+    const input = normalizeGenericInput({ ...readFormInput(ctx?.value), ...readFormInput(ctx?.formValue) });
     const result = await callGenericHttpEndpoint(String(deps?.targetBaseUrl || ""), spec.method, spec.path, input, Number(deps?.timeoutMs || 30000));
     auditEvents.push(auditEvent("generic_http_action_succeeded", { action, capability_id: spec.capabilityId }));
     return { ok: true, card: buildSuccessCard(spec.label, result), result, auditEvents };
@@ -2592,10 +2640,24 @@ export async function handleGenericHttpCardAction(ctx, deps) {
     return { ok: false, card: buildFailureCard(message), auditEvents };
   }
 }
+
+function normalizeGenericInput(input) {
+  if (typeof input.body_json !== "string") return input;
+  const text = input.body_json.trim();
+  if (!text) return { ...input, body_json: {} };
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("body_json must be a JSON object.");
+    return { ...input, body_json: parsed };
+  } catch (error) {
+    if (error instanceof Error && error.message === "body_json must be a JSON object.") throw error;
+    throw new Error("body_json must be valid JSON.");
+  }
+}
 `;
 }
 
-function buildGenericActionSpecs(capabilities: CapabilityMap, interactions: InteractionContract): Array<{ actionId: string; capabilityId: string; label: string; method: string; path: string }> {
+function buildGenericActionSpecs(capabilities: CapabilityMap, interactions: InteractionContract): Array<{ actionId: string; capabilityId: string; label: string; method: string; path: string; inputs: Array<{ name: string; label: string; required: boolean; multiline: boolean; placeholder: string }> }> {
   return interactions.interactions.map((interaction) => {
     const capability = capabilities.capabilities.find((item) => item.id === interaction.capability_id);
     return {
@@ -2604,6 +2666,23 @@ function buildGenericActionSpecs(capabilities: CapabilityMap, interactions: Inte
       label: capability?.name || interaction.capability_id,
       method: capability?.source.method || "POST",
       path: capability?.source.path || "/",
+      inputs: genericInputsForCapability(capability),
+    };
+  });
+}
+
+function genericInputsForCapability(capability: CapabilityMap["capabilities"][number] | undefined): Array<{ name: string; label: string; required: boolean; multiline: boolean; placeholder: string }> {
+  const schema = capability?.input_schema;
+  const properties = schema && typeof schema.properties === "object" && !Array.isArray(schema.properties) ? schema.properties as Record<string, unknown> : {};
+  const required = new Set(Array.isArray(schema?.required) ? schema.required.filter((item): item is string => typeof item === "string") : []);
+  return Object.entries(properties).map(([name, value]) => {
+    const property = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    return {
+      name,
+      label: humanizeKey(name),
+      required: required.has(name),
+      multiline: name === "body_json" || property.type === "object" || property.type === "array",
+      placeholder: name === "body_json" ? "{\"key\":\"value\"}" : String(property.description || name),
     };
   });
 }

@@ -2281,7 +2281,15 @@ test("generic HTTP API target can analyze generate and verify", () => {
     fs.readFileSync(path.join(generated, "adapter", "cards.ts"), "utf8"),
   ].join("\n");
   assert.match(generatedAdapter, /http\.post\.api\.tickets\.submit/);
+  assert.match(generatedAdapter, /"name": "ticket_id"/);
+  assert.match(generatedAdapter, /"name": "body_json"/);
   assert.doesNotMatch(generatedAdapter, /image\.generate|image\.iterate|image\.batch|image_url|session_id/);
+  const genericContractOutput = runNode([
+    "--input-type=module",
+    "--eval",
+    genericAdapterContractScript(generated),
+  ], { cwd: generated });
+  assert.match(genericContractOutput, /generic adapter contract: PASS/);
 
   const verifyOutput = run(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
   assert.match(verifyOutput, /adapter:action:http\.post\.api\.tickets\.submit/);
@@ -2296,6 +2304,51 @@ function run(args) {
     encoding: "utf8",
     stdio: "pipe",
   });
+}
+
+function genericAdapterContractScript(generated) {
+  const handlersUrl = path.join(generated, "adapter", "handlers.js").replace(/\\/g, "/");
+  const cardsUrl = path.join(generated, "adapter", "cards.js").replace(/\\/g, "/");
+  return `
+    import http from "node:http";
+    import { pathToFileURL } from "node:url";
+    const handlers = await import(pathToFileURL(${JSON.stringify(handlersUrl)}).href);
+    const cards = await import(pathToFileURL(${JSON.stringify(cardsUrl)}).href);
+    const requests = [];
+    const server = http.createServer((req, res) => {
+      const chunks = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        requests.push({ method: req.method, url: req.url, body });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, method: req.method, url: req.url, body: body ? JSON.parse(body) : null }));
+      });
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      const targetBaseUrl = "http://127.0.0.1:" + address.port;
+      const startCardText = JSON.stringify(cards.buildStartCard());
+      if (!startCardText.includes('"name":"ticket_id"')) throw new Error("generic start card missing ticket_id input");
+      if (!startCardText.includes('"name":"body_json"')) throw new Error("generic start card missing body_json input");
+      const getResult = await handlers.handleGenericHttpCardAction({
+        action: "http.get.api.tickets.ticket_id.submit",
+        formValue: { ticket_id: "TICKET-42" },
+      }, { targetBaseUrl });
+      if (!getResult.ok) throw new Error("GET action failed: " + JSON.stringify(getResult));
+      const postResult = await handlers.handleGenericHttpCardAction({
+        action: "http.post.api.tickets.submit",
+        formValue: { body_json: '{"title":"Printer broken"}' },
+      }, { targetBaseUrl });
+      if (!postResult.ok) throw new Error("POST action failed: " + JSON.stringify(postResult));
+      if (!requests.some((item) => item.method === "GET" && item.url === "/api/tickets/TICKET-42")) throw new Error("GET path was not rendered from form input: " + JSON.stringify(requests));
+      if (!requests.some((item) => item.method === "POST" && item.url === "/api/tickets" && item.body.includes("Printer broken"))) throw new Error("POST JSON body was not sent: " + JSON.stringify(requests));
+      console.log("generic adapter contract: PASS");
+    } finally {
+      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  `;
 }
 
 function runNode(args, options = {}) {
