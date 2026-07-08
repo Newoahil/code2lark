@@ -11,6 +11,8 @@ Related chooser: `docs/host-delivery-mode-selection.md`.
 - `generated/<target>-lark/manifest/`
 - selected docs as needed
 
+Copy source, spec, template, and documentation files only. Do not copy `generated/<target>-lark/feishu-host/.env`, `feishu_context.local.json`, `feishu_context.reply.local.json`, `level2_manual_evidence.local.json`, filled evidence files, or any other local secret-bearing file into the target repository.
+
 ## Recommended target layout
 
 ```text
@@ -26,6 +28,8 @@ Related chooser: `docs/host-delivery-mode-selection.md`.
 ```
 
 Keep the copied module isolated from target business code. The target project owns process supervision and deployment after embedding.
+
+Before filling target-local credentials, add `feishu_host/.env` or the equivalent embedded host path to the target repository's `.gitignore`. Keep `FEISHU_APP_SECRET` and other secrets in the target host secret store or ignored local env file.
 
 ## What stays outside the target project
 

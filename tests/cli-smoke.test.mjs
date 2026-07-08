@@ -19,6 +19,7 @@ test("top-level docs define Code2Lark delivery modes", () => {
   const charter = fs.readFileSync(path.join(root, "docs", "development-charter.md"), "utf8");
   const status = fs.readFileSync(path.join(root, "docs", "project-status.md"), "utf8");
   const mvp = fs.readFileSync(path.join(root, "docs", "mvp-1a-image-agent-web.md"), "utf8");
+  const modeBGuide = fs.readFileSync(path.join(root, "docs", "mode-b-embedding-guide.md"), "utf8");
 
   assert.match(readme, /Mode A is the external host, sidecar, or gateway path\./);
   assert.match(readme, /Mode B is the target-project embedded host-module path\./);
@@ -29,6 +30,8 @@ test("top-level docs define Code2Lark delivery modes", () => {
   assert.match(status, /Mode A/i);
   assert.match(status, /Mode B/i);
   assert.match(mvp, /verified sample/i);
+  assert.match(modeBGuide, /Do not copy `generated\/<target>-lark\/feishu-host\/\.env`/);
+  assert.match(modeBGuide, /add `feishu_host\/\.env`/);
 });
 
 test("CLI can analyze, plan, generate, and verify an image-agent-web-like target", () => {
