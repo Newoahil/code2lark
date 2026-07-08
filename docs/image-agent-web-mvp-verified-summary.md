@@ -4,6 +4,12 @@ Recorded: 2026-07-07
 
 This document freezes the verified `image-agent-web` `self-hosted-runtime` path as the regression anchor for the current generalization phase. The goal of the next work is not to re-prove Feishu connectivity; it is to preserve this host layer while extracting the target-specific business mapping into reusable manifest-driven mechanisms.
 
+Current classification:
+
+- Verified sample path: Mode A
+- Host implementation used: self-hosted-runtime Python `feishu-host/`
+- Why not Mode B yet: the host module has not been re-embedded into a fresh target-project copy and replayed from zero.
+
 ## Verified Baseline
 
 The generated Python `feishu-host/` self-hosted runtime has been validated in a real Feishu environment for these host-layer behaviors:
