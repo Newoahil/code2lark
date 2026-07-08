@@ -238,9 +238,11 @@ generated/<target>-lark/
 
 ### 8.0 模式 A / 模式 B
 
-**模式 A：外置宿主 / sidecar / gateway**。目标项目不改核心业务，飞书宿主在目标外部运行，通过 HTTP、CLI 或 SDK 调目标能力。当前已验证的 `image-agent-web` self-hosted long-connection 样板属于模式 A：`feishu-host/` 作为外置 Python 宿主运行，订阅 `card.action.trigger`，再通过 HTTP 调 `image-agent-web`。
+**Mode A / 模式 A：external host / sidecar / gateway**。目标项目不改核心业务，飞书宿主在目标外部运行，通过 HTTP、CLI 或 SDK 调目标能力。当前已验证的 `image-agent-web` self-hosted long-connection 样板属于 Mode A：`feishu-host/` 作为外置 Python 宿主运行，订阅 `card.action.trigger`，再通过 HTTP 调 `image-agent-web`。
 
-**模式 B：目标项目内增量宿主模块**。仍然不深改业务代码，只把生成包中的宿主模块迁入目标项目内部，例如把 `generated/<target>-lark/feishu-host/` 复制到目标仓库的 `integrations/lark/feishu-host/` 或同等目录。迁入后 `.env`、启动脚本、本地 contract test、`app.py --selfcheck` 和 package verification 仍按生成包契约执行。
+**Mode B / 模式 B：embedded host module in the target project**。仍然不深改业务代码，只把生成包中的宿主模块迁入目标项目内部，例如把 `generated/<target>-lark/feishu-host/` 复制到目标仓库的 `integrations/lark/feishu-host/` 或同等目录。迁入后 `.env`、启动脚本、本地 contract test、`app.py --selfcheck` 和 package verification 仍按生成包契约执行。
+
+`self-hosted-runtime` is the generated host module：当前可作为已验证样板的外置宿主运行，后续也可作为 Mode B 的可迁入宿主模块基础。
 
 `standalone-runtime` 是参考/兜底宿主，不是主要产品形态。
 

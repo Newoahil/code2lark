@@ -14,6 +14,23 @@ assert.match(genericLevel2Template, /Batch ID:/);
 assert.match(genericLevel2Template, /Batch status card message ID or screenshot:/);
 assert.match(genericLevel2Template, /Batch download URL or screenshot:/);
 
+test("top-level docs define Code2Lark delivery modes", () => {
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  const charter = fs.readFileSync(path.join(root, "docs", "development-charter.md"), "utf8");
+  const status = fs.readFileSync(path.join(root, "docs", "project-status.md"), "utf8");
+  const mvp = fs.readFileSync(path.join(root, "docs", "mvp-1a-image-agent-web.md"), "utf8");
+
+  assert.match(readme, /Mode A is the external host, sidecar, or gateway path\./);
+  assert.match(readme, /Mode B is the target-project embedded host-module path\./);
+  assert.match(readme, /self-hosted-runtime is the generated host module/i);
+  assert.match(charter, /Mode A.*external host/i);
+  assert.match(charter, /Mode B.*embedded host module/i);
+  assert.match(charter, /self-hosted-runtime.*host module/i);
+  assert.match(status, /Mode A/i);
+  assert.match(status, /Mode B/i);
+  assert.match(mvp, /verified sample/i);
+});
+
 test("CLI can analyze, plan, generate, and verify an image-agent-web-like target", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-smoke-"));
   const target = path.join(temp, "image-agent-web");

@@ -59,6 +59,8 @@ Mode A is the external host, sidecar, or gateway path. The target service keeps 
 
 Mode B is the target-project embedded host-module path. The generated package remains the source of truth, but selected host files such as `feishu-host/` can be copied into the target repository as an incremental module. Mode B is not a rewrite of target business code; it is a minimal host-module migration with `.env`, startup, and verification contracts preserved.
 
+self-hosted-runtime is the generated host module. Today it can run externally as the verified sample path; later it can also be embedded into the target project under Mode B.
+
 `standalone-runtime` remains a reference or fallback host for teams without an existing Feishu SDK service. It is not the primary product shape.
 
 For an existing Feishu SDK service, start with `generated\image-agent-web-lark\adapter\` and `generated\image-agent-web-lark\docs\integration_guide.md`. Package validation for that embedded path is:

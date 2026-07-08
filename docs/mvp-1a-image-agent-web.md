@@ -6,6 +6,8 @@ Date: 2026-07-01
 
 Build a reproducible first MVP where Lark-deployer generates a Feishu/Lark bot integration package for `image-agent-web`.
 
+This document describes the verified sample, not the whole Code2Lark product definition. The verified sample path is Mode A: an external host / sidecar path that keeps `image-agent-web` unchanged while the generated `feishu-host/` calls it over HTTP.
+
 The MVP is considered functionally proven when a real Feishu development app can send a start card, receive card clicks, call `image-agent-web /api/generate`, return a result card with the generated image or fallback image URL, accept result-card feedback and call `image-agent-web /api/iterate`, then submit a batch job through `/api/batch`, refresh `/api/batch/{batch_id}/status`, and show a `/api/batch/{batch_id}/download` link when completed images exist.
 
 ## Non-goals
