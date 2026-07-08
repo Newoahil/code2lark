@@ -1,6 +1,6 @@
-# Lark-deployer
+# Code2Lark
 
-Lark-deployer is a build-time generator for turning an existing service interaction flow into a Lark/Feishu adapter package.
+Code2Lark (current CLI/package name: `lark-deployer`) is a build-time generator for turning an existing service interaction flow into a Lark/Feishu adapter package.
 
 It does not own the target service lifecycle. It analyzes a target service, generates reviewable contracts, produces an embeddable `adapter/` as the core artifact, keeps `bot-runtime/` as an optional standalone reference host, can generate a Python `feishu-host/` self-hosted long-connection runtime, and provides verification checks for FDE-style handoff.
 
