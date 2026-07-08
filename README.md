@@ -2,7 +2,7 @@
 
 Code2Lark (current CLI/package name: `lark-deployer`) is a build-time generator for turning an existing service interaction flow into a Lark/Feishu adapter package.
 
-It does not own the target service lifecycle. It analyzes a target service, generates reviewable contracts, produces an embeddable `adapter/` as the core artifact, keeps `bot-runtime/` as an optional standalone reference host, can generate a Python `feishu-host/` self-hosted long-connection runtime, and provides verification checks for FDE-style handoff.
+It does not own the target service lifecycle. It analyzes a target service, generates reviewable contracts, produces an embeddable `adapter/` as the core artifact, keeps `bot-runtime/` as an optional standalone reference host, can generate a Python `feishu-host/` self-hosted long-connection runtime, and provides verification checks for operator handoff.
 
 ## MVP Scope
 
@@ -128,7 +128,7 @@ After the operator captures real Feishu evidence, pass the manual fields through
 node dist/index.js evidence generated\image-agent-web-lark --runtime-url http://127.0.0.1:3978 --update-record --start-message-id <message-id> --result-message-id <message-id> --result-screenshot <path-or-url> --generated-image-url <url> --batch-id <batch-id> --batch-status-message-id <message-id> --batch-status-screenshot <path-or-url> --batch-download-url <url> --batch-download-screenshot <path-or-url> --trace-id <trace-id> --operator <name> --test-chat <chat-name>
 ```
 
-For FDE handoff, initialize `level2_manual_evidence.local.json`, fill the observed Feishu fields there, then import the local file:
+After the operator captures real Feishu evidence, pass the manual fields through `evidence --update-record` to fill blank record lines without checking completion boxes:
 
 ```powershell
 node dist/index.js init-local generated\image-agent-web-lark --manual-evidence
@@ -172,7 +172,7 @@ Use the context command to create a handoff template:
 node dist/index.js context out\image-agent-web
 ```
 
-It writes `feishu_context.template.json`, `feishu_context.template.md`, `feishu_context.request.md`, and `feishu_context.reply.template.json/md`. The request file is the shortest owner-facing note: send it to the Feishu app owner or FDE to confirm who can provide the app context, grant scopes, configure either the webhook callback or long-connection `card.action.trigger` subscription, add the bot to a test chat, and expose the required host path for the selected host mode. The reply template is a safe non-secret intake form for the owner's answer; run `init-local --reply` or copy it to `feishu_context.reply.local.json`/`.md` before adding internal contact, handoff, or blocked-by notes.
+It writes `feishu_context.template.json`, `feishu_context.template.md`, `feishu_context.request.md`, and `feishu_context.reply.template.json/md`. The request file is the shortest owner-facing note: send it to the Feishu app owner or operator who can provide the app context, grant scopes, configure either the webhook callback or long-connection `card.action.trigger` subscription, add the bot to a test chat, and expose the required host path for the selected host mode. The reply template is a safe non-secret intake form for the owner's answer; run `init-local --reply` or copy it to `feishu_context.reply.local.json`/`.md` before adding internal contact, handoff, or blocked-by notes.
 
 The JSON template also contains `runtime_config`. Use it for handoff-time settings such as `CARD_ACTION_MODE`, `UPLOAD_IMAGE_TO_LARK`, `HOST`, `PORT`, `FEISHU_OPENAPI_BASE_URL`, `DEBUG_ACCESS_TOKEN`, `ALLOWED_OPERATOR_OPEN_IDS`, and `ALLOW_DEBUG_WITHOUT_FEISHU`; `configure` writes those values into `bot-runtime/.env`.
 When `PUBLIC_CALLBACK_BASE_URL` is set, debug endpoints are enabled, and no `DEBUG_ACCESS_TOKEN` is provided or preserved, `configure` generates a random token and writes it to `.env` without printing the value.
@@ -192,13 +192,13 @@ node dist/index.js status generated\image-agent-web-lark
 
 It reads the same inputs as `readiness`, but does not write files. When external context is missing, it prints the package-local `feishu_context.request.md` path so the operator knows which owner-facing request to send first. It also promotes target-service preflight failures, such as `GET /api/meta` not passing, into explicit blockers because Lark-deployer does not start the target service. `--json` reports the ignored `feishu_context.reply.local.json` intake state by counts and field names only, plus whether `level2_manual_evidence.template.json` exists, whether ignored `level2_manual_evidence.local.json` has filled fields, which field names are still pending import into `level2_verification_record.md`, and the import command, without printing the actual reply or evidence values. Use `--json` when another script needs the state.
 
-Use `readiness` when handing the generated package to another operator or FDE:
+Use `readiness` when handing the generated package to another operator:
 
 ```powershell
 node dist/index.js readiness generated\image-agent-web-lark
 ```
 
-It writes `handoff_status.md` without probing the network or overwriting `verification_report.md`. The status file reports which external values are present or missing, points to `feishu_context.request.md`, summarizes the non-secret owner reply intake, summarizes the manual evidence helper files, reports invalid local JSON parse errors, separates imported and pending manual evidence field names, summarizes required Feishu scopes/callbacks, includes the latest verification counts, and suggests the next command. If the latest verification says `target:/api/meta` is not passing, next actions explicitly tell the FDE to start or expose the externally managed target service, include generated start hints when available, and include the verify command to rerun. Secret, owner reply, and evidence values are never printed, only their presence, counts, field names, and source.
+It writes `handoff_status.md` without probing the network or overwriting `verification_report.md`. The status file reports which external values are present or missing, points to `feishu_context.request.md`, summarizes the non-secret owner reply intake, summarizes the manual evidence helper files, reports invalid local JSON parse errors, separates imported and pending manual evidence field names, summarizes required Feishu scopes/callbacks, includes the latest verification counts, and suggests the next command. If the latest verification says `target:/api/meta` is not passing, next actions explicitly tell the operator to start or expose the externally managed target service, include generated start hints when available, and include the verify command to rerun. Secret, owner reply, and evidence values are never printed, only their presence, counts, field names, and source.
 
 Use `doctor` when you want a human-readable MVP gate explanation:
 
@@ -209,7 +209,7 @@ node dist/index.js doctor generated\image-agent-web-lark --gate
 node dist/index.js doctor generated\image-agent-web-lark --probe-target --gate
 ```
 
-It reads the same readiness evidence, prints why the package is not yet `handoff_ready`, and exits non-zero with `--gate` until real Level 2 verification, manual Feishu evidence, remaining-issue confirmation, and final FDE handoff approval are all present. By default, doctor only reads `verification_report.json`; add `--probe-target` to perform a live `GET <target_base_url>/api/meta` inside the doctor report without rewriting `verification_report.json`. With `--out`, it writes `doctor_report.json` plus a matching `doctor_report.md`; both are safe to include in a sanitized handoff because secret and local evidence values are not printed.
+It reads the same readiness evidence, prints why the package is not yet `handoff_ready`, and exits non-zero with `--gate` until real Level 2 verification, manual Feishu evidence, remaining-issue confirmation, and final handoff approval are all present. By default, doctor only reads `verification_report.json`; add `--probe-target` to perform a live `GET <target_base_url>/api/meta` inside the doctor report without rewriting `verification_report.json`. With `--out`, it writes `doctor_report.json` plus a matching `doctor_report.md`; both are safe to include in a sanitized handoff because secret and local evidence values are not printed.
 
 Package-root commands use the relative CLI path generated for the current repository layout. If a generated package is copied elsewhere, set `LARK_DEPLOYER_CLI` to the absolute path of the built CLI, then run commands such as `node $env:LARK_DEPLOYER_CLI readiness .` from the moved package root.
 
