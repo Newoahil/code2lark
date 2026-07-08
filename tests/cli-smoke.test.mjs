@@ -2311,6 +2311,9 @@ test("generic HTTP API target can analyze generate and verify", () => {
   assert.match(generatedAdapter, /"name": "body_json"/);
   assert.doesNotMatch(generatedAdapter, /image\.generate|image\.iterate|image\.batch|image_url|session_id/);
   for (const generatedDoc of [genericReadme, genericIntegrationGuide]) {
+    assert.match(generatedDoc, /Mode A is the external host, sidecar, or gateway path\./);
+    assert.match(generatedDoc, /Mode B is the target-project embedded host-module path\./);
+    assert.match(generatedDoc, /self-hosted-runtime produces the host module used by the verified sample and by future Mode B embedding\./);
     assert.match(generatedDoc, /handleGenericHttpCardAction/);
     assert.match(generatedDoc, /http\.post\.api\.tickets\.submit/);
     assert.match(generatedDoc, /targetBaseUrl/);
