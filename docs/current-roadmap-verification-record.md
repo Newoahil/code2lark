@@ -39,6 +39,15 @@ Results:
 - `calendar-stock-updater`: pass, `generic_http_api`, `GET /api/state` healthcheck available, strict embedded-adapter verify pass, doctor package validation pass.
 - `image-agent-web` self-hosted-runtime regression: pass, including generated Python compile, `requests`, `local_contract_test.py`, `lark_oapi`, and `app.py --selfcheck`.
 
+## Per-Commit Gates
+
+The required build, test, and `image-agent-web` self-hosted strict verify gate was also run in detached worktrees for each final roadmap commit:
+
+- `f545d11 Validate calendar-stock-updater generic workflow`: pass.
+- `cffdd24 Document mode A and mode B delivery`: pass.
+- `69d427c Record calendar-stock-updater validation status`: pass.
+- `606d637 Record current roadmap verification`: pass.
+
 ## Worktree Cleanliness
 
 The roadmap/task-book documents are committed so they are part of the reviewable project record. Local `.claude/` state is ignored as tool-local workspace metadata.
