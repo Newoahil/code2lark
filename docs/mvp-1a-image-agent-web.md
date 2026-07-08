@@ -199,7 +199,7 @@ The generated start card also creates one input per discovered template field, p
 - `status --json` and `readiness` report whether `level2_manual_evidence.template.json` exists, whether ignored `level2_manual_evidence.local.json` parses, and which filled field names are imported or pending import, without printing the local evidence values.
 - Generated bot runtime supports `CARD_ACTION_MODE=async`, returning a running card immediately and patching the original message with the final card through Feishu `message.patch`.
 - Generated `self-hosted-runtime` supports a Python `feishu-host/` package with `.env.example`, `lark-oapi`/`requests` requirements, manifest-derived specs, local contract test, and `app.py --selfcheck`; strict verify can execute the Python proof when dependencies are installed.
-- Real Feishu verification is still pending external app credentials, callback URL setup, and a running target service.
+- Real Feishu Level 2 evidence remains operator-owned: Mode A is locally verified through the generated `self-hosted-runtime` sample, while a live Feishu app, granted scopes, long-connection or callback setup, reachable target service, and recorded card-click evidence are still required for production handoff.
 
 ## Completion split
 

@@ -29,9 +29,13 @@ test("top-level docs define Code2Lark delivery modes", () => {
   assert.match(charter, /Mode B.*embedded host module/i);
   assert.match(charter, /self-hosted-runtime.*host module/i);
   assert.match(charter, /--mode: .*embedded-adapter.*standalone-runtime.*self-hosted-runtime/);
+  assert.match(charter, /bot-runtime\/\s+# 可选，参考宿主，不是核心业务层/);
+  assert.doesNotMatch(charter, /standalone-runtime\/\s+# 可选，参考宿主，不是核心业务层/);
   assert.match(status, /Mode A/i);
   assert.match(status, /Mode B/i);
   assert.match(mvp, /verified sample/i);
+  assert.match(mvp, /Real Feishu Level 2 evidence remains operator-owned/);
+  assert.doesNotMatch(mvp, /Real Feishu verification is still pending/);
   assert.match(fdeHandoff, /generated\/<target>-lark\/` is the source-of-truth handoff package/);
   assert.match(fdeHandoff, /Mode A is the external host, sidecar, or gateway path\./);
   assert.match(fdeHandoff, /Mode B is the target-project embedded host-module path\./);

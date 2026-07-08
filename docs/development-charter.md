@@ -120,7 +120,7 @@ generated/<target>-lark/
     types.ts
     audit-events.ts
 
-  standalone-runtime/          # 可选，参考宿主，不是核心业务层
+  bot-runtime/                 # 可选，参考宿主，不是核心业务层
     package.json
     src/index.ts
     .env.example
@@ -138,7 +138,7 @@ generated/<target>-lark/
 - `manifest/` 是机器可读契约；
 - `adapter/` 是核心代码产物；
 - `docs/` 是人类审查、集成、验收、交接材料；
-- `standalone-runtime/` 只是可选参考包装器。
+- `bot-runtime/` 只是可选参考包装器，对应 `standalone-runtime` 产物模式。
 
 ## 5. Adapter 的职责
 
