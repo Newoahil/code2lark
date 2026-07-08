@@ -236,7 +236,7 @@ function printEmbeddedAdapterDoctorReport(report: EmbeddedAdapterDoctorReport, g
   console.log(`Gate passed: ${report.gate_passed ? "yes" : "no"}`);
   console.log("Integration mode: embedded-adapter");
   console.log(`Host receive mode: ${report.host_receive_mode}`);
-  console.log("Delivery mode: Mode A external host / sidecar path, or Mode B embedded host-module path after target-repo embedding.");
+  console.log("Delivery mode: Mode A external host / sidecar path for a separate host; Mode B only after embedding a host module into the target project.");
   if (report.blockers.length) {
     console.log("Blockers:");
     for (const blocker of report.blockers) console.log(`- ${blocker}`);
@@ -258,7 +258,7 @@ function buildEmbeddedAdapterDoctorMarkdown(report: EmbeddedAdapterDoctorReport)
 - Package: ${report.package_path}
 - Integration mode: embedded-adapter
 - Host receive mode: ${report.host_receive_mode}
-- Delivery mode: Mode A external host / sidecar path, or Mode B embedded host-module path after target-repo embedding.
+- Delivery mode: Mode A external host / sidecar path for a separate host; Mode B only after embedding a host module into the target project.
 - Package validation: ${report.package_validation.status}
 - Gate passed: ${report.gate_passed ? "yes" : "no"}
 
@@ -669,7 +669,7 @@ function doctorDeliveryMode(integrationMode: string): string {
     return "Mode A external host / sidecar path today; self-hosted-runtime host module is the Mode B embedded host-module foundation.";
   }
   if (integrationMode === "embedded-adapter") {
-    return "Mode B embedded adapter path for an existing host; Mode A external host / sidecar path when mounted in a separate gateway.";
+    return "embedded-adapter package for an existing host; use Mode A when that host is external, and use Mode B only after embedding a host module into the target project.";
   }
   return "standalone-runtime reference host; not the primary product shape.";
 }

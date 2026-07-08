@@ -15,21 +15,27 @@ Copy source, spec, template, and documentation files only. Do not copy `generate
 
 ## Recommended target layout
 
+Prefer a namespace that makes the host-module boundary explicit:
+
 ```text
 <target-project>/
-  feishu_host/
-    app.py
-    cards.py
-    handlers.py
-    service_client.py
-    validation.py
-    config.py
-    spec/
+  integrations/
+    lark/
+      feishu-host/
+        app.py
+        cards.py
+        handlers.py
+        service_client.py
+        validation.py
+        config.py
+        spec/
 ```
+
+If the target project already uses a flat integration directory, `feishu_host/` is also acceptable; keep the module isolated and document the chosen path in the target README.
 
 Keep the copied module isolated from target business code. The target project owns process supervision and deployment after embedding.
 
-Before filling target-local credentials, add `feishu_host/.env` or the equivalent embedded host path to the target repository's `.gitignore`. Keep `FEISHU_APP_SECRET` and other secrets in the target host secret store or ignored local env file.
+Before filling target-local credentials, add `feishu_host/.env`, `integrations/lark/feishu-host/.env`, or the equivalent embedded host path to the target repository's `.gitignore`. Keep `FEISHU_APP_SECRET` and other secrets in the target host secret store or ignored local env file.
 
 ## What stays outside the target project
 

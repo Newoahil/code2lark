@@ -625,6 +625,8 @@ This file is for collecting external context before real Feishu Level 2 verifica
 - Base URL: ${template.target_service.base_url || "<not provided>"}
 - Managed by Lark-deployer: false
 
+${contextDeliveryModeMarkdown()}
+
 ## Questions
 
 ${template.readiness_questions.map((item) => `- [ ] ${item.question}`).join("\n")}
@@ -737,6 +739,8 @@ Use this file as the owner-facing request before real Level 2 verification.
 - Generated package hint: \`${template.handoff_request.generated_package_hint}\`
 - Lark-deployer owns build, verification, and handoff artifacts only; the target service stays externally managed.
 
+${contextDeliveryModeMarkdown()}
+
 ## Request
 
 Please confirm whether you can provide or configure the values, permissions, callback, and test chat below. Do not paste real secrets into normal chat or shared Markdown; use a secure secret channel for secret values.
@@ -780,6 +784,14 @@ blocked_by: <missing owner, permission, network, or policy constraint>
 
 ${selfHosted ? "After the non-secret answers are confirmed, fill `feishu-host/.env`, run `python feishu-host/local_contract_test.py`, run `python feishu-host/app.py --selfcheck`, then run `verify --mode self-hosted-runtime --strict`." : embedded ? `After the non-secret answers are confirmed, mount the adapter in the existing Feishu SDK host, then run \`verify --mode embedded-adapter${longConnection ? " --host-mode embedded-long-connection" : ""} --host-runtime-url <host_runtime_url> --simulate\` and record real Feishu evidence in \`level2_verification_record.md\`.` : "After the non-secret answers are confirmed, fill `feishu_context.local.json` or `bot-runtime/.env` locally and run `configure`, `verify --level2`, and `evidence --update-record`."}
 `;
+}
+
+function contextDeliveryModeMarkdown(): string {
+  return `## Delivery Mode Model
+
+Mode A is the external host, sidecar, or gateway path.
+Mode B is the target-project embedded host-module path.
+self-hosted-runtime is the generated host module: it runs externally today and can be embedded into the target project under Mode B later.`;
 }
 
 function contextTemplateUsesEmbeddedAdapter(template: ContextTemplate): boolean {

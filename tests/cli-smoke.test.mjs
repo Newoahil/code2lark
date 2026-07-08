@@ -207,8 +207,13 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "moved_package_root" && set.commands.some((command) => command.includes("configure . --strict"))));
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "moved_package_root" && set.commands.some((command) => command.includes("configure . --strict --dry-run"))));
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "moved_package_root" && set.commands.some((command) => command.includes("LARK_DEPLOYER_CLI"))));
+  const initialContextMarkdown = fs.readFileSync(path.join(workspace, "feishu_context.template.md"), "utf8");
   const contextRequest = fs.readFileSync(path.join(workspace, "feishu_context.request.md"), "utf8");
   assert.match(contextRequest, /# Feishu Context Request/);
+  assert.match(initialContextMarkdown, /Mode A is the external host, sidecar, or gateway path\./);
+  assert.match(initialContextMarkdown, /Mode B is the target-project embedded host-module path\./);
+  assert.match(contextRequest, /Mode A is the external host, sidecar, or gateway path\./);
+  assert.match(contextRequest, /Mode B is the target-project embedded host-module path\./);
   assert.match(contextRequest, /can_provide_existing_app_context: yes\/no/);
   assert.match(contextRequest, /card_callback_url_configured: <PUBLIC_CALLBACK_BASE_URL>\/webhook\/card yes\/no/);
   assert.match(contextRequest, /secure_secret_channel:/);
@@ -620,6 +625,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.equal(embeddedOnlyReplyTemplate.next_local_steps.some((step) => step.includes("bot-runtime/.env") || step.includes("generated bot runtime") || step.includes("verify --level2")), false);
   assert.doesNotMatch(embeddedOnlyReplyMarkdown, /bot-runtime\.env|generated bot runtime|verify --level2/);
   const embeddedOnlyReadinessOutput = run(["readiness", embeddedOnlyGenerated]);
+  assert.doesNotMatch(embeddedOnlyReadinessOutput, /Mode B embedded adapter path/);
   assert.doesNotMatch(embeddedOnlyReadinessOutput, /verify \. --runtime-url/);
   const embeddedOnlyLevel2Record = fs.readFileSync(path.join(embeddedOnlyGenerated, "level2_verification_record.md"), "utf8");
   assert.match(embeddedOnlyLevel2Record, /Existing host service URL:/);
@@ -653,6 +659,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const embeddedOnlyDoctorJson = JSON.parse(run(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--json"]));
   const embeddedOnlyDoctorOutput = run(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter"]);
   assert.match(embeddedOnlyDoctorOutput, /Mode A external host \/ sidecar path/);
+  assert.doesNotMatch(embeddedOnlyDoctorOutput, /Mode B embedded adapter path/);
   assert.equal(embeddedOnlyDoctorJson.integration_mode, "embedded-adapter");
   assert.equal(embeddedOnlyDoctorJson.package_validation.status, "pass");
   assert.equal(embeddedOnlyDoctorJson.gate_passed, false);

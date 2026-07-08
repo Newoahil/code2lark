@@ -2,6 +2,8 @@
 
 This guide defines Mode B: moving generated host files into the target project as an incremental module. The generated package remains the source of truth.
 
+Canonical chooser and embedding checklist: `docs/host-delivery-mode-selection.md` and `docs/mode-b-embedding-guide.md`. This file is the detailed migration supplement.
+
 ## Source Of Truth
 
 Start from:
@@ -48,6 +50,7 @@ Create a target-local `.env` beside the migrated host module. Preserve the gener
 - timeout and test-chat settings
 
 Secrets stay local to the target deployment environment and must not be copied back into the generated package.
+Do not copy a filled generated `feishu-host/.env`, `feishu_context.local.json`, `feishu_context.reply.local.json`, `level2_manual_evidence.local.json`, filled evidence files, or any other local secret-bearing file into the target repository. Add the migrated env path, such as `integrations/lark/feishu-host/.env`, to the target repository's `.gitignore` before filling credentials.
 
 ## Startup Migration
 

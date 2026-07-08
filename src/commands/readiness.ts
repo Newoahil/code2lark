@@ -1106,7 +1106,7 @@ function readinessDeliveryMode(summary: ReadinessSummary): string {
     return "Mode B embedded host-module path foundation; self-hosted-runtime host module verified externally today.";
   }
   if (integrationMode === "embedded-adapter") {
-    return "Mode B embedded adapter path for an existing host; Mode A external host / sidecar path when mounted in a separate gateway.";
+    return "embedded-adapter package for an existing host; use Mode A when that host is external, and use Mode B only after embedding a host module into the target project.";
   }
   return "standalone-runtime reference host; not the primary product shape.";
 }
