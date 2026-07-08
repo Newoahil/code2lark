@@ -265,6 +265,14 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.equal(selfHostedSummary.host_receive_mode, "embedded-long-connection");
   assert.equal(selfHostedSummary.core_artifact, "feishu-host");
   assert.equal(selfHostedSummary.runtime, "python-feishu-host");
+  const selfHostedStartHere = fs.readFileSync(path.join(selfHostedGenerated, "START_HERE.md"), "utf8");
+  assert.match(selfHostedStartHere, /core generated artifact is `feishu-host\/`/);
+  assert.match(selfHostedStartHere, /self-hosted-runtime mode/);
+  assert.match(selfHostedStartHere, /python feishu-host\/local_contract_test\.py/);
+  assert.match(selfHostedStartHere, /python feishu-host\/app\.py --selfcheck/);
+  assert.match(selfHostedStartHere, /verify \. --mode self-hosted-runtime --strict/);
+  assert.doesNotMatch(selfHostedStartHere, /generated in embedded-adapter mode/);
+  assert.doesNotMatch(selfHostedStartHere, /verify \. --mode embedded-adapter/);
   assert.ok(fs.existsSync(path.join(selfHostedGenerated, "feishu-host")));
   assert.equal(fs.existsSync(path.join(selfHostedGenerated, "bot-runtime")), false);
   assert.equal(fs.existsSync(path.join(selfHostedGenerated, "sidecar-long-connection")), false);

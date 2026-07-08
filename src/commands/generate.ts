@@ -1138,6 +1138,19 @@ function buildStartHere(service: ServiceManifest, integrationMode: IntegrationMo
     : usesLongConnection
       ? "`APP_ID`, `APP_SECRET`, `TEST_CHAT_ID`, the long-connection host lifecycle, and the reachable target URL"
       : "`APP_ID`, `APP_SECRET`, `VERIFICATION_TOKEN`, `TEST_CHAT_ID`, `PUBLIC_CALLBACK_BASE_URL`, and the reachable target URL";
+  const packageIntro = integrationMode === "standalone-runtime"
+    ? `This generated package connects \`${service.service.name}\` to Feishu/Lark card actions for verification. The core generated artifact is \`adapter/\`; \`bot-runtime/\` is the optional standalone reference host.`
+    : integrationMode === "self-hosted-runtime"
+      ? `This generated package connects \`${service.service.name}\` to Feishu/Lark card actions for verification. The core generated artifact is \`feishu-host/\`. This package was generated in self-hosted-runtime mode and includes a Python long-connection host module.`
+      : `This generated package connects \`${service.service.name}\` to Feishu/Lark card actions for verification. The core generated artifact is \`adapter/\`. This package was generated in embedded-adapter mode and does not include \`bot-runtime/\`.`;
+  const secretLocation = integrationMode === "standalone-runtime"
+    ? "`feishu_context.local.json` or `bot-runtime/.env`"
+    : integrationMode === "self-hosted-runtime"
+      ? "`feishu_context.local.json` or `feishu-host/.env`"
+      : "`feishu_context.local.json` or the existing host service's secret store";
+  const reviewStep = integrationMode === "self-hosted-runtime"
+    ? "Review `feishu-host/`, `feishu-host/README.md`, and `docs/integration_guide.md`."
+    : "Review `adapter/` and `docs/integration_guide.md` if you already have a Feishu SDK service.";
   const afterContext = integrationMode === "standalone-runtime"
     ? `\`\`\`powershell
 node $env:LARK_DEPLOYER_CLI init-local . --context --reply
@@ -1156,6 +1169,15 @@ In a second terminal from the package root:
 node $env:LARK_DEPLOYER_CLI verify . --runtime-url http://127.0.0.1:3978 --level2
 node $env:LARK_DEPLOYER_CLI evidence . --runtime-url http://127.0.0.1:3978 --update-record
 node $env:LARK_DEPLOYER_CLI doctor . --out doctor_report.json --probe-target --gate
+\`\`\``
+    : integrationMode === "self-hosted-runtime"
+      ? `\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI init-local . --context --reply
+# Fill feishu_context.local.json and feishu-host/.env locally. Do not commit or share them.
+python feishu-host/local_contract_test.py
+python feishu-host/app.py --selfcheck
+node $env:LARK_DEPLOYER_CLI verify . --mode self-hosted-runtime --strict
+node $env:LARK_DEPLOYER_CLI doctor . --mode self-hosted-runtime --gate
 \`\`\``
     : `\`\`\`powershell
 node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --strict
@@ -1185,7 +1207,7 @@ node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --
     ].join("\n");
   return `# Start Here
 
-  This generated package connects \`${service.service.name}\` to Feishu/Lark card actions for verification. The core generated artifact is \`adapter/\`${integrationMode === "standalone-runtime" ? "; \`bot-runtime/\` is the optional standalone reference host." : ". This package was generated in embedded-adapter mode and does not include \`bot-runtime/\`."}
+${packageIntro}
 
 Host receive mode: ${hostReceiveMode}
 
@@ -1194,12 +1216,12 @@ ${deliveryModeModelMarkdown()}
 ## Boundary
 
 - Lark-deployer built this package; it does not start or supervise \`${service.service.name}\`.
-- Keep real secrets out of shared Markdown. Use \`feishu_context.local.json\`${integrationMode === "standalone-runtime" ? " or `bot-runtime/.env`" : " or the existing host service's secret store"} locally.
+- Keep real secrets out of shared Markdown. Use ${secretLocation} locally.
 - Real MVP completion still requires a Feishu app, a test chat, ${level2HostRequirement}, and a real card click/result observation.
 
 ## First 10 Minutes
 
-1. Review \`adapter/\` and \`docs/integration_guide.md\` if you already have a Feishu SDK service.
+1. ${reviewStep}
 2. Read \`doctor_report.md\` for the current blocker list.
 3. Send \`feishu_context.request.md\` to the Feishu app owner/FDE.
 4. Use \`feishu_context.reply.template.json\` or \`feishu_context.reply.template.md\` to record non-secret answers, then confirm who owns ${ownerFields}.
