@@ -80,7 +80,7 @@
   - “Mode B” = target-project embedded host module
   - “self-hosted-runtime” = generated host module, runnable externally now, embeddable later
 
-- [ ] **Step 1: Add/update failing doc assertions in CLI smoke test**
+- [x] **Step 1: Add/update failing doc assertions in CLI smoke test**
 
 ```js
 import assert from "node:assert/strict";
@@ -97,13 +97,13 @@ assert.match(charter, /Mode B.*embedded host module/i);
 assert.match(charter, /self-hosted-runtime.*host module/i);
 ```
 
-- [ ] **Step 2: Run the focused test to verify it fails before edits**
+- [x] **Step 2: Run the focused test to verify it fails before edits**
 
 Run: `node --test tests/cli-smoke.test.mjs`
 
 Expected: FAIL on missing or mismatched wording assertions.
 
-- [ ] **Step 3: Update top-level docs with the explicit model**
+- [x] **Step 3: Update top-level docs with the explicit model**
 
 Use these exact concepts in the edited docs:
 
@@ -115,13 +115,13 @@ Mode B is the target-project embedded host-module path. The generated package re
 self-hosted-runtime is the generated host module. Today it can run externally as the verified sample path; later it can also be embedded into the target project under Mode B.
 ```
 
-- [ ] **Step 4: Re-run the focused test**
+- [x] **Step 4: Re-run the focused test**
 
 Run: `node --test tests/cli-smoke.test.mjs`
 
 Expected: PASS for the new wording assertions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md docs/development-charter.md docs/project-status.md docs/mvp-1a-image-agent-web.md tests/cli-smoke.test.mjs
@@ -141,7 +141,7 @@ git commit -m "Clarify Code2Lark delivery model"
 - Consumes: Mode A / Mode B wording from Task 1
 - Produces: stable docs users can follow without needing chat explanations
 
-- [ ] **Step 1: Write the Mode B guide with concrete structure**
+- [x] **Step 1: Write the Mode B guide with concrete structure**
 
 Create `docs/mode-b-embedding-guide.md` with sections that include these exact examples:
 
@@ -172,7 +172,7 @@ Create `docs/mode-b-embedding-guide.md` with sections that include these exact e
 - Regeneration happens in Code2Lark, not in the target repo.
 ```
 
-- [ ] **Step 2: Write the mode selection guide**
+- [x] **Step 2: Write the mode selection guide**
 
 Create `docs/host-delivery-mode-selection.md` with a clear comparison table:
 
@@ -184,7 +184,7 @@ Create `docs/host-delivery-mode-selection.md` with a clear comparison table:
 | standalone-runtime | You need a quick reference host or fallback | Not the primary product shape |
 ```
 
-- [ ] **Step 3: Link the new guides from README**
+- [x] **Step 3: Link the new guides from README**
 
 Add a short section to `README.md` like:
 
@@ -194,13 +194,13 @@ Add a short section to `README.md` like:
 - `docs/mode-b-embedding-guide.md`
 ```
 
-- [ ] **Step 4: Verify the files exist and are linked**
+- [x] **Step 4: Verify the files exist and are linked**
 
 Run: `grep -n "Delivery Mode Guides\|mode-b-embedding-guide\|host-delivery-mode-selection" README.md docs/mode-b-embedding-guide.md docs/host-delivery-mode-selection.md`
 
 Expected: matching lines in all three files.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md docs/mode-b-embedding-guide.md docs/host-delivery-mode-selection.md
@@ -219,7 +219,7 @@ git commit -m "Add mode B embedding and selection guides"
 - Consumes: mode definitions from Tasks 1–2
 - Produces: generated package metadata and docs that describe the selected mode consistently
 
-- [ ] **Step 1: Add failing assertions for generated summaries/docs**
+- [x] **Step 1: Add failing assertions for generated summaries/docs**
 
 Extend `tests/cli-smoke.test.mjs` with checks like:
 
@@ -233,13 +233,13 @@ assert.match(generatedReadme, /Mode A is the external host, sidecar, or gateway 
 assert.match(generatedReadme, /Mode B is the target-project embedded host-module path\./);
 ```
 
-- [ ] **Step 2: Run the focused test to see the failures**
+- [x] **Step 2: Run the focused test to see the failures**
 
 Run: `node --test tests/cli-smoke.test.mjs`
 
 Expected: FAIL on missing generated-package wording.
 
-- [ ] **Step 3: Update generator text emitters**
+- [x] **Step 3: Update generator text emitters**
 
 In `src/commands/generate.ts`, make sure the emitters that write:
 - `generation_summary.json`
@@ -261,13 +261,13 @@ Mode B is the target-project embedded host-module path.
 self-hosted-runtime produces the host module used by the verified sample and by future Mode B embedding.
 ```
 
-- [ ] **Step 4: Re-run the focused test**
+- [x] **Step 4: Re-run the focused test**
 
 Run: `node --test tests/cli-smoke.test.mjs`
 
 Expected: PASS for the new generated-doc assertions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/commands/generate.ts tests/cli-smoke.test.mjs
@@ -287,7 +287,7 @@ git commit -m "Align generated package metadata with delivery modes"
 - Consumes: host mode / integration mode metadata already present in the commands
 - Produces: command output that consistently explains whether the package is Mode A, Mode B-ready, or standalone-reference
 
-- [ ] **Step 1: Add failing string assertions for doctor/readiness output**
+- [x] **Step 1: Add failing string assertions for doctor/readiness output**
 
 Extend the smoke test with checks for generated or written output:
 
@@ -298,13 +298,13 @@ assert.match(readinessMarkdown, /Mode B|embedded host module/);
 
 Only add assertions where the output genuinely should mention those concepts.
 
-- [ ] **Step 2: Run the focused test to verify the mismatch**
+- [x] **Step 2: Run the focused test to verify the mismatch**
 
 Run: `node --test tests/cli-smoke.test.mjs`
 
 Expected: FAIL if the output still uses mixed or ambiguous terminology.
 
-- [ ] **Step 3: Update wording in the command emitters**
+- [x] **Step 3: Update wording in the command emitters**
 
 Refine the text generation in:
 - `buildContextTemplate` / markdown builders
@@ -321,13 +321,13 @@ self-hosted-runtime host module verified externally today
 
 and avoid implying that `self-hosted-runtime` already equals completed Mode B embedding.
 
-- [ ] **Step 4: Re-run the focused test**
+- [x] **Step 4: Re-run the focused test**
 
 Run: `node --test tests/cli-smoke.test.mjs`
 
 Expected: PASS for wording assertions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/commands/context.ts src/commands/readiness.ts src/commands/doctor.ts tests/cli-smoke.test.mjs
@@ -347,7 +347,7 @@ git commit -m "Make command outputs mode-aware"
 - Consumes: validated facts from prior real Feishu verification
 - Produces: a stable statement of what is verified now and what remains to prove later
 
-- [ ] **Step 1: Add/update the verified summary file**
+- [x] **Step 1: Add/update the verified summary file**
 
 If `docs/image-agent-web-mvp-verified-summary.md` does not exist, create it with content like:
 
@@ -360,7 +360,7 @@ Current classification:
 - Why not Mode B yet: the host module has not been re-embedded into a fresh target-project copy and replayed from zero.
 ```
 
-- [ ] **Step 2: Update charter and status docs**
+- [x] **Step 2: Update charter and status docs**
 
 Add concise, explicit wording such as:
 
@@ -369,13 +369,13 @@ The verified image-agent-web sample currently proves Mode A with a Python self-h
 self-hosted-runtime is the foundation for Mode B, but Mode B is not considered productized until the generated host module is replayed inside a fresh target-project copy.
 ```
 
-- [ ] **Step 3: Verify the classification language exists**
+- [x] **Step 3: Verify the classification language exists**
 
 Run: `grep -n "Mode A\|Mode B\|self-hosted-runtime is the foundation" docs/development-charter.md docs/project-status.md docs/image-agent-web-mvp-verified-summary.md`
 
 Expected: matching lines in all updated docs.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/development-charter.md docs/project-status.md docs/image-agent-web-mvp-verified-summary.md
@@ -394,19 +394,19 @@ git commit -m "Reclassify image-agent-web sample and self-hosted role"
 - Consumes: all prior tasks
 - Produces: confidence that the product model is stable without regressions
 
-- [ ] **Step 1: Run build**
+- [x] **Step 1: Run build**
 
 Run: `npm run build`
 
 Expected: exit 0
 
-- [ ] **Step 2: Run full Node test suite**
+- [x] **Step 2: Run full Node test suite**
 
 Run: `node --test tests/*.test.mjs`
 
 Expected: all PASS
 
-- [ ] **Step 3: Run the self-hosted regression anchor**
+- [x] **Step 3: Run the self-hosted regression anchor**
 
 Run:
 
@@ -420,7 +420,7 @@ Expected:
 - `Overall status: pass`
 - self-hosted Python checks still PASS
 
-- [ ] **Step 4: Run an embedded sample check**
+- [x] **Step 4: Run an embedded sample check**
 
 Run:
 
@@ -433,7 +433,7 @@ Expected:
 - generation succeeds
 - embedded package validation still PASS
 
-- [ ] **Step 5: Commit verification evidence note (optional)**
+- [x] **Step 5: Commit verification evidence note (optional)**
 
 If the repo is keeping verification evidence commits in docs/status, record it there; otherwise skip the commit.
 
