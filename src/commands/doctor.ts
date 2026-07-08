@@ -236,6 +236,7 @@ function printEmbeddedAdapterDoctorReport(report: EmbeddedAdapterDoctorReport, g
   console.log(`Gate passed: ${report.gate_passed ? "yes" : "no"}`);
   console.log("Integration mode: embedded-adapter");
   console.log(`Host receive mode: ${report.host_receive_mode}`);
+  console.log("Delivery mode: Mode A external host / sidecar path, or Mode B embedded host-module path after target-repo embedding.");
   if (report.blockers.length) {
     console.log("Blockers:");
     for (const blocker of report.blockers) console.log(`- ${blocker}`);
@@ -257,6 +258,7 @@ function buildEmbeddedAdapterDoctorMarkdown(report: EmbeddedAdapterDoctorReport)
 - Package: ${report.package_path}
 - Integration mode: embedded-adapter
 - Host receive mode: ${report.host_receive_mode}
+- Delivery mode: Mode A external host / sidecar path, or Mode B embedded host-module path after target-repo embedding.
 - Package validation: ${report.package_validation.status}
 - Gate passed: ${report.gate_passed ? "yes" : "no"}
 
@@ -605,6 +607,7 @@ function printDoctorReport(report: DoctorReport, gateMode: boolean): void {
   console.log(`State: ${report.state}`);
   console.log(`Integration mode: ${report.integration_mode}`);
   console.log(`Host receive mode: ${report.host_receive_mode}`);
+  console.log(`Delivery mode: ${doctorDeliveryMode(report.integration_mode)}`);
   console.log(`Target service: ${report.target_service}`);
   console.log(`Package: ${report.package_path}`);
   console.log(`Gate passed: ${report.gate_passed ? "yes" : "no"}`);
@@ -659,6 +662,16 @@ function printDoctorReport(report: DoctorReport, gateMode: boolean): void {
   if (!gateMode && !report.gate_passed) {
     console.log("Gate mode: rerun with --gate to exit non-zero until the generated package reaches handoff_ready.");
   }
+}
+
+function doctorDeliveryMode(integrationMode: string): string {
+  if (integrationMode === "self-hosted-runtime") {
+    return "Mode A external host / sidecar path today; self-hosted-runtime host module is the Mode B embedded host-module foundation.";
+  }
+  if (integrationMode === "embedded-adapter") {
+    return "Mode B embedded adapter path for an existing host; Mode A external host / sidecar path when mounted in a separate gateway.";
+  }
+  return "standalone-runtime reference host; not the primary product shape.";
 }
 
 function buildDoctorMarkdown(report: DoctorReport): string {
@@ -723,6 +736,7 @@ This report is generated from readiness evidence. It does not include Feishu sec
 - State: ${report.state}
 - Integration mode: ${report.integration_mode}
 - Host receive mode: ${report.host_receive_mode}
+- Delivery mode: ${doctorDeliveryMode(report.integration_mode)}
 - Target service: ${report.target_service}
 - Package: ${report.package_path}
 - Missing required values: ${missing}

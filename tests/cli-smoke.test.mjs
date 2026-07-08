@@ -406,6 +406,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(selfHostedReadinessOutput, /PUBLIC_CALLBACK_BASE_URL/);
   assert.doesNotMatch(selfHostedReadinessOutput, /VERIFICATION_TOKEN/);
   const selfHostedHandoffStatus = fs.readFileSync(path.join(selfHostedGenerated, "handoff_status.md"), "utf8");
+  assert.match(selfHostedHandoffStatus, /Mode B embedded host-module path/);
   assert.match(selfHostedHandoffStatus, /feishu-host\/\.env/);
   assert.match(selfHostedHandoffStatus, /python feishu-host\/local_contract_test\.py/);
   assert.match(selfHostedHandoffStatus, /python feishu-host\/app\.py --selfcheck/);
@@ -647,6 +648,8 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const permissionMismatchReport = JSON.parse(fs.readFileSync(path.join(permissionMismatchGenerated, "verification_report.json"), "utf8"));
   assert.ok(permissionMismatchReport.checks.some((item) => item.name === "adapter:permissions-interactions" && item.status === "fail" && item.detail.includes("missing.card")));
   const embeddedOnlyDoctorJson = JSON.parse(run(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--json"]));
+  const embeddedOnlyDoctorOutput = run(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter"]);
+  assert.match(embeddedOnlyDoctorOutput, /Mode A external host \/ sidecar path/);
   assert.equal(embeddedOnlyDoctorJson.integration_mode, "embedded-adapter");
   assert.equal(embeddedOnlyDoctorJson.package_validation.status, "pass");
   assert.equal(embeddedOnlyDoctorJson.gate_passed, false);

@@ -920,6 +920,7 @@ function readNodeCommandScript(command: string): string {
 function printReadinessSummary(summary: ReadinessSummary, outPath: string): void {
   const missing = summary.requiredValues.filter((item) => item.status === "missing").map((item) => item.key);
   console.log(`Readiness status: ${summary.state}`);
+  console.log(`Delivery mode: ${readinessDeliveryMode(summary)}`);
   console.log(`Target service: ${summary.service.service.name}`);
   console.log(`Missing required values: ${missing.length ? missing.join(", ") : "none"}`);
   console.log(`Latest verification: ${summary.report?.status || "missing"} (pass=${summary.reportCounts.pass}, warn=${summary.reportCounts.warn}, fail=${summary.reportCounts.fail})`);
@@ -971,6 +972,7 @@ export function buildReadinessMarkdown(summary: ReadinessSummary): string {
 
 - Generated at: ${summary.generatedAt}
 - Readiness status: ${summary.state}
+- Delivery mode: ${readinessDeliveryMode(summary)}
 - Package: ${summary.packagePath}
 - Target service: ${summary.service.service.name}
 - Env file checked: ${summary.envPath}
@@ -1096,6 +1098,17 @@ ${warnChecks}
 
 ${summary.nextActions.map((action) => `- ${action}`).join("\n")}
 `;
+}
+
+function readinessDeliveryMode(summary: ReadinessSummary): string {
+  const integrationMode = summary.context?.integration_mode || summary.report?.context?.mode || "standalone-runtime";
+  if (integrationMode === "self-hosted-runtime") {
+    return "Mode B embedded host-module path foundation; self-hosted-runtime host module verified externally today.";
+  }
+  if (integrationMode === "embedded-adapter") {
+    return "Mode B embedded adapter path for an existing host; Mode A external host / sidecar path when mounted in a separate gateway.";
+  }
+  return "standalone-runtime reference host; not the primary product shape.";
 }
 
 function formatValueRow(row: RequiredValueRow): string {
