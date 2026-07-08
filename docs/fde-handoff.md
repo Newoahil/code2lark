@@ -11,10 +11,14 @@ This project should be usable by a teammate without relying on a specific Codex 
 
 ## What Lark-deployer gives you
 
+- `generated/<target>-lark/` is the source-of-truth handoff package. Treat its manifests, adapter code, host modules, docs, context files, verification reports, and evidence records as the canonical handoff state.
+- Mode A is the external host, sidecar, or gateway path. The target service keeps its own lifecycle and the generated host runs beside it.
+- Mode B is the target-project embedded host-module path. The generated package remains the source of truth, but selected host files can be copied into the target repository as an incremental module.
+- self-hosted-runtime is the generated host module. Today it can run externally as the verified sample path; later it can also be embedded into the target project under Mode B.
 - Machine-readable service and interaction contracts.
 - Human-readable permission review.
 - Deployment checklist.
-- An embeddable `adapter/` package as the primary artifact, an optional standalone Node runtime reference host, and a Python `feishu-host/` self-hosted long-connection runtime when generated with `--mode self-hosted-runtime`.
+- An embeddable `adapter/` package, an optional standalone Node runtime reference host, and a Python `feishu-host/` self-hosted long-connection runtime when generated with `--mode self-hosted-runtime`.
 - Verification checks that explain missing context.
 - A package-local `level2_verification_record.md` for real Feishu evidence collection.
 - Static `templates.py` fallback for `image-agent-web` template ids, sizes, and fields when `/api/meta` is not available during analysis.
