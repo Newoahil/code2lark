@@ -2334,6 +2334,65 @@ test("generic HTTP API target can analyze generate and verify", () => {
   assert.match(genericSidecarOutput, /sidecar-long-connection generic contract: PASS/);
 });
 
+test("calendar-stock-updater Node target can analyze generate and verify", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-calendar-stock-"));
+  const target = path.join(temp, "calendar-stock-updater");
+  const workspace = path.join(temp, "out");
+  const generated = path.join(temp, "generated");
+
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, "package.json"), JSON.stringify({ name: "calendar-stock-updater", scripts: { ui: "node server.js" } }, null, 2), "utf8");
+  fs.writeFileSync(
+    path.join(target, "README.md"),
+    [
+      "# 商品日历库存批量更新脚本",
+      "",
+      "Web console runs with npm run ui and exposes /api/state, /api/events, /api/run, and /api/stop.",
+    ].join("\n"),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(target, "server.js"),
+    [
+      "const http = require('node:http');",
+      "function createServer() {",
+      "  return http.createServer(async (req, res) => {",
+      "    const requestUrl = new URL(req.url, 'http://127.0.0.1:3069');",
+      "    const { pathname } = requestUrl;",
+      "    if (req.method === 'GET' && pathname === '/api/state') return res.end('{}');",
+      "    if (req.method === 'GET' && pathname === '/api/events') return res.end('event: state\\n\\n');",
+      "    if (req.method === 'POST' && pathname === '/api/run') return res.end('{\"ok\":true}');",
+      "    if (req.method === 'POST' && pathname === '/api/stop') return res.end('{\"ok\":true}');",
+      "    res.statusCode = 404;",
+      "    res.end('{}');",
+      "  });",
+      "}",
+      "module.exports = { createServer };",
+    ].join("\n"),
+    "utf8",
+  );
+
+  run(["analyze", target, "--base-url", "http://127.0.0.1:3069", "--out", workspace, "--name", "calendar-stock-updater"]);
+  const serviceManifest = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "service_manifest.json"), "utf8"));
+  const capabilityMap = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "capability_map.json"), "utf8"));
+  assert.equal(serviceManifest.source_scan.analysis_strategy, "generic_http_api");
+  assert.equal(capabilityMap.target_profile, "generic-http-api");
+  assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.get.api.state" && capability.kind === "query"));
+  assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.post.api.run" && capability.kind === "action"));
+  assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.post.api.stop" && capability.kind === "action"));
+  assert.equal(capabilityMap.capabilities.some((capability) => capability.id.startsWith("image.")), false);
+
+  run(["generate", workspace, "--out", generated, "--mode", "embedded-adapter"]);
+  const generatedAdapter = fs.readFileSync(path.join(generated, "adapter", "handlers.ts"), "utf8");
+  assert.match(generatedAdapter, /http\.post\.api\.run\.submit/);
+  assert.doesNotMatch(generatedAdapter, /image\.generate|image_url|session_id/);
+  const verifyOutput = run(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
+  assert.match(verifyOutput, /adapter:action:http\.post\.api\.run\.submit/);
+  assert.doesNotMatch(verifyOutput, /generate and batch|generate\/batch/);
+  const doctorJson = JSON.parse(run(["doctor", generated, "--mode", "embedded-adapter", "--json"]));
+  assert.equal(doctorJson.package_validation.status, "pass");
+});
+
 test("image-agent-web mapping profile is isolated from generator orchestration", () => {
   const profileSource = fs.readFileSync(path.join(root, "src", "profiles", "image-agent-web.ts"), "utf8");
   const generateSource = fs.readFileSync(path.join(root, "src", "commands", "generate.ts"), "utf8");

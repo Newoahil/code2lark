@@ -673,24 +673,30 @@ function isImageAgentWebTarget(targetPath: string): boolean {
 }
 
 function discoverHttpEndpoints(targetPath: string): Array<{ method: string; path: string }> {
-  const candidates = ["main.py", "app.py", "server.py", "README.md", "readme.md"];
+  const candidates = ["main.py", "app.py", "server.py", "server.js", "README.md", "readme.md"];
   return candidates.flatMap((file) => {
     const source = readTextIfExists(path.join(targetPath, file));
-    return file.toLowerCase().endsWith(".md") ? extractDocumentedEndpoints(source) : extractFastApiEndpoints(source);
+    const lower = file.toLowerCase();
+    if (lower.endsWith(".md")) return extractDocumentedEndpoints(source);
+    if (lower.endsWith(".js")) return extractNodeHttpEndpoints(source);
+    return extractFastApiEndpoints(source);
   });
 }
 
 function detectFrameworks(targetPath: string): string[] {
   const requirements = readTextIfExists(path.join(targetPath, "requirements.txt"));
   const main = readTextIfExists(path.join(targetPath, "main.py"));
+  const packageJson = readTextIfExists(path.join(targetPath, "package.json"));
+  const serverJs = readTextIfExists(path.join(targetPath, "server.js"));
   return [
     requirements.includes("fastapi") || main.includes("FastAPI") ? "fastapi" : "",
     requirements.includes("flask") || main.includes("Flask") ? "flask" : "",
+    packageJson || serverJs.includes("createServer") ? "node-http" : "",
   ].filter(Boolean);
 }
 
 function collectGenericFilesChecked(targetPath: string): string[] {
-  return ["requirements.txt", "main.py", "app.py", "server.py", "README.md", "readme.md"]
+  return ["requirements.txt", "package.json", "main.py", "app.py", "server.py", "server.js", "README.md", "readme.md"]
     .filter((file) => fs.existsSync(path.join(targetPath, file)));
 }
 
@@ -736,6 +742,11 @@ function buildGenericInputSchema(endpoint: { method: string; path: string }): Js
 
 function extractDocumentedEndpoints(source: string): Array<{ method: string; path: string }> {
   return [...source.matchAll(/\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[A-Za-z0-9_./{}:-]+)/g)]
+    .map((match) => ({ method: match[1].toUpperCase(), path: match[2] }));
+}
+
+function extractNodeHttpEndpoints(source: string): Array<{ method: string; path: string }> {
+  return [...source.matchAll(/req\.method\s*={2,3}\s*['"`](GET|POST|PUT|PATCH|DELETE)['"`][\s\S]{0,120}?pathname\s*={2,3}\s*['"`](\/api\/[A-Za-z0-9_./{}:-]+)['"`]/g)]
     .map((match) => ({ method: match[1].toUpperCase(), path: match[2] }));
 }
 

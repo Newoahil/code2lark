@@ -744,8 +744,8 @@ function checkAdapterStartCardBuilder(packagePath: string): CheckResult {
     name: "adapter:start-card-builder",
     status: hasBuilder ? "pass" : "fail",
     detail: hasBuilder
-      ? "adapter/cards.ts exports buildStartCard with generate and batch form actions."
-      : "adapter/cards.ts does not export a complete buildStartCard generate/batch form builder.",
+      ? "adapter/cards.ts exports buildStartCard with card action controls."
+      : "adapter/cards.ts does not export a complete buildStartCard card action builder.",
   };
 }
 
@@ -793,7 +793,7 @@ function executeEmbeddedAdapterSmoke(packagePath: string): CheckResult[] {
     `;
     execFileSync(process.execPath, ["--input-type=module", "--eval", script], { cwd: packagePath, stdio: "pipe" });
     return [
-      { name: "adapter:start-card-execution", status: "pass", detail: "Generated adapter JS buildStartCard executes and returns generate/batch forms." },
+      { name: "adapter:start-card-execution", status: "pass", detail: "Generated adapter JS buildStartCard executes and returns card action controls." },
       { name: "adapter:handler-execution", status: "pass", detail: "Generated adapter JS handler executes and returns failure cards for unsupported actions." },
     ];
   } catch (error) {
