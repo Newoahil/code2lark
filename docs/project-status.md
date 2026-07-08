@@ -75,3 +75,4 @@ analyze → plan → context(生成给所有者的凭据请求) → generate(生
 - 2026-07-04：按 `docs/mvp-self-hosting-task-book.md` 推进 `self-hosted-runtime`，新增 Python `feishu-host/` 长连接宿主生成、local contract/selfcheck/strict verify 路径，并明确真实飞书 Level 2 仍是人工证据步骤。
 - 2026-07-07：冻结 `image-agent-web` self-hosted-runtime 真实飞书 MVP 为回归锚点；将 manifest 契约提升到 `0.2`；把 `analyze` 拆成 strategy-based 结构；新增 `generic_http_api` 粗粒度分析路径；新增 `generic-http-api` embedded-adapter 生成、strict verify、doctor package validation 测试路径。暂未扩展 Slack/企业微信、群 @、私聊命令、全自动部署或 skill 形态。
 - 2026-07-08：按当前路线补齐模式 A/B 产品化说明与 Mode B 迁入指南；补充 Node `server.js` 字面量路由发现，使 `calendar-stock-updater` 作为第二目标进入泛用工作流并通过 package validation。
+- 2026-07-08：补充 `docs/current-roadmap-verification-record.md` 记录最终验证证据和不重写 `master` 的提交顺序 waiver；路线任务书与相关阶段任务书已入库，`.claude/` 作为本地工具状态忽略。

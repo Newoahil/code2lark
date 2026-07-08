@@ -5,3 +5,4 @@ generated/
 .env
 *.log
 .omo/
+.claude/
