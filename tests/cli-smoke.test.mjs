@@ -28,6 +28,7 @@ test("top-level docs define Code2Lark delivery modes", () => {
   assert.match(charter, /Mode A.*external host/i);
   assert.match(charter, /Mode B.*embedded host module/i);
   assert.match(charter, /self-hosted-runtime.*host module/i);
+  assert.match(charter, /--mode: .*embedded-adapter.*standalone-runtime.*self-hosted-runtime/);
   assert.match(status, /Mode A/i);
   assert.match(status, /Mode B/i);
   assert.match(mvp, /verified sample/i);

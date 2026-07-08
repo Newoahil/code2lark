@@ -89,7 +89,7 @@ Lark-deployer 必须遵守最小侵入原则：
 Host 接收方式必须作为一等概念记录，不能把某个宿主实现路径写成平台事实：
 
 ```text
---mode: 产物包装形态，embedded-adapter 或 standalone-runtime。
+--mode: 产物包装形态，embedded-adapter、standalone-runtime 或 self-hosted-runtime。
 --host-mode / host_receive_mode: 飞书事件如何到达宿主，embedded-webhook、embedded-long-connection、hybrid 或 standalone-runtime。
 ```
 
