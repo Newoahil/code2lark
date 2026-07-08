@@ -51,6 +51,16 @@ node dist/index.js handoff generated\image-agent-web-lark
 
 After generation:
 
+## Delivery Modes
+
+The standard Code2Lark output is always `generated/<target>-lark/`. Treat that generated package as the source of truth for manifests, adapter code, host modules, docs, and verification records.
+
+Mode A is the external host, sidecar, or gateway path. The target service keeps its own lifecycle and Code2Lark output runs beside it, calling the target over HTTP/CLI/SDK. The verified `image-agent-web` self-hosted long-connection sample is Mode A in practice: `feishu-host/` owns Feishu ingress and calls the target over HTTP.
+
+Mode B is the target-project embedded host-module path. The generated package remains the source of truth, but selected host files such as `feishu-host/` can be copied into the target repository as an incremental module. Mode B is not a rewrite of target business code; it is a minimal host-module migration with `.env`, startup, and verification contracts preserved.
+
+`standalone-runtime` remains a reference or fallback host for teams without an existing Feishu SDK service. It is not the primary product shape.
+
 For an existing Feishu SDK service, start with `generated\image-agent-web-lark\adapter\` and `generated\image-agent-web-lark\docs\integration_guide.md`. Package validation for that embedded path is:
 
 ```powershell

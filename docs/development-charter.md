@@ -228,6 +228,22 @@ bot-runtime 不再复制业务实现。
 
 ## 8. 两种集成模式
 
+本阶段把交付语义固定为两种产品化模式。无论选择哪种落地模式，标准产物都先生成到：
+
+```text
+generated/<target>-lark/
+```
+
+该目录是 source of truth：manifest、adapter、宿主模块、文档和验证记录都以它为准。
+
+### 8.0 模式 A / 模式 B
+
+**模式 A：外置宿主 / sidecar / gateway**。目标项目不改核心业务，飞书宿主在目标外部运行，通过 HTTP、CLI 或 SDK 调目标能力。当前已验证的 `image-agent-web` self-hosted long-connection 样板属于模式 A：`feishu-host/` 作为外置 Python 宿主运行，订阅 `card.action.trigger`，再通过 HTTP 调 `image-agent-web`。
+
+**模式 B：目标项目内增量宿主模块**。仍然不深改业务代码，只把生成包中的宿主模块迁入目标项目内部，例如把 `generated/<target>-lark/feishu-host/` 复制到目标仓库的 `integrations/lark/feishu-host/` 或同等目录。迁入后 `.env`、启动脚本、本地 contract test、`app.py --selfcheck` 和 package verification 仍按生成包契约执行。
+
+`standalone-runtime` 是参考/兜底宿主，不是主要产品形态。
+
 ### 8.1 embedded_adapter（默认主模式）
 
 适合已有飞书 SDK 服务的用户。
