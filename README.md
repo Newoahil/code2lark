@@ -63,6 +63,11 @@ self-hosted-runtime is the generated host module. Today it can run externally as
 
 `standalone-runtime` remains a reference or fallback host for teams without an existing Feishu SDK service. It is not the primary product shape.
 
+## Delivery Mode Guides
+
+- `docs/host-delivery-mode-selection.md`
+- `docs/mode-b-embedding-guide.md`
+
 For an existing Feishu SDK service, start with `generated\image-agent-web-lark\adapter\` and `generated\image-agent-web-lark\docs\integration_guide.md`. Package validation for that embedded path is:
 
 ```powershell
