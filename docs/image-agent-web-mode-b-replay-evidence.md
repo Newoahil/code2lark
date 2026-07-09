@@ -220,3 +220,39 @@ selfcheck: start_card_elements=0
 Note: `app.py --selfcheck` intentionally constructs SDK wiring with its internal dummy config and does not open a live Feishu socket. The separate config-loader proof above verifies the replay-local `.env` points at the replay target.
 
 Phase 4 conclusion: the embedded `feishu_host/` module is locally self-contained inside the replay target: dependencies install in replay, config loads from replay-local `.env`, the contract test passes, and SDK wiring selfcheck passes without relying on `generated/...` at runtime.
+
+## Phase 5 - Real Feishu Long-Connection Validation
+
+Status: blocked
+
+Required command sequence from inside the replay target:
+
+```powershell
+cd C:\works\image-agent-web-mode-b-replay\feishu_host
+.\.venv\Scripts\python.exe app.py --send-start-card
+.\.venv\Scripts\python.exe app.py
+```
+
+Required manual Feishu actions after the host is online:
+
+```text
+generate
+iterate
+batch
+refresh
+failure path
+```
+
+Blocker check performed before contacting Feishu:
+
+```text
+FEISHU_APP_ID=MISSING
+FEISHU_APP_SECRET=MISSING
+FEISHU_CONNECTION_MODE=MISSING
+TEST_CHAT_ID=MISSING
+FEISHU_ALLOWED_USERS=MISSING
+```
+
+No fake send was attempted with dummy credentials. The local replay `.env` currently contains dummy values used only for local config/selfcheck proof; replacing those with real Feishu app values is required before real Level 2 replay.
+
+Phase 5 conclusion: real Feishu validation is blocked by missing app/test-chat secret context in this session. By the task book's completion definition, Mode B is not yet fully proven as a real replayed product capability; it is proven through fresh target copy, fresh generated host source, embedded host copy, and replay-local contract/selfcheck only.
