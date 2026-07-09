@@ -256,3 +256,32 @@ FEISHU_ALLOWED_USERS=MISSING
 No fake send was attempted with dummy credentials. The local replay `.env` currently contains dummy values used only for local config/selfcheck proof; replacing those with real Feishu app values is required before real Level 2 replay.
 
 Phase 5 conclusion: real Feishu validation is blocked by missing app/test-chat secret context in this session. By the task book's completion definition, Mode B is not yet fully proven as a real replayed product capability; it is proven through fresh target copy, fresh generated host source, embedded host copy, and replay-local contract/selfcheck only.
+
+## Final Applicable Gates
+
+Status: pass for all gates not requiring real Feishu credentials
+
+Commands run after Phase 5 blocker record:
+
+```powershell
+npm run build
+node --test tests/*.test.mjs
+node dist/index.js verify generated\image-agent-web-lark --mode self-hosted-runtime --strict
+cd C:\works\image-agent-web-mode-b-replay\feishu_host
+.\.venv\Scripts\python.exe local_contract_test.py
+.\.venv\Scripts\python.exe app.py --selfcheck
+git status --short
+```
+
+Gate results:
+
+```text
+npm run build -> PASS
+node --test tests/*.test.mjs -> PASS, 10/10
+generated self-hosted strict verify -> PASS
+replay feishu_host local_contract_test.py -> PASS
+replay feishu_host app.py --selfcheck -> PASS
+git status --short -> clean
+```
+
+Current overall result: blocked at real Feishu Level 2 replay because real app credentials and test chat context are not available in this session. The experiment has not proven full Mode B product capability by the task book's definition until Phase 5 is rerun with real Feishu context from `C:\works\image-agent-web-mode-b-replay\feishu_host`.
