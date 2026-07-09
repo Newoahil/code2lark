@@ -160,3 +160,63 @@ requirements.txt=MATCH
 ```
 
 Phase 3 conclusion: the generated host module was embedded as an isolated `feishu_host/` directory, with no deep changes to target business core files and no copied local secret file.
+
+## Phase 4 - Replay-Local Host Module Validation
+
+Status: pass
+
+Host setup location:
+
+```text
+C:\works\image-agent-web-mode-b-replay\feishu_host
+```
+
+Setup commands:
+
+```powershell
+cd C:\works\image-agent-web-mode-b-replay\feishu_host
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+Local `.env` shape:
+
+```text
+FEISHU_APP_ID -> present
+FEISHU_APP_SECRET -> present
+FEISHU_CONNECTION_MODE -> websocket
+IMAGE_AGENT_BASE_URL -> http://127.0.0.1:18080
+TEST_CHAT_ID -> present
+FEISHU_ALLOWED_USERS -> empty
+IMAGE_AGENT_TIMEOUT_MS -> 120000
+```
+
+Important setup finding: PowerShell 5.1 `Set-Content -Encoding UTF8` wrote a BOM that made the first `.env` key unreadable by the generated parser. The local replay `.env` was rewritten with ASCII encoding before validation. No generated host source or target business source was changed.
+
+Config-loader proof from inside `feishu_host/`:
+
+```text
+{"feishu_allowed_user_count": 0, "feishu_app_id_present": true, "feishu_app_secret_present": true, "feishu_connection_mode": "websocket", "image_agent_base_url": "http://127.0.0.1:18080", "image_agent_timeout_ms": 120000, "test_chat_id_present": true}
+```
+
+Replay-local validation commands:
+
+```powershell
+.\.venv\Scripts\python.exe local_contract_test.py
+.\.venv\Scripts\python.exe app.py --selfcheck
+```
+
+Replay-local validation output:
+
+```text
+feishu-host contract: PASS
+selfcheck: card.action.trigger registered
+selfcheck: lark.ws.Client constructed without start()
+selfcheck: config {"feishu_allowed_user_count": 0, "feishu_app_id_present": true, "feishu_app_secret_present": true, "feishu_connection_mode": "websocket", "image_agent_base_url": "http://127.0.0.1:8000", "image_agent_timeout_ms": 120000, "test_chat_id_present": false}
+selfcheck: start_card_elements=0
+```
+
+Note: `app.py --selfcheck` intentionally constructs SDK wiring with its internal dummy config and does not open a live Feishu socket. The separate config-loader proof above verifies the replay-local `.env` points at the replay target.
+
+Phase 4 conclusion: the embedded `feishu_host/` module is locally self-contained inside the replay target: dependencies install in replay, config loads from replay-local `.env`, the contract test passes, and SDK wiring selfcheck passes without relying on `generated/...` at runtime.
