@@ -61,11 +61,15 @@ generated/<target>-lark/
 
 ### Mode A：外置宿主 / sidecar / gateway
 
+Mode A is the external host, sidecar, or gateway path.
+
 Mode A 是**外置宿主**路线。目标服务继续保持自己的生命周期，Code2Lark 生成的宿主在目标服务外部运行，通过 HTTP / CLI / SDK 去调用目标能力。
 
 当前已经验证通过的 `image-agent-web` long-connection 样板，在实际落地上属于 **Mode A**：`feishu-host/` 作为外置 Python 宿主接入飞书，再通过 HTTP 调 `image-agent-web`。
 
 ### Mode B：目标项目内增量宿主模块
+
+Mode B is the target-project embedded host-module path.
 
 Mode B 是**目标项目内增量宿主模块**路线。生成包依然是 source of truth，但可以把其中的宿主模块（如 `feishu-host/`）复制到目标项目仓库里，作为一个增量模块使用。
 
@@ -75,6 +79,8 @@ Mode B 不是重写目标项目业务代码，而是：
 - 让目标项目自己承载飞书宿主能力
 
 ### `self-hosted-runtime`
+
+self-hosted-runtime is the generated host module.
 
 `self-hosted-runtime` 是生成出来的宿主模块产物。它当前可以像已验证样板一样**在目标项目外部运行**，未来也可以迁入目标项目内部作为 **Mode B** 的基础宿主模块。
 
