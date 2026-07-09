@@ -246,16 +246,16 @@ failure path
 Blocker check performed before contacting Feishu:
 
 ```text
-FEISHU_APP_ID=MISSING
-FEISHU_APP_SECRET=MISSING
-FEISHU_CONNECTION_MODE=MISSING
-TEST_CHAT_ID=MISSING
-FEISHU_ALLOWED_USERS=MISSING
+FEISHU_APP_ID=PRESENT_DUMMY
+FEISHU_APP_SECRET=PRESENT_DUMMY
+FEISHU_CONNECTION_MODE=PRESENT_WEBSOCKET
+IMAGE_AGENT_BASE_URL=PRESENT_REPLAY_URL
+TEST_CHAT_ID=PRESENT_DUMMY
 ```
 
-No fake send was attempted with dummy credentials. The local replay `.env` currently contains dummy values used only for local config/selfcheck proof; replacing those with real Feishu app values is required before real Level 2 replay.
+No fake send was attempted with dummy credentials. The local replay `.env` currently contains dummy Feishu app/chat values used only for local config/selfcheck proof, while `IMAGE_AGENT_BASE_URL` correctly points at the replay target. Replacing the dummy Feishu values with real app credentials and a real test chat is required before real Level 2 replay.
 
-Phase 5 conclusion: real Feishu validation is blocked by missing app/test-chat secret context in this session. By the task book's completion definition, Mode B is not yet fully proven as a real replayed product capability; it is proven through fresh target copy, fresh generated host source, embedded host copy, and replay-local contract/selfcheck only.
+Phase 5 conclusion: real Feishu validation is blocked because this session has only dummy app/test-chat secret context. By the task book's completion definition, Mode B is not yet fully proven as a real replayed product capability; it is proven through fresh target copy, fresh generated host source, embedded host copy, and replay-local contract/selfcheck only.
 
 ## Final Applicable Gates
 
