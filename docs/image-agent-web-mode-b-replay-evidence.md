@@ -105,3 +105,58 @@ self-hosted:python:selfcheck -> PASS (card.action.trigger registered; lark.ws.Cl
 ```
 
 Phase 2 conclusion: the current generator can freshly emit a strict-verifying `self-hosted-runtime` package for use as the Mode B embedding source of truth.
+
+## Phase 3 - Embed Generated Host Module Into Replay Target
+
+Status: pass
+
+Embedding command:
+
+```powershell
+Copy-Item -LiteralPath C:\works\Lark-deployer\generated\image-agent-web-lark\feishu-host -Destination C:\works\image-agent-web-mode-b-replay\feishu_host -Recurse -Force
+Remove-Item -LiteralPath C:\works\image-agent-web-mode-b-replay\feishu_host\__pycache__ -Recurse -Force
+```
+
+Embedded host module contents:
+
+```text
+feishu_host/
+  .env.example
+  README.md
+  app.py
+  cards.py
+  config.py
+  handlers.py
+  local_contract_test.py
+  requirements.txt
+  service_client.py
+  validation.py
+  spec/
+    endpoints.json
+    field_map.json
+    field_specs.json
+    preset.json
+    start_card.json
+    template_specs.json
+```
+
+Secret/state check:
+
+```text
+feishu_host/.env -> absent
+feishu_host/.env.example -> present
+feishu_host/__pycache__ -> absent after cleanup
+```
+
+Replay core-file integrity check against `C:\works\image-agent-web`:
+
+```text
+main.py=MATCH
+agent.py=MATCH
+batch.py=MATCH
+sessions.py=MATCH
+templates.py=MATCH
+requirements.txt=MATCH
+```
+
+Phase 3 conclusion: the generated host module was embedded as an isolated `feishu_host/` directory, with no deep changes to target business core files and no copied local secret file.
