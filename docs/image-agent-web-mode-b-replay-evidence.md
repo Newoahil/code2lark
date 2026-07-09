@@ -66,3 +66,42 @@ REPLAY_TARGET_PORT_CLOSED=true
 ```
 
 Phase 1 conclusion: the fresh replay copy can run as an independent `image-agent-web` target before any Feishu integration is added.
+
+## Phase 2 - Fresh Self-Hosted Package Generation
+
+Status: pass
+
+Fresh generation command:
+
+```powershell
+cd C:\works\Lark-deployer
+Remove-Item -LiteralPath generated\image-agent-web-lark -Recurse -Force
+node dist/index.js generate out\image-agent-web --out generated\image-agent-web-lark --mode self-hosted-runtime
+```
+
+Generation result:
+
+```text
+Generated Lark integration package at C:\works\Lark-deployer\generated\image-agent-web-lark
+Source-of-truth host module: generated\image-agent-web-lark\feishu-host
+```
+
+Strict verification command:
+
+```powershell
+node dist/index.js verify generated\image-agent-web-lark --mode self-hosted-runtime --strict
+```
+
+Verification result summary:
+
+```text
+self-hosted:summary:integration-mode -> PASS (self-hosted-runtime)
+self-hosted:summary:host-receive-mode -> PASS (embedded-long-connection)
+self-hosted:python:py_compile -> PASS
+self-hosted:python:requests -> PASS
+self-hosted:python:local-contract -> PASS (feishu-host contract: PASS)
+self-hosted:python:lark-oapi -> PASS
+self-hosted:python:selfcheck -> PASS (card.action.trigger registered; lark.ws.Client constructed without start())
+```
+
+Phase 2 conclusion: the current generator can freshly emit a strict-verifying `self-hosted-runtime` package for use as the Mode B embedding source of truth.
