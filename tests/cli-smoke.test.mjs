@@ -65,12 +65,16 @@ test("top-level docs define Code2Lark delivery modes", () => {
 
 test("package scripts and CI workflow expose local verification gates", () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
 
-  assert.equal(typeof packageJson.scripts["test:unit"], "string");
-  assert.equal(typeof packageJson.scripts["test:smoke"], "string");
-  assert.equal(typeof packageJson.scripts["test:e2e"], "string");
-  assert.equal(typeof packageJson.scripts["test:coverage"], "string");
-  assert.ok(fs.existsSync(path.join(root, ".github", "workflows", "ci.yml")));
+  assert.equal(packageJson.scripts["test:unit"], "node --test tests/unit-pure-functions.test.mjs");
+  assert.equal(packageJson.scripts["test:smoke"], "node --test tests/cli-smoke.test.mjs");
+  assert.equal(packageJson.scripts["test:e2e"], "node --test tests/runtime-local-e2e.test.mjs");
+  assert.match(packageJson.scripts["test:coverage"], /node --experimental-test-coverage --test/);
+  assert.match(workflow, /npm run check/);
+  assert.match(workflow, /npm run test:unit/);
+  assert.match(workflow, /npm run test:smoke/);
+  assert.match(workflow, /npm audit --package-lock-only --audit-level=moderate/);
 });
 
 test("strict verify rejects outdated manifest schemas", () => {
@@ -2609,15 +2613,23 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
   const generatedAdapter = fs.readFileSync(path.join(generated, "adapter", "handlers.ts"), "utf8");
   const generatedAdapterCards = fs.readFileSync(path.join(generated, "adapter", "cards.ts"), "utf8");
   const generatedReadme = fs.readFileSync(path.join(generated, "README.md"), "utf8");
+  assert.match(generatedAdapter, /http\.get\.api\.state\.submit/);
   assert.match(generatedAdapter, /http\.post\.api\.run\.submit/);
   assert.doesNotMatch(generatedAdapter, /http\.post\.api\.stop\.submit/);
   assert.doesNotMatch(generatedAdapter, /image\.generate|image_url|session_id/);
   assert.doesNotMatch(generatedAdapterCards, /image\.batch\.submit/);
   assert.doesNotMatch(generatedReadme, /image\.generate/);
   const verifyOutput = run(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
+  assert.match(verifyOutput, /adapter:action:http\.get\.api\.state\.submit/);
   assert.match(verifyOutput, /adapter:action:http\.post\.api\.run\.submit/);
   assert.doesNotMatch(verifyOutput, /adapter:action:http\.post\.api\.stop\.submit/);
   assert.doesNotMatch(verifyOutput, /generate and batch|generate\/batch/);
+  const readinessOutput = run(["readiness", generated]);
+  assert.doesNotMatch(readinessOutput, /image\.generate|image_url|session_id/);
+  const handoffOutput = run(["handoff", generated]);
+  assert.match(handoffOutput, /Handoff manifest written/);
+  const handoffManifest = fs.readFileSync(path.join(generated, "handoff_manifest.md"), "utf8");
+  assert.doesNotMatch(handoffManifest, /image\.generate|image_url|session_id/);
   const doctorJson = JSON.parse(run(["doctor", generated, "--mode", "embedded-adapter", "--json"]));
   assert.equal(doctorJson.package_validation.status, "pass");
 });
