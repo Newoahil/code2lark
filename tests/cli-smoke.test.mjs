@@ -689,6 +689,9 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "adapter", "handlers.ts")));
   assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "docs", "integration_guide.md")));
   assert.equal(fs.existsSync(path.join(embeddedOnlyGenerated, "bot-runtime")), false);
+  const embeddedOnlyCards = fs.readFileSync(path.join(embeddedOnlyGenerated, "adapter", "cards.ts"), "utf8");
+  assert.match(embeddedOnlyCards, /const useJson2Card = false;/);
+  assert.match(embeddedOnlyCards, /elements:\s*\[/);
   const embeddedOnlyStartHere = fs.readFileSync(path.join(embeddedOnlyGenerated, "START_HERE.md"), "utf8");
   const embeddedOnlyReadme = fs.readFileSync(path.join(embeddedOnlyGenerated, "README.md"), "utf8");
   assert.match(embeddedOnlyStartHere, /does not include `bot-runtime\/`/);
@@ -772,6 +775,10 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   run(["generate", workspace, "--out", embeddedLongGenerated, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection"]);
   const embeddedLongSummary = JSON.parse(fs.readFileSync(path.join(embeddedLongGenerated, "generation_summary.json"), "utf8"));
   assert.equal(embeddedLongSummary.host_receive_mode, "embedded-long-connection");
+  const embeddedLongCards = fs.readFileSync(path.join(embeddedLongGenerated, "adapter", "cards.ts"), "utf8");
+  assert.match(embeddedLongCards, /schema:\s*["']2\.0["']/);
+  assert.match(embeddedLongCards, /body:\s*\{\s*elements/);
+  assert.match(embeddedLongCards, /behaviors:\s*\[\{\s*type:\s*["']callback["'],\s*value:\s*\{\s*action:/);
   const embeddedLongReadme = fs.readFileSync(path.join(embeddedLongGenerated, "README.md"), "utf8");
   assert.match(embeddedLongReadme, /Host receive mode: embedded-long-connection/);
   assert.match(embeddedLongReadme, /card\.action\.trigger/);
@@ -832,6 +839,10 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.match(embeddedLongHandoffStatus, /\| `VERIFICATION_TOKEN` \| optional \| none \|/);
   const embeddedHybridGenerated = path.join(temp, "generated-embedded-hybrid");
   run(["generate", workspace, "--out", embeddedHybridGenerated, "--mode", "embedded-adapter", "--host-mode", "hybrid"]);
+  const embeddedHybridCards = fs.readFileSync(path.join(embeddedHybridGenerated, "adapter", "cards.ts"), "utf8");
+  assert.match(embeddedHybridCards, /schema:\s*["']2\.0["']/);
+  assert.match(embeddedHybridCards, /body:\s*\{\s*elements/);
+  assert.match(embeddedHybridCards, /behaviors:\s*\[\{\s*type:\s*["']callback["'],\s*value:\s*\{\s*action:/);
   const embeddedHybridContext = JSON.parse(fs.readFileSync(path.join(embeddedHybridGenerated, "feishu_context.template.json"), "utf8"));
   assert.equal(embeddedHybridContext.host_receive_mode, "hybrid");
   assert.equal(embeddedHybridContext.handoff_request.required_values.find((item) => item.key === "PUBLIC_CALLBACK_BASE_URL").required_for_level_2, true);
@@ -2474,6 +2485,10 @@ test("generic HTTP API target can analyze generate and verify", () => {
 
   const generatedLong = path.join(temp, "generated-long");
   run(["generate", workspace, "--out", generatedLong, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection"]);
+  const genericLongCards = fs.readFileSync(path.join(generatedLong, "adapter", "cards.ts"), "utf8");
+  assert.match(genericLongCards, /schema:\s*["']2\.0["']/);
+  assert.match(genericLongCards, /body:\s*\{\s*elements/);
+  assert.match(genericLongCards, /behaviors:\s*\[\{\s*type:\s*["']callback["'],\s*value:\s*\{\s*action:/);
   const genericSidecarReadme = fs.readFileSync(path.join(generatedLong, "sidecar-long-connection", "README.md"), "utf8");
   const genericSidecarTest = fs.readFileSync(path.join(generatedLong, "sidecar-long-connection", "local-contract-test.mjs"), "utf8");
   assert.match(genericSidecarReadme, /handleGenericHttpCardAction/);

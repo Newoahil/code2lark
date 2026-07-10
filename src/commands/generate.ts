@@ -75,15 +75,15 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service, targetProfile));
   writePackageContext(workspace, outDir, service, permissions, integrationMode, hostReceiveMode);
   if (targetProfile === "generic-http-api") {
-    writeGenericAdapterFiles(adapterDir, service, capabilities, interactions);
+    writeGenericAdapterFiles(adapterDir, service, capabilities, interactions, hostReceiveMode);
   } else {
     writeText(path.join(adapterDir, "types.ts"), adapterTypesTs());
     writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
     writeText(path.join(adapterDir, "validation.ts"), adapterValidationTs());
     writeText(path.join(adapterDir, "service-client.ts"), adapterServiceClientTs());
-    writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs(service, capabilities, meta));
+    writeText(path.join(adapterDir, "cards.ts"), adapterCardsTs(service, capabilities, meta, hostReceiveMode));
     writeText(path.join(adapterDir, "handlers.ts"), adapterHandlersTs(service, capabilities, meta));
-    writeRuntimeAdapterJs(adapterDir, service, capabilities, meta);
+    writeRuntimeAdapterJs(adapterDir, service, capabilities, meta, hostReceiveMode);
   }
   if (integrationMode === "embedded-adapter" && (hostReceiveMode === "embedded-long-connection" || hostReceiveMode === "hybrid")) {
     writeText(path.join(sidecarDir, "README.md"), sidecarLongConnectionReadme(service, hostReceiveMode, targetProfile));
@@ -137,9 +137,9 @@ function assertSafeOutputDirectory(outDir: string, force: boolean): void {
   throw new Error(`Refusing to write into non-empty non-managed output directory: ${outDir}. Choose a new --out path or remove user-owned files first.`);
 }
 
-function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): void {
+function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined, hostReceiveMode: HostReceiveMode): void {
   writeText(path.join(adapterDir, "audit-events.js"), adapterAuditEventsJs());
-  writeText(path.join(adapterDir, "cards.js"), adapterCardsJs(service, capabilities, meta));
+  writeText(path.join(adapterDir, "cards.js"), adapterCardsJs(service, capabilities, meta, hostReceiveMode));
   writeText(path.join(adapterDir, "validation.js"), adapterValidationJs());
   writeText(path.join(adapterDir, "service-client.js"), adapterServiceClientJs());
   writeText(path.join(adapterDir, "handlers.js"), adapterHandlersJs(service, capabilities, meta));
@@ -153,17 +153,17 @@ function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, cap
   ].join("\n"));
 }
 
-function writeGenericAdapterFiles(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract): void {
+function writeGenericAdapterFiles(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract, hostReceiveMode: HostReceiveMode): void {
   writeText(path.join(adapterDir, "types.ts"), genericAdapterTypesTs());
   writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
   writeText(path.join(adapterDir, "validation.ts"), genericAdapterValidationTs());
   writeText(path.join(adapterDir, "service-client.ts"), genericAdapterServiceClientTs());
-  writeText(path.join(adapterDir, "cards.ts"), genericAdapterCardsTs(service, capabilities, interactions));
+  writeText(path.join(adapterDir, "cards.ts"), genericAdapterCardsTs(service, capabilities, interactions, hostReceiveMode));
   writeText(path.join(adapterDir, "handlers.ts"), genericAdapterHandlersTs(service, capabilities, interactions));
   writeText(path.join(adapterDir, "audit-events.js"), adapterAuditEventsJs());
   writeText(path.join(adapterDir, "validation.js"), genericAdapterValidationJs());
   writeText(path.join(adapterDir, "service-client.js"), genericAdapterServiceClientJs());
-  writeText(path.join(adapterDir, "cards.js"), genericAdapterCardsJs(service, capabilities, interactions));
+  writeText(path.join(adapterDir, "cards.js"), genericAdapterCardsJs(service, capabilities, interactions, hostReceiveMode));
   writeText(path.join(adapterDir, "handlers.js"), genericAdapterHandlersJs(service, capabilities, interactions));
   writeText(path.join(adapterDir, "handlers.d.ts"), `export function handleGenericHttpCardAction(ctx: Record<string, unknown>, deps: Record<string, unknown>): Promise<Record<string, unknown>>;\n`);
   writeText(path.join(adapterDir, "service-client.d.ts"), `export function callGenericHttpEndpoint(baseUrl: string, method: string, pathTemplate: string, input?: Record<string, unknown>, timeoutMs?: number): Promise<Record<string, unknown>>;\n`);
@@ -1557,16 +1557,15 @@ function parseJson(text) {
 `;
 }
 
-function genericAdapterCardsTs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract): string {
+function genericAdapterCardsTs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract, hostReceiveMode: HostReceiveMode): string {
   const specs = buildGenericActionSpecs(capabilities, interactions);
+  const useJson2Card = hostModeUsesLongConnection(hostReceiveMode);
   return `const actionSpecs = ${JSON.stringify(specs, null, 2)} as const;
 
+const useJson2Card = ${JSON.stringify(useJson2Card)};
+
 export function buildStartCard(): Record<string, unknown> {
-  return {
-    config: { wide_screen_mode: true },
-    header: { template: "blue", title: { tag: "plain_text", content: ${JSON.stringify(service.service.name + " actions")} } },
-    elements: actionSpecs.map(buildActionForm),
-  };
+  return card("blue", ${JSON.stringify(service.service.name + " actions")}, actionSpecs.map(buildActionForm));
 }
 
 function buildActionForm(spec: typeof actionSpecs[number]): Record<string, unknown> {
@@ -1599,21 +1598,23 @@ export function buildFailureCard(message: string): Record<string, unknown> {
 }
 
 function card(template: string, title: string, elements: Array<Record<string, unknown>>): Record<string, unknown> {
+  if (useJson2Card) {
+    return { schema: "2.0", config: { update_multi: true, wide_screen_mode: true }, header: { template, title: { tag: "plain_text", content: title } }, body: { elements } };
+  }
   return { config: { wide_screen_mode: true }, header: { template, title: { tag: "plain_text", content: title } }, elements };
 }
 `;
 }
 
-function genericAdapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract): string {
+function genericAdapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract, hostReceiveMode: HostReceiveMode): string {
   const specs = buildGenericActionSpecs(capabilities, interactions);
+  const useJson2Card = hostModeUsesLongConnection(hostReceiveMode);
   return `const actionSpecs = ${JSON.stringify(specs, null, 2)};
 
+const useJson2Card = ${JSON.stringify(useJson2Card)};
+
 export function buildStartCard() {
-  return {
-    config: { wide_screen_mode: true },
-    header: { template: "blue", title: { tag: "plain_text", content: ${JSON.stringify(service.service.name + " actions")} } },
-    elements: actionSpecs.map(buildActionForm),
-  };
+  return card("blue", ${JSON.stringify(service.service.name + " actions")}, actionSpecs.map(buildActionForm));
 }
 
 function buildActionForm(spec) {
@@ -1646,6 +1647,9 @@ export function buildFailureCard(message) {
 }
 
 function card(template, title, elements) {
+  if (useJson2Card) {
+    return { schema: "2.0", config: { update_multi: true, wide_screen_mode: true }, header: { template, title: { tag: "plain_text", content: title } }, body: { elements } };
+  }
   return { config: { wide_screen_mode: true }, header: { template, title: { tag: "plain_text", content: title } }, elements };
 }
 `;
