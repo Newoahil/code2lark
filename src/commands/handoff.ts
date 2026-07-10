@@ -89,6 +89,12 @@ const RECOMMENDED_FILES = [
   ["manifest/interaction_contract.json", "Machine-readable Lark interaction contract."],
   ["manifest/required_permissions.json", "Machine-readable permission contract."],
   ["manifest/image_agent_meta.snapshot.json", "Template metadata snapshot used by generated cards."],
+  ["adapter/handlers.ts", "Generated adapter action handlers."],
+  ["adapter/cards.ts", "Generated Lark card builders for the adapter."],
+  ["adapter/service-client.ts", "Generated target service client for the adapter."],
+  ["adapter/validation.ts", "Generated adapter input validation."],
+  ["adapter/types.ts", "Generated adapter TypeScript contracts."],
+  ["adapter/audit-events.ts", "Generated adapter audit event helpers."],
   ["bot-runtime/package.json", "Runtime package manifest."],
   ["bot-runtime/tsconfig.json", "Runtime TypeScript build config."],
   ["bot-runtime/.env.example", "Safe runtime env template."],
@@ -129,6 +135,9 @@ const EXCLUDED_PATHS = [
   ["bot-runtime/tmp", "Runtime scratch files."],
   ["bot-runtime/audit.log", "Runtime audit log may include operator/chat context and local evidence."],
   ["bot-runtime/*.log", "Runtime logs may contain local paths or sensitive operational context."],
+  ["feishu-host/.env", "Contains local Feishu app credentials and target runtime values."],
+  ["feishu-host/.venv", "Python virtualenv output; regenerate with pip install."],
+  ["feishu-host/__pycache__", "Python bytecode cache; regenerate locally."],
 ] as const;
 
 export async function handoffCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
@@ -458,7 +467,7 @@ function level2RecordCliGuidance(): string {
 
 function buildHandoffManifest(packagePath: string): HandoffManifest {
   const service = readJsonFile<ServiceManifest>(path.join(packagePath, "manifest", "service_manifest.json"));
-  const recommendedFiles = RECOMMENDED_FILES.map(([filePath, reason]) => fileRow(packagePath, filePath, reason));
+  const recommendedFiles = requiredHandoffFiles(packagePath).map(([filePath, reason]) => fileRow(packagePath, filePath, reason));
   const optionalEvidenceFiles = OPTIONAL_EVIDENCE_FILES.map(([filePath, reason]) => fileRow(packagePath, filePath, reason));
   const excludedPaths = EXCLUDED_PATHS.map(([filePath, reason]) => fileRow(packagePath, filePath, reason));
   const warnings = buildWarnings(recommendedFiles, excludedPaths);
@@ -482,6 +491,28 @@ function buildHandoffManifest(packagePath: string): HandoffManifest {
       "Run `readiness`, `verify --level2`, `evidence`, and `doctor --probe-target --gate` from the target environment before final sign-off.",
     ],
   };
+}
+
+function requiredHandoffFiles(packagePath: string): Array<[string, string]> {
+  const rows = new Map<string, string>(RECOMMENDED_FILES);
+  for (const dir of ["adapter", "bot-runtime", "feishu-host", "sidecar-long-connection"]) {
+    const absoluteDir = path.join(packagePath, dir);
+    if (!fs.existsSync(absoluteDir) || !fs.statSync(absoluteDir).isDirectory()) continue;
+    for (const filePath of listPackageFiles(absoluteDir)) {
+      const relativePath = toForwardSlash(path.join(dir, filePath));
+      if (!isExcluded(relativePath)) {
+        rows.set(relativePath, generatedClosureReason(dir));
+      }
+    }
+  }
+  return Array.from(rows.entries());
+}
+
+function generatedClosureReason(dir: string): string {
+  if (dir === "adapter") return "Generated adapter runtime closure.";
+  if (dir === "bot-runtime") return "Generated standalone reference runtime closure.";
+  if (dir === "feishu-host") return "Generated self-hosted Feishu host module closure.";
+  return "Generated sidecar or gateway host contract closure.";
 }
 
 function fileRow(packagePath: string, relativePath: string, reason: string): HandoffFile {
@@ -980,7 +1011,13 @@ function isExcluded(relativePath: string): boolean {
     || normalized.startsWith("bot-runtime/tmp/")
     || normalized === "bot-runtime/tmp"
     || normalized === "bot-runtime/audit.log"
-    || normalized.startsWith("bot-runtime/") && normalized.endsWith(".log");
+    || normalized.startsWith("bot-runtime/") && normalized.endsWith(".log")
+    || normalized === "feishu-host/.env"
+    || normalized.startsWith("feishu-host/.venv/")
+    || normalized === "feishu-host/.venv"
+    || normalized.startsWith("feishu-host/__pycache__/")
+    || normalized === "feishu-host/__pycache__"
+    || normalized.startsWith("feishu-host/") && normalized.endsWith(".pyc");
 }
 
 function toForwardSlash(value: string): string {
