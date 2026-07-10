@@ -244,7 +244,7 @@ generated/<target>-lark/
 
 `self-hosted-runtime` is the generated host module：当前可作为已验证样板的外置宿主运行，后续也可作为 Mode B 的可迁入宿主模块基础。
 
-The verified image-agent-web sample currently proves Mode A with a Python self-hosted host module run externally. self-hosted-runtime is the foundation for Mode B, but Mode B is not considered productized until the generated host module is replayed inside a fresh target-project copy.
+The verified image-agent-web sample has completed deployment-test validation in Mode A with a Python self-hosted host module run externally, and it has also completed deployment-test validation in Mode B as a target-project embedded host module. This roadmap treats those validations as the current sample baseline and consolidates them into a reusable MVP integration package.
 
 `standalone-runtime` 是参考/兜底宿主，不是主要产品形态。
 

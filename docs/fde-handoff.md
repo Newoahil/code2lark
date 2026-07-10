@@ -13,7 +13,8 @@ This project should be usable by a teammate without relying on a specific Codex 
 
 - `generated/<target>-lark/` is the source-of-truth handoff package. Treat its manifests, adapter code, host modules, docs, context files, verification reports, and evidence records as the canonical handoff state.
 - Mode A is the external host, sidecar, or gateway path. The target service keeps its own lifecycle and the generated host runs beside it.
-- Mode B is the target-project embedded host-module path. The generated package remains the source of truth, but selected host files can be copied into the target repository as an incremental module.
+- Mode B is the target-project embedded host-module path. The generated package remains the source of truth, but selected host files can be copied into the target repository as an incremental module, and the verified `image-agent-web` sample has completed deployment-test validation in this mode.
+- The verified `image-agent-web` sample has completed deployment-test validation in both Mode A and Mode B; this handoff guide preserves that baseline and does not reopen it.
 - self-hosted-runtime is the generated host module. Today it can run externally as the verified sample path; later it can also be embedded into the target project under Mode B.
 - Machine-readable service and interaction contracts.
 - Human-readable permission review.

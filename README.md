@@ -61,7 +61,7 @@ generated/<target>-lark/
 
 ### Mode A：外置宿主 / sidecar / gateway
 
-Mode A is the external host, sidecar, or gateway path.
+Mode A is the external host, sidecar, or gateway path. Mode A is a validated deployment-test baseline in the verified `image-agent-web` sample.
 
 Mode A 是**外置宿主**路线。目标服务继续保持自己的生命周期，Code2Lark 生成的宿主在目标服务外部运行，通过 HTTP / CLI / SDK 去调用目标能力。
 
@@ -69,7 +69,7 @@ Mode A 是**外置宿主**路线。目标服务继续保持自己的生命周期
 
 ### Mode B：目标项目内增量宿主模块
 
-Mode B is the target-project embedded host-module path.
+Mode B is the target-project embedded host-module path. Mode B is a validated deployment-test baseline in the verified `image-agent-web` sample.
 
 Mode B 是**目标项目内增量宿主模块**路线。生成包依然是 source of truth，但可以把其中的宿主模块（如 `feishu-host/`）复制到目标项目仓库里，作为一个增量模块使用。
 
