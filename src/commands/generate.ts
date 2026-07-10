@@ -2828,7 +2828,7 @@ IMAGE_AGENT_BASE_URL=${service.service.base_url || "http://127.0.0.1:8000"}
 IMAGE_AGENT_TIMEOUT_MS=120000
 
 # Runtime HTTP server
-HOST=0.0.0.0
+HOST=127.0.0.1
 PORT=3978
 
 # Optional: if image upload fails, success card falls back to target image URL.
@@ -2851,13 +2851,13 @@ DEBUG_ACCESS_TOKEN=
 # Empty means any valid card click can run the service.
 ALLOWED_OPERATOR_OPEN_IDS=
 
-# Allows /health and local debug simulation before Feishu credentials are filled.
+# Enables local debug simulation before Feishu credentials are filled.
 # Callback verification requires VERIFICATION_TOKEN.
 # Sending the first test card requires APP_ID, APP_SECRET, and TEST_CHAT_ID.
 # Uploading images to Feishu requires APP_ID and APP_SECRET.
 # Full Level 2 verification requires APP_ID, APP_SECRET, VERIFICATION_TOKEN,
 # TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, and a reachable target service.
-ALLOW_DEBUG_WITHOUT_FEISHU=1
+ALLOW_DEBUG_WITHOUT_FEISHU=0
 `;
 }
 
@@ -2903,7 +2903,7 @@ export function loadConfig(): RuntimeConfig {
     publicCallbackBaseUrl: stripTrailingSlash(envValue("PUBLIC_CALLBACK_BASE_URL")),
     imageAgentBaseUrl: stripTrailingSlash(envValue("IMAGE_AGENT_BASE_URL", "http://127.0.0.1:8000")),
     imageAgentTimeoutMs: parsePositiveInt(envValue("IMAGE_AGENT_TIMEOUT_MS", "120000"), "IMAGE_AGENT_TIMEOUT_MS"),
-    host: envValue("HOST", "0.0.0.0"),
+    host: envValue("HOST", "127.0.0.1"),
     port: parsePort(envValue("PORT", "3978"), "PORT"),
     uploadImageToLark: parseFlag(envValue("UPLOAD_IMAGE_TO_LARK", "1"), "UPLOAD_IMAGE_TO_LARK"),
     cardActionMode: parseCardActionMode(envValue("CARD_ACTION_MODE", "sync")),

@@ -2637,7 +2637,7 @@ const server = http.createServer(async (req, res) => {
       imageAgentBaseUrl: config.imageAgentBaseUrl,
       imageAgentTimeoutMs: config.imageAgentTimeoutMs,
       debugEnabled: config.allowDebugWithoutFeishu,
-      debugProtected: Boolean(config.debugAccessToken),
+      debugProtected: !config.allowDebugWithoutFeishu || Boolean(config.debugAccessToken),
     }));
     return;
   }
