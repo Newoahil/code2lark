@@ -21,6 +21,8 @@ test("top-level docs define Code2Lark delivery modes", () => {
   const mvp = fs.readFileSync(path.join(root, "docs", "mvp-1a-image-agent-web.md"), "utf8");
   const fdeHandoff = fs.readFileSync(path.join(root, "docs", "fde-handoff.md"), "utf8");
   const modeBGuide = fs.readFileSync(path.join(root, "docs", "mode-b-embedding-guide.md"), "utf8");
+  const baseline = fs.readFileSync(path.join(root, "docs", "mvp-mode-a-b-baseline.md"), "utf8");
+  const matrix = fs.readFileSync(path.join(root, "docs", "capability-validation-matrix.md"), "utf8");
 
   assert.match(readme, /Mode A is the external host, sidecar, or gateway path\./);
   assert.match(readme, /Mode B is the target-project embedded host-module path\./);
@@ -50,6 +52,13 @@ test("top-level docs define Code2Lark delivery modes", () => {
   assert.match(fdeHandoff, /self-hosted-runtime is the generated host module/i);
   assert.match(modeBGuide, /Do not copy `generated\/<target>-lark\/feishu-host\/\.env`/);
   assert.match(modeBGuide, /add `feishu_host\/\.env`/);
+  assert.match(baseline, /Mode A/);
+  assert.match(baseline, /Mode B/);
+  assert.match(baseline, /deployment-test validation/i);
+  assert.match(matrix, /image-agent-web/);
+  assert.match(matrix, /calendar-stock-updater/);
+  assert.match(matrix, /Mode A/);
+  assert.match(matrix, /Mode B/);
 });
 
 test("CLI can analyze, plan, generate, and verify an image-agent-web-like target", () => {
