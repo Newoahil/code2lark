@@ -2011,8 +2011,9 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(handoffMarkdown, /test_secret/);
   assert.doesNotMatch(handoffMarkdown, /cli_debug_token/);
   const handoffCopy = path.join(temp, "handoff", "nested", "handoff-copy");
-  const handoffCopyOutput = run(["handoff", generated, "--copy-to", handoffCopy]);
+  const handoffCopyOutput = run(["handoff", generated, "--copy-to", handoffCopy, "--check"]);
   assert.match(handoffCopyOutput, /Sanitized handoff copy written/);
+  assert.match(handoffCopyOutput, /Handoff check passed/);
   assert.match(handoffCopyOutput, /Refreshed context, verification, evidence, handoff, doctor, and Level 2 path references/);
   assert.ok(fs.existsSync(path.join(handoffCopy, "README.md")));
   assert.ok(fs.existsSync(path.join(handoffCopy, "START_HERE.md")));
@@ -2031,6 +2032,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assertFileExists(path.join(handoffCopy, "adapter", "types.ts"));
   assertFileExists(path.join(handoffCopy, "adapter", "audit-events.ts"));
   assert.ok(fs.existsSync(path.join(handoffCopy, "bot-runtime", "src", "index.ts")));
+  assert.ok(copiedHandoffManifestHasPath(handoffCopy, "bot-runtime/src/index.ts"));
   assert.ok(fs.existsSync(path.join(handoffCopy, "manifest", "service_manifest.json")));
   assert.equal(fs.existsSync(path.join(handoffCopy, "bot-runtime", ".env")), false);
   assert.equal(fs.existsSync(path.join(handoffCopy, "bot-runtime", "audit.log")), false);
@@ -2142,12 +2144,15 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(copiedDeploymentChecklist, /test_secret/);
   assert.doesNotMatch(copiedDeploymentChecklist, /cli_debug_token/);
   const selfHostedHandoffCopy = path.join(temp, "handoff-self-hosted-copy");
-  run(["handoff", selfHostedGenerated, "--copy-to", selfHostedHandoffCopy]);
+  const selfHostedHandoffOutput = run(["handoff", selfHostedGenerated, "--copy-to", selfHostedHandoffCopy, "--check"]);
+  assert.match(selfHostedHandoffOutput, /Handoff check passed/);
   assert.ok(fs.existsSync(path.join(selfHostedHandoffCopy, "feishu-host", "app.py")));
   assert.ok(fs.existsSync(path.join(selfHostedHandoffCopy, "feishu-host", "handlers.py")));
   assert.ok(fs.existsSync(path.join(selfHostedHandoffCopy, "feishu-host", "service_client.py")));
   assert.ok(fs.existsSync(path.join(selfHostedHandoffCopy, "feishu-host", "validation.py")));
   assert.ok(fs.existsSync(path.join(selfHostedHandoffCopy, "feishu-host", "spec", "start_card.json")));
+  assert.ok(copiedHandoffManifestHasPath(selfHostedHandoffCopy, "feishu-host/app.py"));
+  assert.equal(copiedHandoffManifestHasPath(selfHostedHandoffCopy, "bot-runtime/src/index.ts"), false);
   assert.equal(fs.existsSync(path.join(selfHostedHandoffCopy, "feishu-host", ".env")), false);
   const embeddedLongHandoffCopy = path.join(temp, "handoff-embedded-long-copy");
   run(["handoff", embeddedLongGenerated, "--copy-to", embeddedLongHandoffCopy]);
@@ -2515,6 +2520,15 @@ test("generic HTTP API target can analyze generate and verify", () => {
 
   const verifyOutput = run(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
   assert.match(verifyOutput, /adapter:action:http\.post\.api\.tickets\.submit/);
+  const genericHandoffCopy = path.join(temp, "handoff-generic-embedded-copy");
+  const genericHandoffOutput = run(["handoff", generated, "--copy-to", genericHandoffCopy, "--check"]);
+  assert.match(genericHandoffOutput, /Sanitized handoff copy written/);
+  assert.match(genericHandoffOutput, /Handoff check passed/);
+  assert.ok(copiedHandoffManifestHasPath(genericHandoffCopy, "adapter/handlers.ts"));
+  assert.equal(copiedHandoffManifestHasPath(genericHandoffCopy, "bot-runtime/src/index.ts"), false);
+  assert.equal(copiedHandoffManifestHasPath(genericHandoffCopy, "manifest/image_agent_meta.snapshot.json"), false);
+  assert.equal(fs.existsSync(path.join(genericHandoffCopy, "bot-runtime")), false);
+  assert.equal(fs.existsSync(path.join(genericHandoffCopy, "manifest", "image_agent_meta.snapshot.json")), false);
   const doctorJson = JSON.parse(run(["doctor", generated, "--mode", "embedded-adapter", "--json"]));
   assert.equal(doctorJson.package_validation.status, "pass");
   assert.ok(doctorJson.package_validation.checks.some((item) => item.name === "adapter:action:http.post.api.tickets.submit" && item.status === "pass"));
@@ -2678,6 +2692,11 @@ function run(args) {
 
 function assertFileExists(filePath) {
   assert.ok(fs.existsSync(filePath), `Expected file to exist: ${filePath}`);
+}
+
+function copiedHandoffManifestHasPath(packagePath, relativePath) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(packagePath, "handoff_manifest.json"), "utf8"));
+  return manifest.recommended_files.some((item) => item.path === relativePath && item.present === true);
 }
 
 function genericAdapterContractScript(generated) {
