@@ -2436,6 +2436,107 @@ function buildLevel2VerificationRecord(service: ServiceManifest, permissions: Re
     ? permissions.callbacks.map((callback) => `  - [ ] \`${callback.callback}\` - ${callback.reason}`).join("\n")
     : "  - [ ] No explicit callbacks were generated.";
 
+  if (integrationMode === "self-hosted-runtime") {
+    return `# Level 2 Verification Record
+
+Use this file to record the real Feishu/Lark verification for this self-hosted generated host module.
+
+## Environment
+
+- Date:
+- Operator:
+- Target service: ${service.service.name}
+- Target base URL: ${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}
+- Generated package path:
+- Runtime path: feishu-host/
+- Required local env file: feishu-host/.env
+- FEISHU_CONNECTION_MODE=websocket
+- Event subscription: card.action.trigger
+- Feishu app name:
+- Test chat:
+
+## Required Feishu Setup
+
+- [ ] Bot capability is enabled.
+- [ ] Bot is added to the test chat.
+- [ ] App credentials are written to \`feishu-host/.env\`: \`FEISHU_APP_ID\`, \`FEISHU_APP_SECRET\`.
+- [ ] \`FEISHU_CONNECTION_MODE=websocket\` is set.
+- [ ] \`IMAGE_AGENT_BASE_URL\` is set to the reachable target service base URL.
+- [ ] The Feishu app is subscribed to \`card.action.trigger\`.
+- [ ] Optional \`FEISHU_ALLOWED_USERS\` is set for real group use, or the operator explicitly accepts that any valid card click can run the service.
+- [ ] Optional \`TEST_CHAT_ID\` is set before using \`python feishu-host/app.py --send-start-card\`.
+
+## Required Scopes
+
+${scopes}
+
+## Required Events
+
+- [ ] \`card.action.trigger\` is subscribed for the app.
+
+## CLI Command Style
+
+- If this package still lives under the original Lark-deployer repository, run commands as \`node ..\\..\\dist\\index.js <command> .\`.
+- If this package was copied elsewhere, set \`$env:LARK_DEPLOYER_CLI="C:\\path\\to\\Lark-deployer\\dist\\index.js"\` and run commands as \`node $env:LARK_DEPLOYER_CLI <command> .\`.
+
+## Preflight Evidence
+
+- [ ] \`python feishu-host/local_contract_test.py\` succeeds.
+- [ ] \`python feishu-host/app.py --selfcheck\` succeeds and reports card.action.trigger wiring.
+- [ ] \`verify . --mode self-hosted-runtime --strict\` succeeds.
+- [ ] \`verification_report.md\` has no unexpected FAIL checks.
+
+## Interaction Evidence
+
+- [ ] \`python feishu-host/app.py --send-start-card\` sends the start card to the test chat, or an equivalent host-owned start-card send is documented.
+- [ ] Test chat receives the start card rendered from \`feishu-host/spec/start_card.json\`.
+- [ ] Host logs show the Feishu SDK long connection is online.
+- [ ] Host logs show a \`card.action.trigger\` event reaches \`feishu-host/app.py\`.
+- [ ] The generated host calls \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/generate\`.
+- [ ] Submitted template id, field, size, and message values appear in the target request or output behavior.
+- [ ] Target service returns \`image_url\`.
+- [ ] Test chat receives a success card.
+- [ ] Success card shows \`Feedback\` input and \`Iterate image\` action when the target returns \`session_id\`.
+- [ ] Operator submits feedback from the success card in Feishu.
+- [ ] The generated host calls \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/iterate\`.
+- [ ] Operator submits a batch job from Feishu.
+- [ ] The generated host calls \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/batch\`.
+- [ ] Batch progress card shows batch id, done/total, completed count, failed count, and refresh action.
+- [ ] Operator refreshes the batch progress card from Feishu.
+- [ ] The generated host calls \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/batch/{batch_id}/status\`.
+- [ ] Completed batch card shows a download link for \`${service.service.base_url || "<IMAGE_AGENT_BASE_URL>"}/api/batch/{batch_id}/download\` when completed images exist.
+
+## Failure-Path Evidence
+
+At least one failure path should be observed before considering this package stable:
+
+- [ ] Invalid card input returns a red failure card and does not call the target service.
+- [ ] Missing or invalid target base URL returns a readable failure card.
+- [ ] Slow or stuck target response returns a readable timeout failure card.
+- [ ] Missing \`feishu-host/.env\` values are caught before starting the long-connection host.
+- [ ] Unauthorized operator input returns a readable failure card when \`FEISHU_ALLOWED_USERS\` is set.
+
+## Artifacts
+
+- \`verification_report.md\` path:
+- feishu-host console/log evidence path:
+- Start card message ID or screenshot:
+- Result card message ID or screenshot:
+- Generated image URL:
+- Batch ID:
+- Batch status card message ID or screenshot:
+- Batch download URL or screenshot:
+- Trace ID:
+- Notes:
+
+## Completion Decision
+
+- [ ] Level 2 verified.
+- [ ] Remaining issues documented.
+- [ ] This generated package can be handed to another FDE using \`README.md\`, \`deployment_checklist.md\`, and this file.
+`;
+  }
+
   if (integrationMode === "embedded-adapter") {
     const longConnection = hostReceiveMode === "embedded-long-connection";
     const usesWebhook = hostModeUsesWebhook(hostReceiveMode);

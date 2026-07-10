@@ -542,6 +542,17 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.match(selfHostedRootReadme, /Self-Hosted Runtime Package/);
   assert.match(selfHostedRootReadme, /python app\.py --send-start-card/);
   assert.doesNotMatch(selfHostedRootReadme, /bot-runtime/);
+  const selfHostedLevel2 = fs.readFileSync(path.join(selfHostedGenerated, "level2_verification_record.md"), "utf8");
+  assert.match(selfHostedLevel2, /feishu-host\/\.env/);
+  assert.match(selfHostedLevel2, /FEISHU_CONNECTION_MODE=websocket/);
+  assert.match(selfHostedLevel2, /card\.action\.trigger/);
+  assert.match(selfHostedLevel2, /python feishu-host\/local_contract_test\.py/);
+  assert.match(selfHostedLevel2, /python feishu-host\/app\.py --selfcheck/);
+  assert.doesNotMatch(selfHostedLevel2, /bot-runtime\/\.env/);
+  assert.doesNotMatch(selfHostedLevel2, /Bot runtime URL:/);
+  assert.doesNotMatch(selfHostedLevel2, /PUBLIC_CALLBACK_BASE_URL/);
+  assert.doesNotMatch(selfHostedLevel2, /VERIFICATION_TOKEN/);
+  assert.doesNotMatch(selfHostedLevel2, /\/webhook\/card/);
   const selfHostedPackageGitignore = fs.readFileSync(path.join(selfHostedGenerated, ".gitignore"), "utf8");
   assert.match(selfHostedPackageGitignore, /feishu-host\/\.env/);
   const selfHostedStartCard = JSON.parse(fs.readFileSync(path.join(selfHostedFeishuHost, "spec", "start_card.json"), "utf8"));
