@@ -86,6 +86,40 @@ test("strict verify rejects outdated manifest schemas", () => {
   assert.match(output, /target_profile/i);
 });
 
+test("generate refuses to overwrite non-managed non-empty output directories", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-generate-guard-"));
+  const target = path.join(temp, "image-agent-web");
+  const workspace = path.join(temp, "out");
+  const existing = path.join(temp, "existing-output");
+
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, "requirements.txt"), "fastapi==0.115.0\n", "utf8");
+  fs.writeFileSync(
+    path.join(target, "main.py"),
+    [
+      "from fastapi import FastAPI",
+      "app = FastAPI()",
+      "@app.post(\"/api/generate\")",
+      "async def generate(): pass",
+    ].join("\n"),
+    "utf8",
+  );
+  fs.writeFileSync(path.join(target, "templates.py"), "TEMPLATES = []\nREFERENCE_TYPES = []\n", "utf8");
+  fs.mkdirSync(existing, { recursive: true });
+  fs.writeFileSync(path.join(existing, "README.md"), "user-owned content", "utf8");
+
+  run(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace]);
+  const output = runExpectFailure(["generate", workspace, "--out", existing]);
+  assert.match(output, /non-empty|force|managed/i);
+  assert.equal(fs.readFileSync(path.join(existing, "README.md"), "utf8"), "user-owned content");
+
+  const managed = path.join(temp, "managed-output");
+  run(["generate", workspace, "--out", managed]);
+  const managedOutput = runExpectFailure(["generate", workspace, "--out", managed]);
+  assert.match(managedOutput, /--force|existing generated package/i);
+  run(["generate", workspace, "--out", managed, "--force"]);
+});
+
 test("CLI can analyze, plan, generate, and verify an image-agent-web-like target", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-smoke-"));
   const target = path.join(temp, "image-agent-web");
@@ -1296,7 +1330,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
       .replace("- Start card message ID:", "- Start card message ID: om_preserved_start"),
     "utf8",
   );
-  const preserveGenerateOutput = run(["generate", workspace, "--out", preserveGenerated]);
+  const preserveGenerateOutput = run(["generate", workspace, "--out", preserveGenerated, "--force"]);
   assert.match(preserveGenerateOutput, /Preserved existing Level 2 evidence record/);
   const preservedRecord = fs.readFileSync(preserveRecordPath, "utf8");
   assert.match(preservedRecord, /- \[x\] Level 2 verified\./);
@@ -1325,7 +1359,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
       .replace("- `verification_report.md` path:", `- \`verification_report.md\` path: ${artifactVerificationReport}`),
     "utf8",
   );
-  const artifactPreserveOutput = run(["generate", workspace, "--out", artifactPreserveGenerated]);
+  const artifactPreserveOutput = run(["generate", workspace, "--out", artifactPreserveGenerated, "--force"]);
   assert.match(artifactPreserveOutput, /Preserved existing Level 2 evidence record/);
   const artifactPreservedRecord = fs.readFileSync(artifactRecordPath, "utf8");
   assert.match(artifactPreservedRecord, /Bot runtime URL: http:\/\/127\.0\.0\.1:3978/);

@@ -70,7 +70,7 @@ function printHelp(): void {
 Usage:
   lark-deployer analyze <target-path> --base-url <url> [--out <dir>] [--name <name>]
   lark-deployer plan <analysis-workspace>
-  lark-deployer generate <analysis-workspace> [--out <generated-dir>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime]
+  lark-deployer generate <analysis-workspace> [--out <generated-dir>] [--force] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime]
   lark-deployer context <analysis-workspace-or-generated-package> [--out <file>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime]
   lark-deployer configure <generated-package> [--context <file>] [--out-env <file>] [--report <file>] [--strict] [--dry-run]
   lark-deployer status <generated-package> [--env <file>] [--json]

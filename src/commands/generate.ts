@@ -29,6 +29,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   const targetProfile = capabilities.target_profile || "image-agent-web";
   const defaultOut = path.resolve("generated", `${slugify(service.service.name)}-lark`);
   const outDir = path.resolve(getStringOption(options, "out", defaultOut));
+  assertSafeOutputDirectory(outDir, hasOption(options, "force"));
   const integrationMode = normalizeIntegrationMode(getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime"))));
   const hostReceiveMode = normalizeHostReceiveMode(getStringOption(options, "host-mode", getStringOption(options, "hostMode", "")), integrationMode);
   if (targetProfile === "generic-http-api" && integrationMode !== "embedded-adapter") {
@@ -114,7 +115,7 @@ export async function generateCommand(args: string[], options: Record<string, st
 }
 
 function generateUsage(): string {
-  return "Usage: lark-deployer generate <analysis-workspace> [--out <generated-dir>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime]";
+  return "Usage: lark-deployer generate <analysis-workspace> [--out <generated-dir>] [--force] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime]";
 }
 
 function normalizeIntegrationMode(value: string): IntegrationMode {
@@ -123,6 +124,17 @@ function normalizeIntegrationMode(value: string): IntegrationMode {
   if (normalized === "standalone" || normalized === "standalone-runtime") return "standalone-runtime";
   if (normalized === "self-hosted" || normalized === "self-hosted-runtime") return "self-hosted-runtime";
   throw new Error('--mode must be "embedded-adapter", "standalone-runtime", or "self-hosted-runtime".');
+}
+
+function assertSafeOutputDirectory(outDir: string, force: boolean): void {
+  if (!fs.existsSync(outDir)) return;
+  const entries = fs.readdirSync(outDir);
+  if (!entries.length) return;
+  if (fs.existsSync(path.join(outDir, "generation_summary.json"))) {
+    if (force) return;
+    throw new Error(`Refusing to update existing generated package without --force: ${outDir}.`);
+  }
+  throw new Error(`Refusing to write into non-empty non-managed output directory: ${outDir}. Choose a new --out path or remove user-owned files first.`);
 }
 
 function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): void {
