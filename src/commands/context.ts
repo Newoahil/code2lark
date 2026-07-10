@@ -172,6 +172,7 @@ export function buildContextTemplate(
   const embedded = options.integrationMode === "embedded-adapter";
   const selfHosted = options.integrationMode === "self-hosted-runtime";
   const hostReceiveMode = options.hostReceiveMode || (embedded ? "embedded-webhook" : "standalone-runtime");
+  const longConnection = hostReceiveMode === "embedded-long-connection";
   const hybrid = hostReceiveMode === "hybrid";
   const hostModeOption = embedded && hostReceiveMode !== "embedded-webhook" ? ` --host-mode ${hostReceiveMode}` : "";
   const selfHostedModeOption = " --mode self-hosted-runtime";
@@ -444,6 +445,17 @@ export function buildContextTemplate(
         { key: "IMAGE_AGENT_TIMEOUT_MS", recommended_value: "120000", note: "Target HTTP timeout used by service_client.py." },
         { key: "FEISHU_ALLOWED_USERS", recommended_value: "<comma-separated open_id allowlist for real group use>", note: "Optional operator authorization guard." },
         { key: "TEST_CHAT_ID", recommended_value: "<chat id for manual start-card send>", note: "Optional until app.py send-start-card flow is used." },
+      ] : longConnection ? [
+        {
+          key: "IMAGE_AGENT_TIMEOUT_MS",
+          recommended_value: "120000",
+          note: "Target service call timeout configured in the existing long-connection host service.",
+        },
+        {
+          key: "ALLOWED_OPERATOR_OPEN_IDS",
+          recommended_value: "<comma-separated open_id allowlist for real group use>",
+          note: "Optional host authorization guard. When set, only listed Feishu operator open_id values can execute card actions.",
+        },
       ] : [
         {
           key: "CARD_ACTION_MODE",
@@ -875,7 +887,11 @@ export function buildContextReplyTemplate(template: ContextTemplate): ContextRep
           "Run configure --strict, start the generated bot runtime, then run verify --level2.",
         ],
     secret_red_lines: [
-      selfHosted ? "Do not paste FEISHU_APP_SECRET into this reply template." : "Do not paste APP_SECRET, VERIFICATION_TOKEN, ENCRYPT_KEY, or DEBUG_ACCESS_TOKEN into this reply template.",
+      selfHosted
+        ? "Do not paste FEISHU_APP_SECRET into this reply template."
+        : longConnection
+          ? "Do not paste APP_SECRET into this reply template."
+          : "Do not paste APP_SECRET, VERIFICATION_TOKEN, ENCRYPT_KEY, or DEBUG_ACCESS_TOKEN into this reply template.",
       "Share secrets only through the secure_secret_channel named here.",
       "Do not replace empty secret fields in shared Markdown with real secret values.",
     ],
@@ -898,6 +914,11 @@ export function buildContextReplyMarkdown(reply: ContextReplyTemplate): string {
   const blockedBy = reply.blocked_by.length ? reply.blocked_by.map((item) => `- ${item}`).join("\n") : "- none";
   const nextSteps = reply.next_local_steps.map((item) => `- [ ] ${item}`).join("\n");
   const redLines = reply.secret_red_lines.map((item) => `- ${item}`).join("\n");
+  const secretChannelHint = reply.secret_red_lines.some((item) => item.includes("FEISHU_APP_SECRET"))
+    ? "<required before FEISHU_APP_SECRET is shared>"
+    : reply.secret_red_lines.some((item) => item.includes("VERIFICATION_TOKEN"))
+      ? "<required before APP_SECRET / VERIFICATION_TOKEN are shared>"
+      : "<required before APP_SECRET is shared>";
 
   return `# Feishu Context Reply Template
 
@@ -907,7 +928,7 @@ Use this safe reply template to record non-secret owner answers. Copy it to \`fe
 - Target service: ${reply.target_service.name}
 - Target base URL: ${reply.target_service.base_url || "<to be confirmed>"}
 - Responder: ${reply.responder.name || "<name>"} (${reply.responder.role || "<role>"})
-- Secure secret channel: ${reply.secure_secret_channel || "<required before APP_SECRET / VERIFICATION_TOKEN are shared>"}
+- Secure secret channel: ${reply.secure_secret_channel || secretChannelHint}
 
 ## Answers
 
