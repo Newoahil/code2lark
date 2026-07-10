@@ -2547,6 +2547,12 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
   const target = path.join(temp, "calendar-stock-updater");
   const workspace = path.join(temp, "out");
   const generated = path.join(temp, "generated");
+  const secondTargetPlan = fs.readFileSync(path.join(root, "docs", "second-target-validation-plan.md"), "utf8");
+
+  assert.match(secondTargetPlan, /calendar-stock-updater/);
+  assert.match(secondTargetPlan, /Mode A/);
+  assert.match(secondTargetPlan, /query/i);
+  assert.match(secondTargetPlan, /action/i);
 
   fs.mkdirSync(target, { recursive: true });
   fs.writeFileSync(path.join(target, "package.json"), JSON.stringify({ name: "calendar-stock-updater", scripts: { ui: "node server.js" } }, null, 2), "utf8");
@@ -2601,9 +2607,13 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
 
   run(["generate", workspace, "--out", generated, "--mode", "embedded-adapter"]);
   const generatedAdapter = fs.readFileSync(path.join(generated, "adapter", "handlers.ts"), "utf8");
+  const generatedAdapterCards = fs.readFileSync(path.join(generated, "adapter", "cards.ts"), "utf8");
+  const generatedReadme = fs.readFileSync(path.join(generated, "README.md"), "utf8");
   assert.match(generatedAdapter, /http\.post\.api\.run\.submit/);
   assert.doesNotMatch(generatedAdapter, /http\.post\.api\.stop\.submit/);
   assert.doesNotMatch(generatedAdapter, /image\.generate|image_url|session_id/);
+  assert.doesNotMatch(generatedAdapterCards, /image\.batch\.submit/);
+  assert.doesNotMatch(generatedReadme, /image\.generate/);
   const verifyOutput = run(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
   assert.match(verifyOutput, /adapter:action:http\.post\.api\.run\.submit/);
   assert.doesNotMatch(verifyOutput, /adapter:action:http\.post\.api\.stop\.submit/);

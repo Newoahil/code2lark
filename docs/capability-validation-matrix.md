@@ -6,4 +6,4 @@ This matrix is the current human-readable fact source for target profile, delive
 | --- | --- | --- | --- | --- | --- |
 | image-agent-web | Mode A | self-hosted / long connection | yes | yes | verified sample baseline |
 | image-agent-web | Mode B | embedded host module | yes | yes | verified sample baseline |
-| calendar-stock-updater | generic target candidate | Mode A pending | package validation only | no | second-target validation pending |
+| calendar-stock-updater | Mode A | embedded/adapter-first | yes | package validation only | non-image generic HTTP package validation in progress |
