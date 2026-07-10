@@ -349,7 +349,7 @@ export function buildContextTemplate(
       manual_steps: permissions.manual_steps,
     },
     runtime_config: {
-      host: "0.0.0.0",
+      host: "127.0.0.1",
       port: 3978,
       upload_image_to_lark: true,
       target_timeout_seconds: 120,
@@ -357,7 +357,7 @@ export function buildContextTemplate(
       feishu_openapi_base_url: "",
       debug_access_token: "",
       allowed_operator_open_ids: [],
-      allow_debug_without_feishu: true,
+      allow_debug_without_feishu: false,
     },
     handoff_request: {
       recipient_hint: "Feishu app owner, permission admin, or FDE who can configure the test bot.",

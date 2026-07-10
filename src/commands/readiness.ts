@@ -352,11 +352,11 @@ function buildRuntimeRows(env: Record<string, string>, context: ContextTemplate 
   rows.push(buildRuntimeRow("CARD_ACTION_MODE", env.CARD_ACTION_MODE, context?.runtime_config.card_action_mode || "sync", "sync waits for target completion; async returns a running card and patches later."));
   rows.push(buildRuntimeRow("UPLOAD_IMAGE_TO_LARK", env.UPLOAD_IMAGE_TO_LARK, boolToEnv(context?.runtime_config.upload_image_to_lark, "1"), "1 uploads result images to Feishu when API credentials and scope are available."));
   rows.push(buildRuntimeRow("IMAGE_AGENT_TIMEOUT_MS", env.IMAGE_AGENT_TIMEOUT_MS, context?.runtime_config.target_timeout_seconds ? String(context.runtime_config.target_timeout_seconds * 1000) : "120000", "Target service call and image download timeout."));
-  rows.push(buildRuntimeRow("HOST", env.HOST, context?.runtime_config.host || "0.0.0.0", "HTTP bind host for the generated bot runtime."));
+  rows.push(buildRuntimeRow("HOST", env.HOST, context?.runtime_config.host || "127.0.0.1", "HTTP bind host for the generated bot runtime."));
   rows.push(buildRuntimeRow("PORT", env.PORT, context?.runtime_config.port ? String(context.runtime_config.port) : "3978", "HTTP port for the generated bot runtime."));
   rows.push(buildOptionalRuntimeRow("DEBUG_ACCESS_TOKEN", env.DEBUG_ACCESS_TOKEN, context?.runtime_config.debug_access_token || "", "Protects /debug/* endpoints when the runtime is reachable through a public callback URL. Value is intentionally hidden."));
   rows.push(buildOptionalRuntimeRow("ALLOWED_OPERATOR_OPEN_IDS", env.ALLOWED_OPERATOR_OPEN_IDS, operatorOpenIdStatus(context?.runtime_config.allowed_operator_open_ids), "Optional operator open_id allowlist for card actions. Values are not printed in this status file."));
-  rows.push(buildRuntimeRow("ALLOW_DEBUG_WITHOUT_FEISHU", env.ALLOW_DEBUG_WITHOUT_FEISHU, boolToEnv(context?.runtime_config.allow_debug_without_feishu, "1"), "1 keeps local debug simulation available before real Feishu credentials are filled."));
+  rows.push(buildRuntimeRow("ALLOW_DEBUG_WITHOUT_FEISHU", env.ALLOW_DEBUG_WITHOUT_FEISHU, boolToEnv(context?.runtime_config.allow_debug_without_feishu, "0"), "1 explicitly enables local debug simulation before real Feishu credentials are filled."));
   return rows;
 }
 
