@@ -59,6 +59,8 @@ test("top-level docs define Code2Lark delivery modes", () => {
   assert.match(matrix, /calendar-stock-updater/);
   assert.match(matrix, /Mode A/);
   assert.match(matrix, /Mode B/);
+  assert.match(readme, /canonical MVP package.*schema 0\.2/i);
+  assert.match(status, /canonical MVP package.*schema 0\.2/i);
 });
 
 test("strict verify rejects outdated manifest schemas", () => {
@@ -302,6 +304,11 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(longContextDirectRequest, /VERIFICATION_TOKEN \/ ENCRYPT_KEY/);
   const missingGenerated = path.join(temp, "generated-missing-context");
   run(["generate", workspace, "--out", missingGenerated]);
+  const generatedServiceManifest = JSON.parse(fs.readFileSync(path.join(missingGenerated, "manifest", "service_manifest.json"), "utf8"));
+  const generatedCapabilityMap = JSON.parse(fs.readFileSync(path.join(missingGenerated, "manifest", "capability_map.json"), "utf8"));
+  assert.equal(generatedServiceManifest.schema_version, "0.2");
+  assert.equal(generatedCapabilityMap.schema_version, "0.2");
+  assert.ok(generatedCapabilityMap.target_profile);
   const selfHostedGenerated = path.join(temp, "generated-self-hosted");
   run(["generate", workspace, "--out", selfHostedGenerated, "--mode", "self-hosted-runtime"]);
   const selfHostedSummary = JSON.parse(fs.readFileSync(path.join(selfHostedGenerated, "generation_summary.json"), "utf8"));

@@ -20,6 +20,7 @@ Lark-deployer 是一个构建时（build-time）生成器：分析一个已有�
 - 测试：`tests/cli-smoke.test.mjs`、`tests/runtime-local-e2e.test.mjs`、`tests/unit-pure-functions.test.mjs`。CLI 冒烟测试已覆盖 adapter-first 生成与 `verify --mode embedded-adapter --strict` package validation；运行时 e2e 继续覆盖 standalone/reference host。
 - `tsconfig.json` 开启 `strict: true`，构建目标 ES2022 / NodeNext。
 - 2026-07-07 泛用化阶段新增 manifest `0.2` 契约、strategy-based analyzer、`generic_http_api` 分析路径，以及 `generic-http-api` embedded-adapter 生成/验证路径；`image-agent-web` 仍是 self-hosted-runtime 长连接回归锚点。
+- The canonical MVP package is freshly generated from current schema 0.2 manifests.
 - 2026-07-08 当前路线把 Mode A（外置宿主 / sidecar / gateway）和 Mode B（目标项目内增量宿主模块）产品化：`generated/<target>-lark/` 是标准 source of truth，`self-hosted-runtime` 是 generated host module，`feishu-host/` 既可独立运行，也可按 `docs/mode-b-embedding-guide.md` 迁入目标项目内部；`docs/embedded-into-target-app-guide.md` 保留为补充迁移细节。
 
 ## 3. 命令流水线（当前已实现）

@@ -59,6 +59,8 @@ generated/<target>-lark/
 
 把这个生成目录视为**单一事实来源（source of truth）**：其中包含 manifest、adapter 代码、宿主模块、文档和验证记录。
 
+The canonical MVP package is freshly generated from current schema 0.2 manifests.
+
 ### Mode A：外置宿主 / sidecar / gateway
 
 Mode A is the external host, sidecar, or gateway path. Mode A is a validated deployment-test baseline in the verified `image-agent-web` sample.
