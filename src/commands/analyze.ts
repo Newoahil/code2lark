@@ -513,6 +513,7 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name }: Anal
   const discovered = discoverHttpEndpoints(targetPath);
   const endpoints = dedupeEndpoints(discovered);
   const capabilityEndpoints = endpoints.filter((endpoint) => !isHealthEndpoint(endpoint));
+  const generatedCapabilityEndpoints = capabilityEndpoints.filter((endpoint) => genericEndpointStatus(endpoint) === "supported");
   const healthPath = endpoints.find(isHealthEndpoint)?.path || endpoints.find((endpoint) => endpoint.method === "GET")?.path || "/";
   const healthProbe = await getJsonWithTimeout(baseUrl ? `${baseUrl}${healthPath}` : "", 5000);
   const frameworks = detectFrameworks(targetPath);
@@ -547,11 +548,14 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name }: Anal
         if (isHealthEndpoint(endpoint)) {
           return { ...endpoint, status: "supporting" as const, reason: "Used as a generic target healthcheck." };
         }
+        const status = genericEndpointStatus(endpoint);
         return {
           ...endpoint,
-          status: "supported" as const,
+          status,
           capability_id: capabilityIdForEndpoint(endpoint),
-          reason: "Generic HTTP API endpoint exposed as a card-action backed capability.",
+          reason: status === "supported"
+            ? "Generic HTTP API endpoint exposed as a card-action backed capability."
+            : "Potentially destructive generic HTTP endpoint discovered for review but not generated as a direct card action.",
         };
       }),
       notes: [
@@ -573,7 +577,7 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name }: Anal
       id: capabilityIdForEndpoint(endpoint),
       name: `${endpoint.method} ${endpoint.path}`,
       kind: endpoint.method === "GET" ? "query" : "action",
-      risk: endpoint.method === "GET" ? "read_only" : "write",
+      risk: inferGenericEndpointRisk(endpoint),
       source: {
         type: "http",
         method: endpoint.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
@@ -593,7 +597,7 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name }: Anal
     service_name: name,
     supported_triggers: ["card_action", "http_request", "scheduled_poll", "manual_review"],
     supported_result_modes: ["interactive_card", "structured_result", "artifact", "state_update"],
-    interactions: capabilityMap.capabilities.map((capability) => ({
+    interactions: capabilityMap.capabilities.filter((capability) => generatedCapabilityEndpoints.some((endpoint) => capability.id === capabilityIdForEndpoint(endpoint))).map((capability) => ({
       id: `${capability.id}.card`,
       capability_id: capability.id,
       action_id: `${capability.id}.submit`,
@@ -715,6 +719,16 @@ function dedupeEndpoints(endpoints: Array<{ method: string; path: string }>): Ar
 
 function isHealthEndpoint(endpoint: { method: string; path: string }): boolean {
   return endpoint.method === "GET" && /^\/(health|api\/health|status|api\/status)$/.test(endpoint.path);
+}
+
+function inferGenericEndpointRisk(endpoint: { method: string; path: string }): "read_only" | "write" | "destructive" {
+  if (endpoint.method === "GET") return "read_only";
+  if (endpoint.method === "DELETE") return "destructive";
+  return /(stop|delete|reset|shutdown|drop|destroy)/i.test(endpoint.path) ? "destructive" : "write";
+}
+
+function genericEndpointStatus(endpoint: { method: string; path: string }): "supported" | "discovered_not_generated" {
+  return inferGenericEndpointRisk(endpoint) === "destructive" ? "discovered_not_generated" : "supported";
 }
 
 function capabilityIdForEndpoint(endpoint: { method: string; path: string }): string {

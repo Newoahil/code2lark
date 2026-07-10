@@ -2529,15 +2529,26 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
   assert.equal(capabilityMap.target_profile, "generic-http-api");
   assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.get.api.state" && capability.kind === "query"));
   assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.post.api.run" && capability.kind === "action"));
-  assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.post.api.stop" && capability.kind === "action"));
+  assert.ok(serviceManifest.source_scan.endpoint_coverage.some((item) => (
+    item.method === "POST"
+    && item.path === "/api/stop"
+    && item.status !== "supported"
+  )));
+  assert.ok(capabilityMap.capabilities.some((capability) => (
+    capability.id === "http.post.api.stop"
+    && capability.kind === "action"
+    && capability.risk === "destructive"
+  )));
   assert.equal(capabilityMap.capabilities.some((capability) => capability.id.startsWith("image.")), false);
 
   run(["generate", workspace, "--out", generated, "--mode", "embedded-adapter"]);
   const generatedAdapter = fs.readFileSync(path.join(generated, "adapter", "handlers.ts"), "utf8");
   assert.match(generatedAdapter, /http\.post\.api\.run\.submit/);
+  assert.doesNotMatch(generatedAdapter, /http\.post\.api\.stop\.submit/);
   assert.doesNotMatch(generatedAdapter, /image\.generate|image_url|session_id/);
   const verifyOutput = run(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
   assert.match(verifyOutput, /adapter:action:http\.post\.api\.run\.submit/);
+  assert.doesNotMatch(verifyOutput, /adapter:action:http\.post\.api\.stop\.submit/);
   assert.doesNotMatch(verifyOutput, /generate and batch|generate\/batch/);
   const doctorJson = JSON.parse(run(["doctor", generated, "--mode", "embedded-adapter", "--json"]));
   assert.equal(doctorJson.package_validation.status, "pass");
