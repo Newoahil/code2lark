@@ -2020,12 +2020,12 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(fs.existsSync(path.join(handoffCopy, "feishu_context.reply.template.json")));
   assert.ok(fs.existsSync(path.join(handoffCopy, "feishu_context.reply.template.md")));
   assert.ok(fs.existsSync(path.join(handoffCopy, "level2_manual_evidence.template.json")));
-  assert.ok(fs.existsSync(path.join(handoffCopy, "adapter", "handlers.ts")));
-  assert.ok(fs.existsSync(path.join(handoffCopy, "adapter", "cards.ts")));
-  assert.ok(fs.existsSync(path.join(handoffCopy, "adapter", "service-client.ts")));
-  assert.ok(fs.existsSync(path.join(handoffCopy, "adapter", "validation.ts")));
-  assert.ok(fs.existsSync(path.join(handoffCopy, "adapter", "types.ts")));
-  assert.ok(fs.existsSync(path.join(handoffCopy, "adapter", "audit-events.ts")));
+  assertFileExists(path.join(handoffCopy, "adapter", "handlers.ts"));
+  assertFileExists(path.join(handoffCopy, "adapter", "cards.ts"));
+  assertFileExists(path.join(handoffCopy, "adapter", "service-client.ts"));
+  assertFileExists(path.join(handoffCopy, "adapter", "validation.ts"));
+  assertFileExists(path.join(handoffCopy, "adapter", "types.ts"));
+  assertFileExists(path.join(handoffCopy, "adapter", "audit-events.ts"));
   assert.ok(fs.existsSync(path.join(handoffCopy, "bot-runtime", "src", "index.ts")));
   assert.ok(fs.existsSync(path.join(handoffCopy, "manifest", "service_manifest.json")));
   assert.equal(fs.existsSync(path.join(handoffCopy, "bot-runtime", ".env")), false);
@@ -2652,6 +2652,10 @@ function run(args) {
     encoding: "utf8",
     stdio: "pipe",
   });
+}
+
+function assertFileExists(filePath) {
+  assert.ok(fs.existsSync(filePath), `Expected file to exist: ${filePath}`);
 }
 
 function genericAdapterContractScript(generated) {

@@ -74,6 +74,8 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
       body: JSON.stringify({}),
     });
     assert.equal(safeDefaultDebugDenied.status, 403);
+    const safeDefaultAuditDenied = await fetch(`http://127.0.0.1:${safeDefaultRuntimePort}/debug/audit-tail`);
+    assert.equal(safeDefaultAuditDenied.status, 403);
     safeDefaultRuntime.kill();
     await waitForProcessExit(safeDefaultRuntime);
     safeDefaultRuntime = undefined;
