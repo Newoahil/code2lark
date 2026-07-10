@@ -63,6 +63,16 @@ test("top-level docs define Code2Lark delivery modes", () => {
   assert.match(status, /canonical MVP package.*schema 0\.2/i);
 });
 
+test("package scripts and CI workflow expose local verification gates", () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+
+  assert.equal(typeof packageJson.scripts["test:unit"], "string");
+  assert.equal(typeof packageJson.scripts["test:smoke"], "string");
+  assert.equal(typeof packageJson.scripts["test:e2e"], "string");
+  assert.equal(typeof packageJson.scripts["test:coverage"], "string");
+  assert.ok(fs.existsSync(path.join(root, ".github", "workflows", "ci.yml")));
+});
+
 test("strict verify rejects outdated manifest schemas", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-old-schema-"));
   fs.mkdirSync(path.join(temp, "manifest"), { recursive: true });
