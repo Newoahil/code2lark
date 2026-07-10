@@ -61,6 +61,29 @@ test("top-level docs define Code2Lark delivery modes", () => {
   assert.match(matrix, /Mode B/);
 });
 
+test("strict verify rejects outdated manifest schemas", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-old-schema-"));
+  fs.mkdirSync(path.join(temp, "manifest"), { recursive: true });
+  fs.writeFileSync(path.join(temp, "manifest", "service_manifest.json"), JSON.stringify({ schema_version: "0.1" }), "utf8");
+  fs.writeFileSync(path.join(temp, "manifest", "capability_map.json"), JSON.stringify({ schema_version: "0.1", service_name: "x", capabilities: [] }), "utf8");
+  fs.writeFileSync(path.join(temp, "manifest", "interaction_contract.json"), JSON.stringify({ schema_version: "0.1", channel: "lark", service_name: "x", supported_triggers: [], supported_result_modes: [], interactions: [] }), "utf8");
+  fs.writeFileSync(path.join(temp, "manifest", "required_permissions.json"), JSON.stringify({
+    schema_version: "0.1",
+    app: { type: "custom_app", bot_required: true, availability_recommendation: "" },
+    context_requirements: [],
+    token_strategy: { default: "tenant_access_token", user_access_token_required: false },
+    scopes: [],
+    events: [],
+    callbacks: [],
+    manual_steps: [],
+    review_flags: [],
+  }), "utf8");
+
+  const output = runExpectFailure(["verify", temp, "--strict"]);
+  assert.match(output, /schema_version 0\.2/i);
+  assert.match(output, /target_profile/i);
+});
+
 test("CLI can analyze, plan, generate, and verify an image-agent-web-like target", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-smoke-"));
   const target = path.join(temp, "image-agent-web");

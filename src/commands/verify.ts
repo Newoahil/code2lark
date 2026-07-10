@@ -67,6 +67,27 @@ export async function verifyCommand(args: string[], options: Record<string, stri
     });
   }
 
+  if (strict) {
+    checks.push(...buildStrictManifestIntegrityChecks({ service, capabilities, interactions, permissions }));
+    if (checks.some((check) => check.name.startsWith("manifest:strict:") && check.status === "fail")) {
+      printChecks(checks);
+      writeReports(reportDir, checks, {
+        packagePath,
+        envPath,
+        runtimeUrl,
+        hostRuntimeUrl,
+        hostReceiveMode,
+        simulate,
+        sendStartCard,
+        level2,
+        targetBaseUrl: "",
+        mode: integrationMode,
+      });
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   if (mode === "embedded-adapter" || mode === "embedded") {
     checks.push(...buildEmbeddedAdapterChecks(packagePath, interactions, permissions));
     checks.push(...await buildEmbeddedHostValidationChecks({ hostRuntimeUrl, hostReceiveMode, simulate, sendStartCard, level2 }));
@@ -505,6 +526,39 @@ function checkFile(name: string, filePath: string): CheckResult {
   return fs.existsSync(filePath)
     ? { name, status: "pass", detail: filePath }
     : { name, status: "fail", detail: `Missing ${filePath}` };
+}
+
+function buildStrictManifestIntegrityChecks(manifests: {
+  service: ServiceManifest | undefined;
+  capabilities: CapabilityMap | undefined;
+  interactions: InteractionContract | undefined;
+  permissions: RequiredPermissions | undefined;
+}): CheckResult[] {
+  const checks: CheckResult[] = [];
+  checks.push(checkManifestSchemaVersion("service_manifest.json", manifests.service));
+  checks.push(checkManifestSchemaVersion("capability_map.json", manifests.capabilities));
+  checks.push(checkManifestSchemaVersion("interaction_contract.json", manifests.interactions));
+  checks.push(checkManifestSchemaVersion("required_permissions.json", manifests.permissions));
+  const targetProfile = manifests.capabilities?.target_profile;
+  checks.push({
+    name: "manifest:strict:capability-map-target-profile",
+    status: typeof targetProfile === "string" && targetProfile ? "pass" : "fail",
+    detail: typeof targetProfile === "string" && targetProfile
+      ? `capability_map.json target_profile=${targetProfile}.`
+      : "capability_map.json must include target_profile in strict mode.",
+  });
+  return checks;
+}
+
+function checkManifestSchemaVersion(name: string, value: { schema_version?: string } | undefined): CheckResult {
+  const actual = value?.schema_version;
+  return {
+    name: `manifest:strict:${name}:schema-version`,
+    status: actual === "0.2" ? "pass" : "fail",
+    detail: actual === "0.2"
+      ? `${name} uses schema_version 0.2.`
+      : `${name} must use schema_version 0.2 in strict mode; found ${actual || "missing"}.`,
+  };
 }
 
 function buildEmbeddedAdapterChecks(packagePath: string, interactions: InteractionContract | undefined, permissions: RequiredPermissions | undefined): CheckResult[] {
