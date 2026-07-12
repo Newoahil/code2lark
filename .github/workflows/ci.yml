@@ -15,4 +15,5 @@ jobs:
       - run: npm run check
       - run: npm run test:unit
       - run: npm run test:smoke
+      - run: npm run test:e2e
       - run: npm audit --package-lock-only --audit-level=moderate

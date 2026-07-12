@@ -74,6 +74,7 @@ test("package scripts and CI workflow expose local verification gates", () => {
   assert.match(workflow, /npm run check/);
   assert.match(workflow, /npm run test:unit/);
   assert.match(workflow, /npm run test:smoke/);
+  assert.match(workflow, /npm run test:e2e/);
   assert.match(workflow, /npm audit --package-lock-only --audit-level=moderate/);
 });
 
@@ -360,6 +361,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const selfHostedGenerated = path.join(temp, "generated-self-hosted");
   run(["generate", workspace, "--out", selfHostedGenerated, "--mode", "self-hosted-runtime"]);
   const selfHostedSummary = JSON.parse(fs.readFileSync(path.join(selfHostedGenerated, "generation_summary.json"), "utf8"));
+  assert.equal(selfHostedSummary.schema_version, "0.2");
   assert.equal(selfHostedSummary.integration_mode, "self-hosted-runtime");
   assert.equal(selfHostedSummary.host_receive_mode, "embedded-long-connection");
   assert.equal(selfHostedSummary.core_artifact, "feishu-host");
@@ -805,6 +807,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const embeddedLongGenerated = path.join(temp, "generated-embedded-long");
   run(["generate", workspace, "--out", embeddedLongGenerated, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection"]);
   const embeddedLongSummary = JSON.parse(fs.readFileSync(path.join(embeddedLongGenerated, "generation_summary.json"), "utf8"));
+  assert.equal(embeddedLongSummary.schema_version, "0.2");
   assert.equal(embeddedLongSummary.host_receive_mode, "embedded-long-connection");
   const embeddedLongCards = fs.readFileSync(path.join(embeddedLongGenerated, "adapter", "cards.ts"), "utf8");
   assert.match(embeddedLongCards, /schema:\s*["']2\.0["']/);
@@ -2468,6 +2471,7 @@ test("generic HTTP API target can analyze generate and verify", () => {
 
   run(["generate", workspace, "--out", generated, "--mode", "embedded-adapter"]);
   const summary = JSON.parse(fs.readFileSync(path.join(generated, "generation_summary.json"), "utf8"));
+  assert.equal(summary.schema_version, "0.2");
   assert.equal(summary.target_profile, "generic-http-api");
   for (const relativePath of [
     "adapter/handlers.ts",
@@ -2627,12 +2631,15 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
   const generatedAdapter = fs.readFileSync(path.join(generated, "adapter", "handlers.ts"), "utf8");
   const generatedAdapterCards = fs.readFileSync(path.join(generated, "adapter", "cards.ts"), "utf8");
   const generatedReadme = fs.readFileSync(path.join(generated, "README.md"), "utf8");
+  const generatedStartHere = fs.readFileSync(path.join(generated, "START_HERE.md"), "utf8");
   assert.match(generatedAdapter, /http\.get\.api\.state\.submit/);
   assert.match(generatedAdapter, /http\.post\.api\.run\.submit/);
   assert.doesNotMatch(generatedAdapter, /http\.post\.api\.stop\.submit/);
   assert.doesNotMatch(generatedAdapter, /image\.generate|image_url|session_id/);
   assert.doesNotMatch(generatedAdapterCards, /image\.batch\.submit/);
   assert.doesNotMatch(generatedReadme, /image\.generate/);
+  assert.match(generatedReadme, /doctor \. --mode embedded-adapter --probe-target --gate/);
+  assert.match(generatedStartHere, /doctor \. --mode embedded-adapter --probe-target --gate/);
   const verifyOutput = run(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
   assert.match(verifyOutput, /adapter:action:http\.get\.api\.state\.submit/);
   assert.match(verifyOutput, /adapter:action:http\.post\.api\.run\.submit/);
@@ -2642,6 +2649,7 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
   assert.doesNotMatch(readinessOutput, /image\.generate|image_url|session_id/);
   const handoffOutput = run(["handoff", generated]);
   assert.match(handoffOutput, /Handoff manifest written/);
+  assert.match(run(["handoff", generated, "--check"]), /Handoff check passed/);
   const handoffManifest = fs.readFileSync(path.join(generated, "handoff_manifest.md"), "utf8");
   assert.doesNotMatch(handoffManifest, /image\.generate|image_url|session_id/);
   const doctorJson = JSON.parse(run(["doctor", generated, "--mode", "embedded-adapter", "--json"]));

@@ -51,7 +51,7 @@ export async function generateCommand(args: string[], options: Record<string, st
 
   copyManifestArtifacts(workspace, outDir);
   writeJson(path.join(outDir, "generation_summary.json"), {
-    schema_version: "0.1",
+    schema_version: "0.2",
     generated_at: new Date().toISOString(),
     source_workspace: workspace,
     service: service.service.name,
@@ -1195,7 +1195,7 @@ node $env:LARK_DEPLOYER_CLI doctor . --mode self-hosted-runtime --gate
 node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --strict
 # After adapter/ is mounted in your existing Feishu SDK host:
 node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate
-node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --gate
+node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --probe-target --gate
 \`\`\``;
   const evidenceItems = targetProfile === "generic-http-api"
     ? [
@@ -2099,6 +2099,7 @@ node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --
 
 \`\`\`powershell
 node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate
+node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --probe-target --gate
 \`\`\`
 
 Use \`docs/integration_guide.md\` for the exact \`handleGenericHttpCardAction()\` call shape. Real Level 2 still requires your host to receive a real Feishu ${hybrid ? "webhook callback and `card.action.trigger` long-connection event" : longConnection ? "`card.action.trigger` long-connection event" : "card callback"}, call the adapter, call \`${service.service.name}\`, return the result card, and record manual evidence.
@@ -2163,7 +2164,7 @@ Use \`level2_manual_evidence.template.json\` as the safe template for local manu
 node $env:LARK_DEPLOYER_CLI status .
 node $env:LARK_DEPLOYER_CLI readiness .
 node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption}
-node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --gate
+node $env:LARK_DEPLOYER_CLI doctor . --mode embedded-adapter${hostModeOption} --probe-target --gate
 node $env:LARK_DEPLOYER_CLI handoff .
 \`\`\`
 `;

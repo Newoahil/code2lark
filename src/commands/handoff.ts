@@ -384,7 +384,7 @@ function uniquePathCandidates(candidates: string[], packagePath: string): string
 }
 
 function normalizePathCandidate(value: string): string {
-  return value.replace(/\//g, "\\").replace(/[\\]+$/g, "").toLowerCase();
+  return value.replace(/\//g, "\\").replace(/\\{2,}/g, "\\").replace(/[\\]+$/g, "").toLowerCase();
 }
 
 function replacePackagePathStrings(value: unknown, sourcePackagePathCandidates: string[], packagePath: string): unknown {
