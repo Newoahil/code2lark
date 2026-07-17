@@ -1,6 +1,7 @@
 # 项目进展文档
 
-记录时间：2026-07-02
+初始记录：2026-07-02
+最后更新：2026-07-17
 记录人：审计对话（Claude Code）
 
 本文档是对当前代码库和 `docs/` 现有资料的一次快照式审计总结，用于给后续开发和交接提供一个"此刻项目处于什么状态"的基准点。请在重大里程碑后更新此文档，而不是频繁小改。
@@ -15,9 +16,9 @@ Lark-deployer 是一个构建时（build-time）生成器：分析一个已有�
 
 ## 2. 代码规模与结构
 
-- TypeScript 源码分布在 `src/index.ts`（命令分发）+ 12 个 `src/commands/*.ts` 子命令模块 + 少量工具模块（`args.ts`、`env-utils.ts`、`fs-utils.ts`、`http-utils.ts`、`url-validation.ts`、`placeholder-utils.ts`、`types.ts`）。
+- TypeScript 源码分布在 `src/index.ts`（命令分发）+ `src/commands/*.ts` 子命令模块 + 少量工具和 Profile 模块；calendar Mode B 新增了独立安装命令与 Node 宿主闭包生成器。
 - 体量最大的文件仍是 `generate.ts`，其中包含生成 `adapter/`、`bot-runtime/`、README 和验收文档的模板字符串；这仍是后续可维护性风险。
-- 测试：`tests/cli-smoke.test.mjs`、`tests/runtime-local-e2e.test.mjs`、`tests/unit-pure-functions.test.mjs`。CLI 冒烟测试已覆盖 adapter-first 生成与 `verify --mode embedded-adapter --strict` package validation；运行时 e2e 继续覆盖 standalone/reference host。
+- 测试：`tests/cli-smoke.test.mjs`、`tests/mode-b-install.test.mjs`、`tests/runtime-local-e2e.test.mjs`、`tests/unit-pure-functions.test.mjs`。CLI 冒烟测试覆盖 adapter-first 生成与 strict verify；Mode B 测试覆盖 dry-run、隔离 apply、离线门禁、托管冲突和宿主本地确认；运行时 e2e 继续覆盖 standalone/reference host。
 - `tsconfig.json` 开启 `strict: true`，构建目标 ES2022 / NodeNext。
 - 2026-07-07 泛用化阶段新增 manifest `0.2` 契约、strategy-based analyzer、`generic_http_api` 分析路径，以及 `generic-http-api` embedded-adapter 生成/验证路径；`image-agent-web` 仍是 self-hosted-runtime 长连接回归锚点。
 - The canonical MVP package is freshly generated from current schema 0.2 manifests.
@@ -27,11 +28,12 @@ Lark-deployer 是一个构建时（build-time）生成器：分析一个已有�
 
 ```
 analyze → plan → context(生成给所有者的凭据请求) → generate(生成 adapter/，可选 bot-runtime/)
-→ verify(--mode embedded-adapter 或 --simulate / --level2) → evidence(生成 Level2 证据草稿) → doctor(--mode embedded-adapter 或 --gate)
+→ verify(--mode embedded-adapter 或 --simulate / --level2) → install(默认 dry-run，显式 --apply)
+→ evidence(生成 Level2 证据草稿) → doctor(--mode embedded-adapter 或 --gate)
 → handoff(--copy-to / --check，脱敏交接包)
 ```
 
-13 个 CLI 子命令均已实现：`analyze`、`plan`、`generate`、`context`、`configure`、`status`、`readiness`、`doctor`、`verify`、`evidence`、`handoff`、`init-local`。
+13 个 CLI 子命令均已实现：`analyze`、`plan`、`generate`、`context`、`configure`、`status`、`readiness`、`doctor`、`verify`、`evidence`、`handoff`、`init-local`、`install`。
 
 ## 4. 验证状态
 
@@ -43,7 +45,7 @@ analyze → plan → context(生成给所有者的凭据请求) → generate(生
 - **image-agent-web self-hosted-runtime 已有真实飞书长连接 MVP 验证**：2026-07-07 后以 `docs/image-agent-web-mvp-verified-summary.md` 为回归锚点，确认长连接、`card.action.trigger`、Card JSON 2.0、异步 running + patch、generate / iterate / batch / refresh、失败路径已经跑通。webhook/standalone Level 2 仍按各自生成包证据记录独立管理。
 - **image-agent-web 样板分类**：The verified image-agent-web sample has completed deployment-test validation in Mode A with a Python self-hosted host module run externally, and it has also completed deployment-test validation in Mode B as a target-project embedded host module. This roadmap treats those validations as the current sample baseline and consolidates them into a reusable MVP integration package.
 - **self-hosted-runtime 本地 MVP 已作为目标形态落地**：生成物为 `generated/<target>-lark/feishu-host/`，包含 `.env.example`、`requirements.txt`、manifest-derived `spec/*.json`、Python card/client/validation/handler/app 文件、`local_contract_test.py` 和 `app.py --selfcheck`。最终本地完成证据必须在安装 Python 依赖后运行 strict verify，不能把缺依赖 WARN 当成绿灯。
-- **calendar-stock-updater 已完成 replay 副本级验证**：2026-07-12 在 `C:\works\calendar-stock-updater-c2l-replay` 上完成 fresh analyze → generate embedded-adapter → `verify --mode embedded-adapter --strict` → `doctor --mode embedded-adapter --json` → `readiness` → `handoff --check`；生成包 `generated\calendar-stock-updater-lark` 通过 package validation，并通过生成 adapter 对 replay 目标完成 `GET /api/state` read 验证和一个安全拒绝的 reviewed `POST /api/run` action 验证。该结论不等同于真实飞书 Level 2。
+- **calendar-stock-updater 已完成结构后端纠偏后的 Mode B 本地验证与复审修正**：2026-07-16 至 2026-07-17 在全新 `C:\works\calendar-stock-updater-code2lark-replay-20260716-211227` 上保留原项目当前工作树，完成 `analyze --backend auto` 安全回退 internal、fresh plan → generate → strict verify、dry-run 零写入、`--apply` 仅写 `integrations/lark`、23 个根文件与原始项目 SHA-256 全匹配、模块 `8/8`、replay 根 `49/49`、离线门禁、托管文件冲突门禁和零漏洞审计。最终候选包为 `generated/calendar-stock-updater-codegraph-replay-20260717-0218-v6-lark`，最终脱敏交接包为 `handoff/calendar-stock-updater-codegraph-replay-20260717-0218-v7-lark`；strict verify 为 `32/0/0`，handoff warnings=`0`。生成的 calendar TypeScript 不再使用检查抑制，状态、日志和失败文本已限长与敏感模式脱敏，授权错误使用中文业务文案，generic HTTP 非 2xx 失败卡不再暴露原始响应正文，context/handoff 不再携带图片代理或 generic runtime 残留。专用 calendar Profile 只声明 `GET /api/state`、`POST /api/run`、`POST /api/stop`；正式执行和停止的确认状态留在隔离 Node 宿主。真实飞书预联调已成功建立长连接、发送起始卡并收到 `card.action.trigger`，但当前应用维度的 operator open_id 与本地白名单不匹配，操作被安全门禁拒绝；未发生正式执行，Level 2 仍未完成。
 - 唯一一次真实目标服务联调记录：2026-07-01，临时启动 `C:\works\image-agent-web`，验证了 `GET /api/meta`、生成运行时 `/health`、本地卡片 URL 挑战等；`POST /api/generate` 之外的真实调用未覆盖（依赖外部图像/模型服务）。
 
 ## 5. 审计结论：优点
