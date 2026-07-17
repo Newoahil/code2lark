@@ -3,12 +3,13 @@ import path from "node:path";
 import { getStringOption } from "../args.js";
 import { readJsonFile, slugify, writeJson, writeText } from "../fs-utils.js";
 import { normalizeHostReceiveMode, type HostReceiveMode, type IntegrationMode } from "../host-mode.js";
-import type { RequiredPermissions, ServiceManifest } from "../types.js";
+import type { CapabilityMap, RequiredPermissions, ServiceManifest } from "../types.js";
 
 export interface ContextTemplate {
   schema_version: "0.1";
   integration_mode?: IntegrationMode;
   host_receive_mode?: HostReceiveMode;
+  target_profile?: string;
   purpose: string;
   target_service: {
     name: string;
@@ -32,15 +33,16 @@ export interface ContextTemplate {
     manual_steps: string[];
   };
   runtime_config: {
-    host: string;
-    port: number;
-    upload_image_to_lark: boolean;
+    host?: string;
+    port?: number;
+    upload_image_to_lark?: boolean;
     target_timeout_seconds: number;
-    card_action_mode: "sync" | "async";
-    feishu_openapi_base_url: string;
-    debug_access_token: string;
+    target_wait_seconds?: number;
+    card_action_mode?: "sync" | "async";
+    feishu_openapi_base_url?: string;
+    debug_access_token?: string;
     allowed_operator_open_ids: string[];
-    allow_debug_without_feishu: boolean;
+    allow_debug_without_feishu?: boolean;
   };
   handoff_request: {
     recipient_hint: string;
@@ -132,6 +134,8 @@ export async function contextCommand(args: string[], options: Record<string, str
   const manifestDir = path.join(workspace, "manifest");
   const service = readJsonFile<ServiceManifest>(path.join(manifestDir, "service_manifest.json"));
   const permissions = readJsonFile<RequiredPermissions>(path.join(manifestDir, "required_permissions.json"));
+  const capabilityPath = path.join(manifestDir, "capability_map.json");
+  const targetProfile = fs.existsSync(capabilityPath) ? readJsonFile<CapabilityMap>(capabilityPath).target_profile : undefined;
   const outFile = path.resolve(getStringOption(options, "out", path.join(workspace, "feishu_context.template.json")));
   const markdownFile = outFile.replace(/\.json$/i, ".md");
   const requestFile = contextRequestFilePath(outFile);
@@ -139,7 +143,7 @@ export async function contextCommand(args: string[], options: Record<string, str
   const replyMarkdownFile = replyFile.replace(/\.json$/i, ".md");
   const integrationMode = normalizeContextIntegrationMode(getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime"))));
   const hostReceiveMode = normalizeHostReceiveMode(getStringOption(options, "host-mode", getStringOption(options, "hostMode", "")), integrationMode);
-  const template = buildContextTemplate(service, permissions, { integrationMode, hostReceiveMode });
+  const template = buildContextTemplate(service, permissions, { integrationMode, hostReceiveMode, targetProfile });
 
   writeJson(outFile, template);
   writeText(markdownFile, buildContextMarkdown(template));
@@ -163,7 +167,7 @@ function normalizeContextIntegrationMode(value: string): IntegrationMode {
 export function buildContextTemplate(
   service: ServiceManifest,
   permissions: RequiredPermissions,
-  options: { generatedPackageHint?: string; packageRootCliPath?: string; integrationMode?: IntegrationMode; hostReceiveMode?: HostReceiveMode } = {},
+  options: { generatedPackageHint?: string; packageRootCliPath?: string; integrationMode?: IntegrationMode; hostReceiveMode?: HostReceiveMode; targetProfile?: string } = {},
 ): ContextTemplate {
   const defaultGeneratedPackage = options.generatedPackageHint || `generated\\${slugify(service.service.name)}-lark`;
   const commandPackageArg = quoteCommandArg(defaultGeneratedPackage);
@@ -171,9 +175,11 @@ export function buildContextTemplate(
   const packageRootCli = quoteCommandArg(packageRootCliPath);
   const embedded = options.integrationMode === "embedded-adapter";
   const selfHosted = options.integrationMode === "self-hosted-runtime";
+  const calendarModeB = embedded && options.targetProfile === "calendar-stock-updater";
   const hostReceiveMode = options.hostReceiveMode || (embedded ? "embedded-webhook" : "standalone-runtime");
   const longConnection = hostReceiveMode === "embedded-long-connection";
   const hybrid = hostReceiveMode === "hybrid";
+  const targetBaseUrlKey = options.targetProfile === "generic-http-api" || options.targetProfile === "calendar-stock-updater" ? "TARGET_BASE_URL" : "IMAGE_AGENT_BASE_URL";
   const hostModeOption = embedded && hostReceiveMode !== "embedded-webhook" ? ` --host-mode ${hostReceiveMode}` : "";
   const selfHostedModeOption = " --mode self-hosted-runtime";
   const projectDoctorCommands = selfHosted
@@ -286,7 +292,12 @@ export function buildContextTemplate(
     "python local_contract_test.py",
     "python app.py --selfcheck",
   ] : [];
-  const projectRootCommands = [
+  const projectRootCommands = calendarModeB ? [
+    `node dist/index.js verify ${commandPackageArg} --mode embedded-adapter --host-mode embedded-long-connection --strict`,
+    `node dist/index.js handoff ${commandPackageArg}`,
+    `node dist/index.js install ${commandPackageArg} --target <calendar-project> --target-base-url ${service.service.base_url || "http://127.0.0.1:3069"}`,
+    `node dist/index.js install ${commandPackageArg} --target <calendar-project> --target-base-url ${service.service.base_url || "http://127.0.0.1:3069"} --apply`,
+  ] : [
     ...(selfHosted ? [] : [`node dist/index.js init-local ${commandPackageArg} --context --reply`]),
     ...(selfHosted ? [] : [`node dist/index.js configure ${commandPackageArg} --strict --dry-run`, `node dist/index.js configure ${commandPackageArg} --strict`]),
     ...selfHostedProjectSetupCommands,
@@ -297,7 +308,12 @@ export function buildContextTemplate(
     ...projectEvidenceCommands,
     `node dist/index.js handoff ${commandPackageArg}`,
   ];
-  const packageRootCommands = [
+  const packageRootCommands = calendarModeB ? [
+    `node ${packageRootCli} verify . --mode embedded-adapter --host-mode embedded-long-connection --strict`,
+    `node ${packageRootCli} handoff .`,
+    `node ${packageRootCli} install . --target <calendar-project> --target-base-url ${service.service.base_url || "http://127.0.0.1:3069"}`,
+    `node ${packageRootCli} install . --target <calendar-project> --target-base-url ${service.service.base_url || "http://127.0.0.1:3069"} --apply`,
+  ] : [
     ...(selfHosted ? [] : [`node ${packageRootCli} init-local . --context --reply`, `node ${packageRootCli} configure . --strict --dry-run`, `node ${packageRootCli} configure . --strict`]),
     ...selfHostedPackageSetupCommands,
     `node ${packageRootCli} status .`,
@@ -307,7 +323,13 @@ export function buildContextTemplate(
     ...packageEvidenceCommands,
     `node ${packageRootCli} handoff .`,
   ];
-  const movedPackageCommands = [
+  const movedPackageCommands = calendarModeB ? [
+    "$env:LARK_DEPLOYER_CLI=\"C:\\path\\to\\Lark-deployer\\dist\\index.js\"",
+    "node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-mode embedded-long-connection --strict",
+    "node $env:LARK_DEPLOYER_CLI handoff .",
+    `node $env:LARK_DEPLOYER_CLI install . --target <calendar-project> --target-base-url ${service.service.base_url || "http://127.0.0.1:3069"}`,
+    `node $env:LARK_DEPLOYER_CLI install . --target <calendar-project> --target-base-url ${service.service.base_url || "http://127.0.0.1:3069"} --apply`,
+  ] : [
     "$env:LARK_DEPLOYER_CLI=\"C:\\path\\to\\Lark-deployer\\dist\\index.js\"",
     ...(selfHosted ? [] : ["node $env:LARK_DEPLOYER_CLI init-local . --context --reply", "node $env:LARK_DEPLOYER_CLI configure . --strict --dry-run", "node $env:LARK_DEPLOYER_CLI configure . --strict"]),
     ...selfHostedMovedSetupCommands,
@@ -323,6 +345,7 @@ export function buildContextTemplate(
     schema_version: "0.1",
     integration_mode: options.integrationMode || "standalone-runtime",
     host_receive_mode: hostReceiveMode,
+    target_profile: options.targetProfile,
     purpose: "Collect external Feishu/Lark and target-service context required for real Level 2 verification.",
     target_service: {
       name: service.service.name,
@@ -349,7 +372,11 @@ export function buildContextTemplate(
         : permissions.callbacks.map((callback) => callback.callback),
       manual_steps: permissions.manual_steps,
     },
-    runtime_config: {
+    runtime_config: calendarModeB ? {
+      target_timeout_seconds: 30,
+      target_wait_seconds: 30,
+      allowed_operator_open_ids: [],
+    } : {
       host: "127.0.0.1",
       port: 3978,
       upload_image_to_lark: true,
@@ -370,6 +397,12 @@ export function buildContextTemplate(
         { key: "FEISHU_ALLOWED_USERS", owner: "FDE or bot tester", required_for_level_2: false, note: "Optional comma-separated Feishu operator open_id allowlist." },
         { key: "IMAGE_AGENT_TIMEOUT_MS", owner: "FDE", required_for_level_2: false, note: "Optional target HTTP timeout in milliseconds; default 120000." },
         { key: "TEST_CHAT_ID", owner: "FDE or bot tester", required_for_level_2: false, note: "Optional chat id for sending the start card in manual Level 2." },
+      ] : calendarModeB ? [
+        { key: "FEISHU_APP_ID", owner: "Feishu app owner", required_for_level_2: true, note: "Application ID for integrations/lark/.env." },
+        { key: "FEISHU_APP_SECRET", owner: "Feishu app owner", required_for_level_2: true, note: "Application secret for integrations/lark/.env. Share through a secure channel only." },
+        { key: "TEST_CHAT_ID", owner: "FDE or bot tester", required_for_level_2: true, note: "Chat receive id used by the isolated module to send the start card." },
+        { key: "TARGET_BASE_URL", owner: "Target service owner", required_for_level_2: true, note: `Reachable base URL for ${service.service.name}; the install gate probes GET /api/state.` },
+        { key: "ALLOWED_OPERATOR_OPEN_IDS", owner: "FDE or bot tester", required_for_level_2: true, note: "Non-empty comma-separated operator open_id allowlist for preview, formal run, and stop actions." },
       ] : [
         {
           key: "APP_ID",
@@ -383,14 +416,14 @@ export function buildContextTemplate(
           required_for_level_2: true,
           note: "Application secret. Share through a secure channel; do not paste it into chat history.",
         },
-        {
+        ...(longConnection && targetBaseUrlKey === "TARGET_BASE_URL" ? [] : [{
           key: "VERIFICATION_TOKEN",
           owner: "Feishu app owner",
           required_for_level_2: hostReceiveMode !== "embedded-long-connection",
           note: hostReceiveMode === "embedded-long-connection"
             ? "Optional for long-connection hosts; needed only for webhook or hybrid callback verification."
             : "Callback verification token configured for the app.",
-        },
+        }]),
         {
           key: "ENCRYPT_KEY",
           owner: "Feishu app owner",
@@ -403,16 +436,16 @@ export function buildContextTemplate(
           required_for_level_2: true,
           note: "Chat receive id where the bot has been added and can send messages.",
         },
-        {
+        ...(longConnection && targetBaseUrlKey === "TARGET_BASE_URL" ? [] : [{
           key: "PUBLIC_CALLBACK_BASE_URL",
           owner: "FDE or infrastructure owner",
           required_for_level_2: hostReceiveMode !== "embedded-long-connection",
           note: hostReceiveMode === "embedded-long-connection"
             ? "Optional for long-connection hosts; needed only for webhook or hybrid callback verification."
             : "Public HTTPS base URL that routes to the generated bot runtime or embedded webhook host.",
-        },
+        }]),
         {
-          key: "IMAGE_AGENT_BASE_URL",
+          key: targetBaseUrlKey,
           owner: "Target service owner",
           required_for_level_2: true,
           note: `Reachable base URL for ${service.service.name}; Lark-deployer does not start this service.`,
@@ -426,12 +459,12 @@ export function buildContextTemplate(
           owner: "Feishu permission admin",
           security: [],
         })),
-        ...(selfHosted ? [{
+        ...(selfHosted || longConnection ? [{
           item: "card.action.trigger",
-          reason: "The Python feishu-host receives card actions through Feishu SDK long connection.",
+          reason: selfHosted ? "The Python feishu-host receives card actions through Feishu SDK long connection." : calendarModeB ? "The isolated integrations/lark host receives card actions through Feishu SDK long connection." : "The existing Feishu SDK host receives card actions through long connection.",
           risk: "n/a" as const,
           owner: "Feishu app owner or FDE",
-          security: ["long_connection", "FEISHU_CONNECTION_MODE=websocket"],
+          security: selfHosted ? ["long_connection", "FEISHU_CONNECTION_MODE=websocket"] : ["long_connection"],
         }] : permissions.callbacks.map((callback) => ({
           item: callback.callback,
           reason: callback.reason,
@@ -445,9 +478,13 @@ export function buildContextTemplate(
         { key: "IMAGE_AGENT_TIMEOUT_MS", recommended_value: "120000", note: "Target HTTP timeout used by service_client.py." },
         { key: "FEISHU_ALLOWED_USERS", recommended_value: "<comma-separated open_id allowlist for real group use>", note: "Optional operator authorization guard." },
         { key: "TEST_CHAT_ID", recommended_value: "<chat id for manual start-card send>", note: "Optional until app.py send-start-card flow is used." },
+      ] : calendarModeB ? [
+        { key: "TARGET_TIMEOUT_MS", recommended_value: "30000", note: "Finite timeout for /api/state, /api/run, and /api/stop calls from the isolated module." },
+        { key: "TARGET_WAIT_MS", recommended_value: "30000", note: "Maximum startup wait for the existing calendar service." },
+        { key: "ALLOWED_OPERATOR_OPEN_IDS", recommended_value: "<comma-separated approved open_id values>", note: "Required authorization guard for mutating calendar actions." },
       ] : longConnection ? [
         {
-          key: "IMAGE_AGENT_TIMEOUT_MS",
+          key: targetBaseUrlKey === "TARGET_BASE_URL" ? "TARGET_TIMEOUT_MS" : "IMAGE_AGENT_TIMEOUT_MS",
           recommended_value: "120000",
           note: "Target service call timeout configured in the existing long-connection host service.",
         },
@@ -506,12 +543,16 @@ export function buildContextTemplate(
     readiness_questions: [
       {
         id: "target_service_running",
-        question: `Can the bot runtime reach ${service.service.base_url || "<target base URL>"} from its runtime environment?`,
+        question: calendarModeB
+          ? `Can the installed integrations/lark module reach ${service.service.base_url || "<target base URL>"} and receive a valid GET /api/state response?`
+          : `Can the bot runtime reach ${service.service.base_url || "<target base URL>"} from its runtime environment?`,
         required_for_level_2: true,
       },
       {
         id: "existing_feishu_app",
-        question: "Can the operator provide an existing Feishu custom app APP_ID and APP_SECRET?",
+        question: calendarModeB
+          ? "Can the operator provide an existing Feishu custom app FEISHU_APP_ID and FEISHU_APP_SECRET for integrations/lark/.env?"
+          : "Can the operator provide an existing Feishu custom app APP_ID and APP_SECRET?",
         required_for_level_2: true,
       },
       {
@@ -523,6 +564,8 @@ export function buildContextTemplate(
         id: "callback_public_url",
         question: selfHosted
           ? "Can the operator run feishu-host as a Python process with FEISHU_CONNECTION_MODE=websocket and subscribe the Feishu app to card.action.trigger?"
+          : calendarModeB
+            ? "Can the operator run the installed integrations/lark Node module and subscribe the Feishu app to card.action.trigger?"
           : hostReceiveMode === "embedded-long-connection"
           ? "Can the operator keep a Feishu SDK long-connection host online and subscribed to card.action.trigger?"
           : hybrid
@@ -547,6 +590,7 @@ export function buildContextTemplate(
 export function buildContextMarkdown(template: ContextTemplate): string {
   const embedded = contextTemplateUsesEmbeddedAdapter(template);
   const selfHosted = template.integration_mode === "self-hosted-runtime";
+  const calendarModeB = template.target_profile === "calendar-stock-updater";
   const longConnection = template.host_receive_mode === "embedded-long-connection";
   const hybrid = template.host_receive_mode === "hybrid";
   const requiredRows = template.handoff_request.required_values
@@ -555,20 +599,26 @@ export function buildContextMarkdown(template: ContextTemplate): string {
   const confirmationRows = template.handoff_request.permission_confirmations
     .map((item) => `| ${item.item} | ${item.reason} |`)
     .join("\n");
+  const targetBaseUrlKey = template.handoff_request.required_values.some((item) => item.key === "TARGET_BASE_URL") ? "TARGET_BASE_URL" : "IMAGE_AGENT_BASE_URL";
+  const targetTimeoutKey = targetBaseUrlKey === "TARGET_BASE_URL" ? "TARGET_TIMEOUT_MS" : "IMAGE_AGENT_TIMEOUT_MS";
   const runtimeRows = template.handoff_request.runtime_choices
     .map((item) => `| ${item.key} | ${item.recommended_value} | ${item.note} |`)
     .join("\n");
-  const runtimeConfigRows = [
+  const runtimeConfigRows = (calendarModeB ? [
+    ["TARGET_TIMEOUT_MS", String(template.runtime_config.target_timeout_seconds * 1000), "Target call timeout in milliseconds."],
+    ["TARGET_WAIT_MS", String((template.runtime_config.target_wait_seconds || 30) * 1000), "Maximum startup wait for GET /api/state."],
+    ["ALLOWED_OPERATOR_OPEN_IDS", template.runtime_config.allowed_operator_open_ids.length ? `${template.runtime_config.allowed_operator_open_ids.length} configured` : "<required>", "Required comma-separated operator open_id allowlist for mutating actions."],
+  ] : [
     ["HOST", template.runtime_config.host, "Runtime HTTP bind host."],
     ["PORT", String(template.runtime_config.port), "Runtime HTTP port."],
     ["UPLOAD_IMAGE_TO_LARK", template.runtime_config.upload_image_to_lark ? "1" : "0", "Upload result images to Feishu when possible."],
-    ["IMAGE_AGENT_TIMEOUT_MS", String(template.runtime_config.target_timeout_seconds * 1000), "Target call and image download timeout in milliseconds."],
+    [targetTimeoutKey, String(template.runtime_config.target_timeout_seconds * 1000), "Target call timeout in milliseconds."],
     ["CARD_ACTION_MODE", template.runtime_config.card_action_mode, "sync waits for the target call; async patches the original card later."],
     ["FEISHU_OPENAPI_BASE_URL", template.runtime_config.feishu_openapi_base_url || "<default Feishu OpenAPI>", "Override only for local mocks or special environments."],
     ["DEBUG_ACCESS_TOKEN", template.runtime_config.debug_access_token ? "<provided>" : "<empty>", "Optional token required for /debug/* endpoints when set. Do not paste the real value into chat."],
     ["ALLOWED_OPERATOR_OPEN_IDS", template.runtime_config.allowed_operator_open_ids.length ? `${template.runtime_config.allowed_operator_open_ids.length} configured` : "<empty>", "Optional comma-separated operator open_id allowlist for card actions."],
     ["ALLOW_DEBUG_WITHOUT_FEISHU", template.runtime_config.allow_debug_without_feishu ? "1" : "0", "Allow local debug endpoints before real Feishu credentials are filled."],
-  ].map((item) => `| ${item[0]} | ${item[1]} | ${item[2]} |`).join("\n");
+  ]).map((item) => `| ${item[0]} | ${item[1]} | ${item[2]} |`).join("\n");
   const commandSections = template.handoff_request.command_sets
     .map((set) => `### ${humanizeCommandSetName(set.name)}
 
@@ -576,7 +626,9 @@ ${set.cwd_hint}
 
 ${set.commands.map((command) => `\`\`\`powershell\n${command}\n\`\`\``).join("\n\n")}`)
     .join("\n\n");
-  const manualSteps = longConnection
+  const manualSteps = calendarModeB
+    ? template.required_permissions.manual_steps
+    : longConnection
     ? [
         "Enable bot capability in the Feishu developer console.",
         "Apply message send, optional message update, and resource upload scopes.",
@@ -600,12 +652,20 @@ ${set.commands.map((command) => `\`\`\`powershell\n${command}\n\`\`\``).join("\n
         "IMAGE_AGENT_TIMEOUT_MS",
         "optional TEST_CHAT_ID",
       ]
+    : calendarModeB
+      ? [
+          "FEISHU_APP_ID",
+          "FEISHU_APP_SECRET",
+          "TEST_CHAT_ID",
+          "TARGET_BASE_URL",
+          "ALLOWED_OPERATOR_OPEN_IDS",
+        ]
     : longConnection
     ? [
         "APP_ID",
         "APP_SECRET",
         "TEST_CHAT_ID",
-        "IMAGE_AGENT_BASE_URL or equivalent target base URL in the host config",
+        `${targetBaseUrlKey} in the host config`,
         "Long-connection host/gateway lifecycle owner",
       ]
     : hybrid
@@ -651,7 +711,7 @@ Please provide the following values and confirmations for the generated Lark-dep
 
 Generated package path hint: \`${template.handoff_request.generated_package_hint}\`
 
-Do not leave placeholder strings such as \`<APP_ID>\`, \`{{VERIFICATION_TOKEN}}\`, or \`\${TEST_CHAT_ID}\` in the filled context. \`configure --strict --dry-run\` treats placeholder-shaped values as missing.
+${calendarModeB ? "Do not leave placeholder strings in `integrations/lark/.env`; the module validates all required values at startup." : `Do not leave placeholder strings such as \`<APP_ID>\`${longConnection ? "" : ", `{{VERIFICATION_TOKEN}}`"}, or \`\${TEST_CHAT_ID}\` in the filled context. \`configure --strict --dry-run\` treats placeholder-shaped values as missing.`}
 
 ### Required Values
 
@@ -673,13 +733,13 @@ ${runtimeRows}
 
 ## Feishu App Values
 
-${selfHosted ? "Fill these in `feishu-host/.env` after copying `feishu-host/.env.example`:" : embedded ? "Fill these in `feishu_context.template.json` or the existing host service's secret/config system:" : "Fill these in `feishu_context.template.json` or generated `bot-runtime/.env`:"}
+${selfHosted ? "Fill these in `feishu-host/.env` after copying `feishu-host/.env.example`:" : calendarModeB ? "Fill these in the installed `integrations/lark/.env` after copying its `.env.example`:" : embedded ? "Fill these in `feishu_context.template.json` or the existing host service's secret/config system:" : "Fill these in `feishu_context.template.json` or generated `bot-runtime/.env`:"}
 
 ${feishuAppValueRows.map((item) => `- ${item}`).join("\n")}
 
 ## Runtime Config Values
 
-${selfHosted ? "These values document the Python feishu-host runtime contract:" : embedded ? "These values document the existing host service runtime contract for adapter integration:" : "These values are read from `runtime_config` when `configure` writes `bot-runtime/.env`:"}
+${selfHosted ? "These values document the Python feishu-host runtime contract:" : calendarModeB ? "These values document the installed Node module runtime contract:" : embedded ? "These values document the existing host service runtime contract for adapter integration:" : "These values are read from `runtime_config` when `configure` writes `bot-runtime/.env`:"}
 
 | Env key | Current value | Note |
 | --- | --- | --- |
@@ -706,6 +766,7 @@ ${commandSections}
 export function buildContextRequestMarkdown(template: ContextTemplate): string {
   const embedded = contextTemplateUsesEmbeddedAdapter(template);
   const selfHosted = template.integration_mode === "self-hosted-runtime";
+  const calendarModeB = template.target_profile === "calendar-stock-updater";
   const longConnection = template.host_receive_mode === "embedded-long-connection";
   const hybrid = template.host_receive_mode === "hybrid";
   const requiredRows = template.handoff_request.required_values
@@ -731,6 +792,12 @@ export function buildContextRequestMarkdown(template: ContextTemplate): string {
     "Can grant or request the listed scopes, then publish the app version.",
     "Can enable long connection and subscribe to card.action.trigger.",
     `Can keep ${template.target_service.name} reachable from feishu-host during local contract and Level 2 verification.`,
+  ].map((item) => `- [ ] ${item}`).join("\n") : calendarModeB ? [
+    "Can provide or create a Feishu custom app for this test.",
+    "Can enable bot capability, long connection, and card.action.trigger, then add the bot to the test chat.",
+    "Can provide module-local FEISHU_APP_ID and FEISHU_APP_SECRET through a secure channel.",
+    "Can provide a non-empty ALLOWED_OPERATOR_OPEN_IDS allowlist.",
+    `Can keep ${template.target_service.name} reachable from the installed integrations/lark module during Level 2 verification.`,
   ].map((item) => `- [ ] ${item}`).join("\n") : [
     "Can provide or create a Feishu custom app for this test.",
     "Can enable bot capability and add the bot to the test chat.",
@@ -755,8 +822,8 @@ ${contextDeliveryModeMarkdown()}
 
 ## Request
 
-Please confirm whether you can provide or configure the values, permissions, callback, and test chat below. Do not paste real secrets into normal chat or shared Markdown; use a secure secret channel for secret values.
-${selfHosted ? "When filling `feishu-host/.env`, replace placeholder strings completely. `verify --mode self-hosted-runtime --strict` checks generated specs, Python compilation, the local contract test, and app.py --selfcheck." : embedded ? "When filling `feishu_context.local.json` or the existing host service's secret/config system, replace placeholder strings completely; adapter verification treats values like `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, and `${TEST_CHAT_ID}` as missing." : "When filling `feishu_context.local.json` or `bot-runtime/.env`, replace placeholder strings completely; `configure --strict --dry-run` treats values like `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, and `${TEST_CHAT_ID}` as missing."}
+Please confirm whether you can provide or configure the values, permissions, ${longConnection ? "long-connection subscription" : "callback"}, and test chat below. Do not paste real secrets into normal chat or shared Markdown; use a secure secret channel for secret values.
+${selfHosted ? "When filling `feishu-host/.env`, replace placeholder strings completely. `verify --mode self-hosted-runtime --strict` checks generated specs, Python compilation, the local contract test, and app.py --selfcheck." : calendarModeB ? "After install --apply, copy integrations/lark/.env.example to integrations/lark/.env and replace every required value; the module rejects missing values, embedded target credentials, and an empty operator allowlist." : embedded ? `When filling \`feishu_context.local.json\` or the existing host service's secret/config system, replace placeholder strings completely; adapter verification treats values like \`<APP_ID>\`${longConnection ? "" : ", `{{VERIFICATION_TOKEN}}`"}, and \`\${TEST_CHAT_ID}\` as missing.` : "When filling `feishu_context.local.json` or `bot-runtime/.env`, replace placeholder strings completely; `configure --strict --dry-run` treats values like `<APP_ID>`, `{{VERIFICATION_TOKEN}}`, and `${TEST_CHAT_ID}` as missing."}
 
 ## Required Values
 
@@ -785,16 +852,16 @@ ${setupRows}
 \`\`\`text
 can_provide_existing_app_context: yes/no
 can_grant_permissions: yes/no
-${selfHosted ? "long_connection_enabled: yes/no\ncard_action_trigger_subscribed: yes/no" : `can_configure_card_callback: yes/no\n${longConnection ? "long_connection_online: yes/no" : hybrid ? "card_callback_url_configured: <PUBLIC_CALLBACK_BASE_URL>/webhook/card yes/no\nlong_connection_online: yes/no" : "card_callback_url_configured: <PUBLIC_CALLBACK_BASE_URL>/webhook/card yes/no"}`}
+${selfHosted || calendarModeB ? "long_connection_enabled: yes/no\ncard_action_trigger_subscribed: yes/no" : `can_configure_card_callback: yes/no\n${longConnection ? "long_connection_online: yes/no" : hybrid ? "card_callback_url_configured: <PUBLIC_CALLBACK_BASE_URL>/webhook/card yes/no\nlong_connection_online: yes/no" : "card_callback_url_configured: <PUBLIC_CALLBACK_BASE_URL>/webhook/card yes/no"}`}
 can_add_bot_to_test_chat: yes/no
 secure_secret_channel: ${selfHosted || longConnection ? "<how app secret will be shared>" : "<how APP_SECRET / VERIFICATION_TOKEN / ENCRYPT_KEY will be shared>"}
 target_base_url: <reachable URL or owner>
-${selfHosted ? "feishu_host_owner: <owner or deployment note>" : longConnection ? "long_connection_gateway_owner: <owner or deployment note>" : hybrid ? "public_callback_base_url: <HTTPS URL or tunnel owner>\nlong_connection_gateway_owner: <owner or deployment note>" : "public_callback_base_url: <HTTPS URL or tunnel owner>"}
+${selfHosted ? "feishu_host_owner: <owner or deployment note>" : calendarModeB ? "integrations_lark_owner: <owner or deployment note>" : longConnection ? "long_connection_gateway_owner: <owner or deployment note>" : hybrid ? "public_callback_base_url: <HTTPS URL or tunnel owner>\nlong_connection_gateway_owner: <owner or deployment note>" : "public_callback_base_url: <HTTPS URL or tunnel owner>"}
 test_chat_id_available: yes/no
 blocked_by: <missing owner, permission, network, or policy constraint>
 \`\`\`
 
-${selfHosted ? "After the non-secret answers are confirmed, fill `feishu-host/.env`, run `python feishu-host/local_contract_test.py`, run `python feishu-host/app.py --selfcheck`, then run `verify --mode self-hosted-runtime --strict`." : embedded ? `After the non-secret answers are confirmed, mount the adapter in the existing Feishu SDK host, then run \`verify --mode embedded-adapter${longConnection ? " --host-mode embedded-long-connection" : ""} --host-runtime-url <host_runtime_url> --simulate\` and record real Feishu evidence in \`level2_verification_record.md\`.` : "After the non-secret answers are confirmed, fill `feishu_context.local.json` or `bot-runtime/.env` locally and run `configure`, `verify --level2`, and `evidence --update-record`."}
+${selfHosted ? "After the non-secret answers are confirmed, fill `feishu-host/.env`, run `python feishu-host/local_contract_test.py`, run `python feishu-host/app.py --selfcheck`, then run `verify --mode self-hosted-runtime --strict`." : calendarModeB ? "After the non-secret answers are confirmed, run install dry-run, run install --apply, fill integrations/lark/.env, run the module tests, and then record real Feishu evidence in level2_verification_record.md." : embedded ? `After the non-secret answers are confirmed, mount the adapter in the existing Feishu SDK host, then run \`verify --mode embedded-adapter${longConnection ? " --host-mode embedded-long-connection" : ""} --host-runtime-url <host_runtime_url> --simulate\` and record real Feishu evidence in \`level2_verification_record.md\`.` : "After the non-secret answers are confirmed, fill `feishu_context.local.json` or `bot-runtime/.env` locally and run `configure`, `verify --level2`, and `evidence --update-record`."}
 `;
 }
 
@@ -815,14 +882,20 @@ function contextTemplateUsesEmbeddedAdapter(template: ContextTemplate): boolean 
 export function buildContextReplyTemplate(template: ContextTemplate): ContextReplyTemplate {
   const embedded = contextTemplateUsesEmbeddedAdapter(template);
   const selfHosted = template.integration_mode === "self-hosted-runtime";
+  const calendarModeB = template.target_profile === "calendar-stock-updater";
   const longConnection = template.host_receive_mode === "embedded-long-connection";
   const hybrid = template.host_receive_mode === "hybrid";
   const hostModeOption = template.host_receive_mode && template.host_receive_mode !== "embedded-webhook" && template.host_receive_mode !== "standalone-runtime"
     ? ` --host-mode ${template.host_receive_mode}`
     : "";
+  const targetBaseUrlKey = template.handoff_request.required_values.some((item) => item.key === "TARGET_BASE_URL") ? "TARGET_BASE_URL" : "target base URL";
   return {
     schema_version: "0.1",
-    purpose: selfHosted ? "Record non-secret Feishu/Lark owner answers before filling feishu-host/.env and running self-hosted verification." : "Record non-secret Feishu/Lark owner answers before filling local credentials and running configure --strict --dry-run.",
+    purpose: selfHosted
+      ? "Record non-secret Feishu/Lark owner answers before filling feishu-host/.env and running self-hosted verification."
+      : calendarModeB
+        ? "Record non-secret Feishu/Lark owner answers before installing and configuring the isolated integrations/lark module."
+        : "Record non-secret Feishu/Lark owner answers before filling local credentials and running configure --strict --dry-run.",
     generated_package_hint: template.handoff_request.generated_package_hint,
     target_service: {
       name: template.target_service.name,
@@ -869,11 +942,19 @@ export function buildContextReplyTemplate(template: ContextTemplate): ContextRep
           "Run python feishu-host/app.py --selfcheck.",
           "Run verify --mode self-hosted-runtime --strict, then record real Feishu evidence in level2_verification_record.md when available.",
         ]
+      : calendarModeB
+        ? [
+            "Run install dry-run against the live calendar target and review the planned integrations/lark files.",
+            "Run install --apply after review; confirm target root files remain unchanged.",
+            "Copy integrations/lark/.env.example to integrations/lark/.env and fill FEISHU_APP_ID, FEISHU_APP_SECRET, TEST_CHAT_ID, TARGET_BASE_URL, and ALLOWED_OPERATOR_OPEN_IDS.",
+            "Run npm install and npm test inside integrations/lark, then start the target and module separately.",
+            "Record real Feishu evidence in level2_verification_record.md when available.",
+          ]
       : embedded
       ? [
           "Run init-local --context --reply, or copy feishu_context.template.json to feishu_context.local.json manually.",
           longConnection
-            ? "Fill APP_ID, APP_SECRET, TEST_CHAT_ID, and target base URL in the existing long-connection host service's secret/config system. Do not put secrets in this reply template."
+            ? `Fill APP_ID, APP_SECRET, TEST_CHAT_ID, and ${targetBaseUrlKey} in the existing long-connection host service's secret/config system. Do not put secrets in this reply template.`
             : hybrid
               ? "Fill APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, long-connection gateway owner, and target base URL in the existing host service's secret/config system. Do not put secrets in this reply template."
             : "Fill APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, and target base URL in the existing host service's secret/config system. Do not put secrets in this reply template.",
@@ -889,6 +970,8 @@ export function buildContextReplyTemplate(template: ContextTemplate): ContextRep
     secret_red_lines: [
       selfHosted
         ? "Do not paste FEISHU_APP_SECRET into this reply template."
+        : calendarModeB
+          ? "Do not paste FEISHU_APP_SECRET or raw operator IDs into this reply template."
         : longConnection
           ? "Do not paste APP_SECRET into this reply template."
           : "Do not paste APP_SECRET, VERIFICATION_TOKEN, ENCRYPT_KEY, or DEBUG_ACCESS_TOKEN into this reply template.",
@@ -899,10 +982,13 @@ export function buildContextReplyTemplate(template: ContextTemplate): ContextRep
 }
 
 export function buildContextReplyMarkdown(reply: ContextReplyTemplate): string {
+  const longConnection = reply.runtime_choices.some((item) => item.key === "TARGET_TIMEOUT_MS")
+    || reply.next_local_steps.some((item) => item.includes("long-connection"));
   const answers = Object.entries(reply.answers)
     .map(([key, value]) => `| ${key} | ${value === null ? "unknown" : value ? "yes" : "no"} |`)
     .join("\n");
   const publicRows = Object.entries(reply.public_values)
+    .filter(([key]) => !(longConnection && key === "public_callback_base_url"))
     .map(([key, value]) => `| ${key} | ${value || "<empty>"} |`)
     .join("\n");
   const permissionRows = reply.permission_confirmations
