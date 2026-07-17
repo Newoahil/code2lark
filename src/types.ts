@@ -1,3 +1,5 @@
+import type { StructuralBackendMetadata, StructuralRouteFact } from "./structural-analysis.js";
+
 export type JsonObject = Record<string, unknown>;
 
 export type ManifestSchemaVersion = "0.2";
@@ -22,9 +24,11 @@ export interface ServiceManifest {
     start_hints: string[];
   };
   source_scan: {
-    analysis_strategy: "http_api_python_image_agent_web" | "generic_http_api" | "generic_cli";
+    analysis_strategy: "http_api_python_image_agent_web" | "calendar_stock_updater" | "generic_http_api" | "generic_cli";
     files_checked: string[];
     endpoints: Array<{ method: string; path: string }>;
+    structural_backend?: StructuralBackendMetadata;
+    route_provenance?: StructuralRouteFact[];
     endpoint_coverage?: Array<{
       method: string;
       path: string;
@@ -45,7 +49,7 @@ export interface ServiceManifest {
 export interface CapabilityMap {
   schema_version: ManifestSchemaVersion;
   service_name: string;
-  target_profile: "image-agent-web" | "generic-http-api" | "generic-cli";
+  target_profile: "image-agent-web" | "calendar-stock-updater" | "generic-http-api" | "generic-cli";
   capabilities: Capability[];
 }
 
