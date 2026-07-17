@@ -4,6 +4,9 @@ import { getStringOption } from "../args.js";
 import { ensureDir, readTextIfExists, slugify, writeJson, writeText } from "../fs-utils.js";
 import { getJsonWithTimeout, normalizeBaseUrl } from "../http-utils.js";
 import { IMAGE_AGENT_WEB_PROFILE } from "../profiles/image-agent-web.js";
+import { buildCalendarProfileArtifacts, isCalendarStockUpdaterTarget } from "../profiles/calendar-stock-updater.js";
+import { collectStructuralFacts, parseStructuralBackendMode } from "../structural-analysis.js";
+import type { StructuralFacts } from "../structural-analysis.js";
 import type { CapabilityMap, InteractionContract, JsonObject, RequiredPermissions, ServiceManifest } from "../types.js";
 
 interface AnalyzeOptions {
@@ -11,6 +14,7 @@ interface AnalyzeOptions {
   baseUrl: string;
   outDir: string;
   name: string;
+  structuralFacts: StructuralFacts;
 }
 
 interface AnalyzerStrategy {
@@ -57,8 +61,17 @@ const ANALYZER_STRATEGIES: AnalyzerStrategy[] = [
     analyze: analyzeImageAgentWeb,
   },
   {
+    id: "calendar_stock_updater",
+    canAnalyze: ({ targetPath }) => isCalendarStockUpdaterTarget(targetPath, {
+      server: readTextIfExists(path.join(targetPath, "server.js")),
+      taskConfig: readTextIfExists(path.join(targetPath, "task-config.js")),
+      automation: readTextIfExists(path.join(targetPath, "update-calendar-stock.js")),
+    }),
+    analyze: analyzeCalendarStockUpdater,
+  },
+  {
     id: "generic_http_api",
-    canAnalyze: ({ targetPath }) => discoverHttpEndpoints(targetPath).length > 0,
+    canAnalyze: ({ structuralFacts }) => structuralFacts.routes.length > 0,
     analyze: analyzeGenericHttpApi,
   },
   {
@@ -73,7 +86,7 @@ const ANALYZER_STRATEGIES: AnalyzerStrategy[] = [
 export async function analyzeCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const targetArg = args[0];
   if (!targetArg) {
-    throw new Error("Usage: lark-deployer analyze <target-path> --base-url <url> [--out <dir>] [--name <name>]");
+    throw new Error("Usage: lark-deployer analyze <target-path> --base-url <url> [--out <dir>] [--name <name>] [--backend auto|internal|codegraph]");
   }
 
   const targetPath = path.resolve(targetArg);
@@ -85,12 +98,15 @@ export async function analyzeCommand(args: string[], options: Record<string, str
   const defaultOut = path.resolve("out", slugify(name));
   const outDir = path.resolve(getStringOption(options, "out", defaultOut));
   const baseUrl = normalizeBaseUrl(getStringOption(options, "base-url", getStringOption(options, "baseUrl", "")));
+  const backendMode = parseStructuralBackendMode(options.backend);
+  const structuralFacts = await collectStructuralFacts(targetPath, backendMode, () => discoverHttpEndpoints(targetPath));
 
   const analyzeOptions = {
     targetPath,
     baseUrl,
     outDir,
     name,
+    structuralFacts,
   };
   const strategy = ANALYZER_STRATEGIES.find((item) => item.canAnalyze(analyzeOptions));
   if (!strategy) {
@@ -99,7 +115,7 @@ export async function analyzeCommand(args: string[], options: Record<string, str
   await strategy.analyze(analyzeOptions);
 }
 
-async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: AnalyzeOptions): Promise<void> {
+async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name, structuralFacts }: AnalyzeOptions): Promise<void> {
   const manifestDir = path.join(outDir, "manifest");
   ensureDir(manifestDir);
 
@@ -110,7 +126,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
   const main = readTextIfExists(mainPath);
   const templates = readTextIfExists(templatesPath);
   const secretFindings = scanPotentialSecrets(targetPath);
-  const endpoints = extractFastApiEndpoints(main);
+  const endpoints = structuralFacts.backend.used === "codegraph" ? endpointsFromStructuralFacts(structuralFacts) : extractFastApiEndpoints(main);
   const endpointCoverage = buildEndpointCoverage(endpoints);
   const frameworks = [
     requirements.includes("fastapi") || main.includes("FastAPI") ? "fastapi" : "",
@@ -157,10 +173,13 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
         path.relative(targetPath, templatesPath),
       ],
       endpoints,
+      structural_backend: structuralFacts.backend,
+      route_provenance: structuralFacts.routes,
       endpoint_coverage: endpointCoverage,
       notes: [
         "MVP preset: image-agent-web FastAPI integration.",
         "Lark-deployer verifies target availability but does not start or manage the target service.",
+        structuralBackendNote(structuralFacts),
         secretFindings.length
           ? `Potential target-side secret literals found: ${secretFindings.length}. Values were not copied into Lark-deployer artifacts.`
           : "",
@@ -505,13 +524,81 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name }: Analy
   }
 }
 
-async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name }: AnalyzeOptions): Promise<void> {
+async function analyzeCalendarStockUpdater({ targetPath, baseUrl, outDir, name, structuralFacts }: AnalyzeOptions): Promise<void> {
+  const manifestDir = path.join(outDir, "manifest");
+  ensureDir(manifestDir);
+
+  const endpoints = endpointsFromStructuralFacts(structuralFacts);
+  const secretFindings = scanPotentialSecrets(targetPath);
+  const healthProbe = await getJsonWithTimeout(baseUrl ? `${baseUrl}/api/state` : "", 5000);
+  const artifacts = buildCalendarProfileArtifacts(name);
+  const profileCapabilityFor = (pathName: string) => artifacts.capabilityMap.capabilities.find((item) => item.source.path === pathName);
+
+  const serviceManifest: ServiceManifest = {
+    schema_version: "0.2",
+    generated_at: new Date().toISOString(),
+    service: {
+      name,
+      target_path: targetPath,
+      type: "http_api",
+      detected_frameworks: detectFrameworks(targetPath),
+      runtime_mode: "external_service",
+      managed_by_lark_deployer: false,
+      base_url: baseUrl,
+      healthcheck: { method: "GET", path: "/api/state", status: healthProbe.status, detail: healthProbe.detail },
+      start_hints: [
+        "The calendar service lifecycle is owned by the target project.",
+        "Start the calendar service with its existing documented command; start the isolated integrations/lark host separately after installation.",
+      ],
+    },
+    source_scan: {
+      analysis_strategy: "calendar_stock_updater",
+      files_checked: ["server.js", "task-config.js", "update-calendar-stock.js", "public/index.html", "public/app.js"].filter((file) => fs.existsSync(path.join(targetPath, file))),
+      endpoints,
+      structural_backend: structuralFacts.backend,
+      route_provenance: structuralFacts.routes,
+      endpoint_coverage: endpoints.map((endpoint) => {
+        const capability = profileCapabilityFor(endpoint.path);
+        if (endpoint.method === "GET" && endpoint.path === "/api/state") {
+          return { ...endpoint, status: "supported" as const, capability_id: "calendar.status", reason: "Generated cards use this endpoint for health, defaults, status, and bounded recent logs." };
+        }
+        if (endpoint.method === "GET" && endpoint.path === "/api/events") {
+          return { ...endpoint, status: "supporting" as const, reason: "Browser-only Server-Sent Events stream; excluded from finite Feishu card callbacks." };
+        }
+        if (capability) {
+          return { ...endpoint, status: "supported" as const, capability_id: capability.id, reason: "Mapped through the calendar business interaction profile." };
+        }
+        return { ...endpoint, status: "discovered_not_generated" as const, reason: "Discovered but not part of the calendar business interaction profile." };
+      }),
+      notes: [
+        "Analyzer strategy: calendar_stock_updater.",
+        "The recommended Web-console fields are mapped into typed Feishu cards; raw body_json is intentionally not generated.",
+        "Formal run and stop confirmation is owned by the isolated Lark host; the unchanged target exposes only /api/state, /api/run, and /api/stop.",
+        "GET /api/events is browser-only SSE infrastructure and is intentionally excluded from card actions.",
+        structuralBackendNote(structuralFacts),
+        ...(secretFindings.length ? [`Potential target-side secret literals found: ${secretFindings.length}. Values were not copied into Lark-deployer artifacts.`] : []),
+      ],
+      secret_findings: secretFindings,
+    },
+  };
+
+  writeJson(path.join(manifestDir, "service_manifest.json"), serviceManifest);
+  writeJson(path.join(manifestDir, "capability_map.json"), artifacts.capabilityMap);
+  writeJson(path.join(manifestDir, "interaction_contract.json"), artifacts.interactionContract);
+  writeJson(path.join(manifestDir, "required_permissions.json"), artifacts.requiredPermissions);
+  writeText(path.join(outDir, "analysis_report.md"), buildCalendarAnalysisReport(serviceManifest, artifacts.capabilityMap));
+
+  console.log(`Analysis written to ${outDir}`);
+  console.log("Analyzer strategy: calendar_stock_updater");
+  console.log(`Target healthcheck: ${serviceManifest.service.healthcheck.status} (${serviceManifest.service.healthcheck.detail})`);
+}
+
+async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name, structuralFacts }: AnalyzeOptions): Promise<void> {
   const manifestDir = path.join(outDir, "manifest");
   ensureDir(manifestDir);
 
   const secretFindings = scanPotentialSecrets(targetPath);
-  const discovered = discoverHttpEndpoints(targetPath);
-  const endpoints = dedupeEndpoints(discovered);
+  const endpoints = endpointsFromStructuralFacts(structuralFacts);
   const capabilityEndpoints = endpoints.filter((endpoint) => !isHealthEndpoint(endpoint));
   const generatedCapabilityEndpoints = capabilityEndpoints.filter((endpoint) => genericEndpointStatus(endpoint) === "supported");
   const healthPath = endpoints.find(isHealthEndpoint)?.path || endpoints.find((endpoint) => endpoint.method === "GET")?.path || "/";
@@ -544,6 +631,8 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name }: Anal
       analysis_strategy: "generic_http_api",
       files_checked: collectGenericFilesChecked(targetPath),
       endpoints,
+      structural_backend: structuralFacts.backend,
+      route_provenance: structuralFacts.routes,
       endpoint_coverage: endpoints.map((endpoint) => {
         if (isHealthEndpoint(endpoint)) {
           return { ...endpoint, status: "supporting" as const, reason: "Used as a generic target healthcheck." };
@@ -561,6 +650,7 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name }: Anal
       notes: [
         "Analyzer strategy: generic_http_api.",
         "Generated manifest is a coarse HTTP API draft; review input and output schemas before production use.",
+        structuralBackendNote(structuralFacts),
         secretFindings.length
           ? `Potential target-side secret literals found: ${secretFindings.length}. Values were not copied into Lark-deployer artifacts.`
           : "",
@@ -674,6 +764,15 @@ function isImageAgentWebTarget(targetPath: string): boolean {
   const endpoints = extractFastApiEndpoints(readTextIfExists(path.join(targetPath, "main.py")));
   return fs.existsSync(path.join(targetPath, "templates.py"))
     || endpoints.some((endpoint) => endpoint.method === "POST" && endpoint.path === "/api/generate");
+}
+
+function endpointsFromStructuralFacts(facts: StructuralFacts): Array<{ method: string; path: string }> {
+  return dedupeEndpoints(facts.routes.map((route) => ({ method: route.method, path: route.path })));
+}
+
+function structuralBackendNote(facts: StructuralFacts): string {
+  const fallback = facts.backend.status === "fallback" ? `, fallback reason: ${oneLine(facts.backend.reason || "not specified")}` : "";
+  return `Structural backend requested ${facts.backend.requested}, used ${facts.backend.used} (${facts.backend.status}${fallback}).`;
 }
 
 function discoverHttpEndpoints(targetPath: string): Array<{ method: string; path: string }> {
@@ -1175,6 +1274,36 @@ Lark-deployer records only finding metadata here. It does not copy matched secre
 - Lark-deployer does not start or manage the target service lifecycle.
 - The generated bot runtime expects image-agent-web to be reachable from its own environment.
 - templates.py was ${templatesSource ? "found" : "not found"} during static scan.
+`;
+}
+
+function buildCalendarAnalysisReport(manifest: ServiceManifest, capabilities: CapabilityMap): string {
+  const coverage = manifest.source_scan.endpoint_coverage || [];
+  return `# Calendar Stock Updater Analysis Report
+
+## Profile
+
+- Target profile: calendar-stock-updater
+- Analyzer strategy: calendar_stock_updater
+- Target: ${manifest.service.name}
+- Base URL: ${manifest.service.base_url || "not provided"}
+- Health/read endpoint: GET /api/state
+
+## Business interaction mapping
+
+- Typed Feishu card fields replace generic JSON request bodies.
+- Default card fields mirror the recommended Web console: target date, stock, delays, and optional product ID range.
+- Advanced environment-only date/SKU modes remain review candidates.
+- Formal execution and task stopping require host-local confirmation before the original target endpoints are called.
+- GET /api/events is browser-only SSE infrastructure and is not a Feishu action.
+
+## Endpoint coverage
+
+${coverage.map((item) => `- ${item.method} ${item.path}: ${item.status}${item.capability_id ? ` (${item.capability_id})` : ""} — ${item.reason}`).join("\n")}
+
+## Generated capabilities
+
+${capabilities.capabilities.map((capability) => `- ${capability.id}: ${capability.name} (${capability.risk})`).join("\n")}
 `;
 }
 
