@@ -12,8 +12,17 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "check": "npm run build",
-    "test": "npm run build && node --test tests/*.test.mjs"
+    "test:unit": "node --test tests/unit-pure-functions.test.mjs",
+    "test:smoke": "node --test tests/cli-smoke.test.mjs",
+    "test:mode-b": "node --test tests/mode-b-install.test.mjs",
+    "test:e2e": "node --test tests/runtime-local-e2e.test.mjs",
+    "test:coverage": "node --experimental-test-coverage --test tests/unit-pure-functions.test.mjs tests/cli-smoke.test.mjs tests/mode-b-install.test.mjs",
+    "test": "npm run build && npm run test:unit && npm run test:smoke && npm run test:mode-b && npm run test:e2e"
   },
+  "engines": {
+    "node": ">=24.16.0"
+  },
+  "packageManager": "npm@11.15.0",
   "devDependencies": {
     "@types/node": "^24.0.10",
     "tsx": "^4.20.3",

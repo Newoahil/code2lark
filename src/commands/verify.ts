@@ -66,6 +66,28 @@ export async function verifyCommand(args: string[], options: Record<string, stri
       detail: error instanceof Error ? error.message : String(error),
     });
   }
+  const reportEnvPath = verificationReportEnvPath(packagePath, envPath, integrationMode, capabilities);
+
+  if (strict) {
+    checks.push(...buildStrictManifestIntegrityChecks({ service, capabilities, interactions, permissions }));
+    if (checks.some((check) => check.name.startsWith("manifest:strict:") && check.status === "fail")) {
+      printChecks(checks);
+      writeReports(reportDir, checks, {
+        packagePath,
+        envPath: reportEnvPath,
+        runtimeUrl,
+        hostRuntimeUrl,
+        hostReceiveMode,
+        simulate,
+        sendStartCard,
+        level2,
+        targetBaseUrl: "",
+        mode: integrationMode,
+      });
+      process.exitCode = 1;
+      return;
+    }
+  }
 
   if (mode === "embedded-adapter" || mode === "embedded") {
     checks.push(...buildEmbeddedAdapterChecks(packagePath, interactions, permissions));
@@ -73,7 +95,7 @@ export async function verifyCommand(args: string[], options: Record<string, stri
     printChecks(checks);
     writeReports(reportDir, checks, {
       packagePath,
-      envPath,
+      envPath: reportEnvPath,
       runtimeUrl,
       hostRuntimeUrl,
       hostReceiveMode,
@@ -478,7 +500,7 @@ export async function verifyCommand(args: string[], options: Record<string, stri
   printChecks(checks);
   writeReports(reportDir, checks, {
     packagePath,
-    envPath,
+    envPath: reportEnvPath,
     runtimeUrl,
     simulate,
     sendStartCard,
@@ -493,6 +515,13 @@ export async function verifyCommand(args: string[], options: Record<string, stri
   }
 }
 
+function verificationReportEnvPath(packagePath: string, defaultEnvPath: string, mode: IntegrationMode, capabilities: CapabilityMap | undefined): string {
+  if (mode === "embedded-adapter" && capabilities?.target_profile === "calendar-stock-updater") {
+    return path.join(packagePath, "integrations", "lark", ".env");
+  }
+  return defaultEnvPath;
+}
+
 function normalizeVerifyIntegrationMode(value: string): IntegrationMode {
   const normalized = value.trim() || "standalone-runtime";
   if (normalized === "embedded" || normalized === "embedded-adapter") return "embedded-adapter";
@@ -505,6 +534,96 @@ function checkFile(name: string, filePath: string): CheckResult {
   return fs.existsSync(filePath)
     ? { name, status: "pass", detail: filePath }
     : { name, status: "fail", detail: `Missing ${filePath}` };
+}
+
+function buildStrictManifestIntegrityChecks(manifests: {
+  service: ServiceManifest | undefined;
+  capabilities: CapabilityMap | undefined;
+  interactions: InteractionContract | undefined;
+  permissions: RequiredPermissions | undefined;
+}): CheckResult[] {
+  const checks: CheckResult[] = [];
+  checks.push(checkManifestSchemaVersion("service_manifest.json", manifests.service));
+  checks.push(checkManifestSchemaVersion("capability_map.json", manifests.capabilities));
+  checks.push(checkManifestSchemaVersion("interaction_contract.json", manifests.interactions));
+  checks.push(checkManifestSchemaVersion("required_permissions.json", manifests.permissions));
+  const targetProfile = manifests.capabilities?.target_profile;
+  checks.push({
+    name: "manifest:strict:capability-map-target-profile",
+    status: typeof targetProfile === "string" && targetProfile ? "pass" : "fail",
+    detail: typeof targetProfile === "string" && targetProfile
+      ? `capability_map.json target_profile=${targetProfile}.`
+      : "capability_map.json must include target_profile in strict mode.",
+  });
+  checks.push(checkCapabilityEndpointsWereDiscovered(manifests.service, manifests.capabilities));
+  if (targetProfile === "calendar-stock-updater") {
+    checks.push(checkCalendarCapabilityContract(manifests.capabilities));
+  }
+  return checks;
+}
+
+function checkCapabilityEndpointsWereDiscovered(
+  service: ServiceManifest | undefined,
+  capabilities: CapabilityMap | undefined,
+): CheckResult {
+  if (!service || !capabilities) {
+    return {
+      name: "manifest:strict:capability-endpoints-discovered",
+      status: "fail",
+      detail: "Cannot compare capability endpoints with source discovery because one or both manifests are missing.",
+    };
+  }
+  if (!service.source_scan || !Array.isArray(service.source_scan.endpoints) || !Array.isArray(capabilities.capabilities)) {
+    return {
+      name: "manifest:strict:capability-endpoints-discovered",
+      status: "fail",
+      detail: "Cannot compare capability endpoints because source_scan.endpoints or capabilities is missing from the manifest schema.",
+    };
+  }
+  const discovered = new Set([
+    ...service.source_scan.endpoints,
+    ...(service.source_scan.endpoint_coverage || []),
+  ].map((endpoint) => endpointKey(endpoint.method, endpoint.path)));
+  const missing = capabilities.capabilities
+    .map((capability) => ({ id: capability.id, method: capability.source.method, path: capability.source.path }))
+    .filter((endpoint) => !discovered.has(endpointKey(endpoint.method, endpoint.path)));
+  return {
+    name: "manifest:strict:capability-endpoints-discovered",
+    status: missing.length ? "fail" : "pass",
+    detail: missing.length
+      ? `Capability endpoints were not discovered in target source: ${missing.map((item) => `${item.id}=${item.method} ${item.path}`).join(", ")}.`
+      : "Every generated capability endpoint was discovered in target source.",
+  };
+}
+
+function checkCalendarCapabilityContract(capabilities: CapabilityMap | undefined): CheckResult {
+  const expected = ["GET /api/state", "POST /api/run", "POST /api/stop"];
+  const actual = capabilities
+    ? capabilities.capabilities.map((capability) => endpointKey(capability.source.method, capability.source.path)).sort()
+    : [];
+  const valid = actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+  return {
+    name: "manifest:strict:calendar-target-contract",
+    status: valid ? "pass" : "fail",
+    detail: valid
+      ? "calendar-stock-updater capabilities are limited to GET /api/state, POST /api/run, and POST /api/stop."
+      : `calendar-stock-updater capability endpoints must be exactly ${expected.join(", ")}; found ${actual.join(", ") || "none"}.`,
+  };
+}
+
+function endpointKey(method: string, endpointPath: string): string {
+  return `${String(method).toUpperCase()} ${endpointPath}`;
+}
+
+function checkManifestSchemaVersion(name: string, value: { schema_version?: string } | undefined): CheckResult {
+  const actual = value?.schema_version;
+  return {
+    name: `manifest:strict:${name}:schema-version`,
+    status: actual === "0.2" ? "pass" : "fail",
+    detail: actual === "0.2"
+      ? `${name} uses schema_version 0.2.`
+      : `${name} must use schema_version 0.2 in strict mode; found ${actual || "missing"}.`,
+  };
 }
 
 function buildEmbeddedAdapterChecks(packagePath: string, interactions: InteractionContract | undefined, permissions: RequiredPermissions | undefined): CheckResult[] {
@@ -738,8 +857,8 @@ function checkAdapterStartCardBuilder(packagePath: string): CheckResult {
   const cardsPath = path.join(packagePath, "adapter", "cards.ts");
   const source = fs.existsSync(cardsPath) ? fs.readFileSync(cardsPath, "utf8") : "";
   const hasBuilder = source.includes("export function buildStartCard")
-    && (source.includes("image_generate_form") || source.includes("actionSpecs"))
-    && (source.includes("image.batch.submit") || source.includes("actionId"));
+    && (source.includes("image_generate_form") || source.includes("actionSpecs") || source.includes("calendar_task_form"))
+    && (source.includes("image.batch.submit") || source.includes("actionId") || source.includes("calendar."));
   return {
     name: "adapter:start-card-builder",
     status: hasBuilder ? "pass" : "fail",
@@ -786,8 +905,8 @@ function executeEmbeddedAdapterSmoke(packagePath: string): CheckResult[] {
       const startCard = cards.buildStartCard();
       const startCardText = JSON.stringify(startCard);
       if (!startCardText.includes("image_generate_form") && !startCardText.includes("actionId") && !startCardText.includes('action"')) throw new Error("missing card action controls");
-      if (!startCardText.includes("image.batch.submit") && !startCardText.includes("http.")) throw new Error("missing expected card action id");
-      const handler = handlers.handleGenericHttpCardAction || handlers.handleImageAgentCardAction;
+      if (!startCardText.includes("image.batch.submit") && !startCardText.includes("http.") && !startCardText.includes("calendar.")) throw new Error("missing expected card action id");
+      const handler = handlers.handleCardAction || handlers.handleGenericHttpCardAction || handlers.handleImageAgentCardAction;
       const result = await handler({ action: "unsupported.action" }, { imageAgentBaseUrl: "http://127.0.0.1:1", targetBaseUrl: "http://127.0.0.1:1" });
       if (result?.ok !== false || !result?.card) throw new Error("handler did not return a failure card for unsupported action");
     `;
@@ -1590,7 +1709,8 @@ function buildNextSteps(
   ) {
     steps.push("Check that `VERIFICATION_TOKEN` matches the Feishu callback token, the public proxy preserves request body and `x-lark-*` headers, and the target service can complete the signed action request.");
   }
-  if (byName.get("target:/api/meta")?.status !== "pass") {
+  const targetMetaCheck = byName.get("target:/api/meta");
+  if (targetMetaCheck && targetMetaCheck.status !== "pass") {
     steps.push(embedded
       ? "Start or expose the target service so the existing host can reach `GET <IMAGE_AGENT_BASE_URL>/api/meta`."
       : "Start or expose the target service so the bot runtime can reach `GET <IMAGE_AGENT_BASE_URL>/api/meta`.");

@@ -16,7 +16,7 @@ Mode A is the external host, sidecar, or gateway path. Keep the target service u
 
 ## Mode B
 
-Mode B is the target-project embedded host-module path. Keep `generated/<target>-lark/` as source of truth, then copy selected generated modules into the target project.
+Mode B is the target-project embedded host-module path. Keep `generated/<target>-lark/` as source of truth. When the package contains `integrations/lark/install-manifest.json`, use the explicit `install` command: it defaults to dry-run and only `--apply` writes the isolated `integrations/lark/` module. Older host packages without that closure still follow the target-specific manual embedding guide.
 
 ## standalone-runtime
 

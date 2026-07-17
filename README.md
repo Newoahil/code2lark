@@ -47,7 +47,28 @@ node dist/index.js verify generated\image-agent-web-lark --mode embedded-adapter
 node dist/index.js verify generated\image-agent-web-lark-self-hosted --mode self-hosted-runtime --strict
 node dist/index.js evidence generated\image-agent-web-lark
 node dist/index.js handoff generated\image-agent-web-lark
+node dist/index.js install generated\calendar-stock-updater-lark --target C:\path\to\calendar-copy
+node dist/index.js install generated\calendar-stock-updater-lark --target C:\path\to\calendar-copy --apply
 ```
+
+## 结构分析后端
+
+`analyze` 支持 `--backend auto|internal|codegraph`，默认使用 `auto`：
+
+- `internal`：只使用 Code2Lark 内置源码扫描；
+- `auto`：优先尝试用户自行维护的 codegraph 索引；如果 CLI 不可用、索引未初始化、陈旧、不完整或输出无效，则安全回退到 internal，并把 requested / used / fallback 原因写入分析产物；
+- `codegraph`：显式要求新鲜可用的外部索引；条件不满足时直接报错，不静默回退。
+
+Code2Lark 只允许调用以下只读命令：
+
+```text
+codegraph status <repo> --json
+codegraph query route --kind route --path <repo> --json
+```
+
+Code2Lark 不会安装 codegraph，也不会运行 `init`、`sync`、reindex 或其他索引写入操作。外部结果只提供文件、符号和路由等低层结构事实；业务 Profile、能力推断、卡片动作、权限和安装范围仍由 Code2Lark 决定。
+
+calendar-stock-updater 的最终 replay 使用 `--backend auto`，由于目标没有用户维护的新鲜 codegraph 索引，记录结果为 requested=`auto`、used=`internal`、status=`fallback`；分析与后续严格验证正常完成。
 
 ## 交付模式（Delivery Modes）
 
@@ -59,9 +80,11 @@ generated/<target>-lark/
 
 把这个生成目录视为**单一事实来源（source of truth）**：其中包含 manifest、adapter 代码、宿主模块、文档和验证记录。
 
+The canonical MVP package is freshly generated from current schema 0.2 manifests.
+
 ### Mode A：外置宿主 / sidecar / gateway
 
-Mode A is the external host, sidecar, or gateway path.
+Mode A is the external host, sidecar, or gateway path. Mode A is a validated deployment-test baseline in the verified `image-agent-web` sample.
 
 Mode A 是**外置宿主**路线。目标服务继续保持自己的生命周期，Code2Lark 生成的宿主在目标服务外部运行，通过 HTTP / CLI / SDK 去调用目标能力。
 
@@ -69,14 +92,52 @@ Mode A 是**外置宿主**路线。目标服务继续保持自己的生命周期
 
 ### Mode B：目标项目内增量宿主模块
 
-Mode B is the target-project embedded host-module path.
+Mode B is the target-project embedded host-module path. Mode B is a validated deployment-test baseline in the verified `image-agent-web` sample.
 
-Mode B 是**目标项目内增量宿主模块**路线。生成包依然是 source of truth，但可以把其中的宿主模块（如 `feishu-host/`）复制到目标项目仓库里，作为一个增量模块使用。
+Mode B 是**目标项目内增量宿主模块**路线。生成包依然是 source of truth；标准流程使用显式 `install` 命令把生成包中的闭包安装到目标项目，默认只做 dry-run，只有 `--apply` 会写入。
 
 Mode B 不是重写目标项目业务代码，而是：
-- 最小侵入地迁入宿主模块
-- 保留 `.env`、启动方式、验证方式和交接契约
-- 让目标项目自己承载飞书宿主能力
+- 只写入 `integrations/lark/` 隔离模块
+- 使用模块自己的 `.env.example`、依赖、启动方式、测试和交接契约
+- 不修改目标根 `package.json`、启动脚本、Docker、业务代码或 Web UI
+- 安装前要求目标健康端点在线，并通过生成包契约与托管文件冲突检查
+
+calendar-stock-updater 的两阶段示例：
+
+```powershell
+# 1. 候选包仍位于 generated/，generate 不写目标项目
+node dist/index.js generate out\calendar-stock-updater --out generated\calendar-stock-updater-lark --mode embedded-adapter --host-mode embedded-long-connection
+
+# 2. 默认 dry-run：在线探测、契约校验、冲突检查，零写入
+node dist/index.js install generated\calendar-stock-updater-lark --target C:\path\to\calendar-copy
+
+# 3. 人工审查后显式安装，只写 integrations/lark
+node dist/index.js install generated\calendar-stock-updater-lark --target C:\path\to\calendar-copy --apply
+```
+
+#### calendar-stock-updater 当前状态
+
+当前 calendar Mode B 路线已经完成本地工程闭环：
+
+- 原始 `calendar-stock-updater` 项目保持只读，没有修改根 `package.json`、启动脚本、Docker、业务代码或 Web UI；
+- 安装验证使用独立 replay，只通过 `install --apply` 写入 `integrations/lark/**`；
+- 目标调用仍严格限制为 `GET /api/state`、`POST /api/run` 和 `POST /api/stop`；
+- strict verify 为 32 PASS / 0 WARN / 0 FAIL；Code2Lark 完整测试 41/41、replay 根测试 49/49、安装模块测试 8/8；
+- 真实飞书长连接已成功建立并发送起始卡，真实 `card.action.trigger` 也已到达宿主；
+- 当前真实联调阻塞在 `ALLOWED_OPERATOR_OPEN_IDS`：配置值与回调中的当前应用维度 `operator.open_id` 不一致，因此安全门禁按预期拒绝了操作；
+- 真实 Level 2 尚未完成，仍需修正白名单后重新验证刷新、普通预演、停止流程，并补齐截图、message ID、脱敏日志和签字证据。
+
+安装模块的本地配置位于目标 replay 的 `integrations/lark/.env`。不要把真实值提交到 Git：
+
+```dotenv
+FEISHU_APP_ID=
+FEISHU_APP_SECRET=
+TEST_CHAT_ID=
+ALLOWED_OPERATOR_OPEN_IDS=<current-app-operator-open-id>
+TARGET_BASE_URL=http://127.0.0.1:3069
+```
+
+`ALLOWED_OPERATOR_OPEN_IDS` 是允许操作卡片的飞书用户 `open_id` 白名单，多个值使用英文逗号分隔。`open_id` 是应用维度标识，必须取自同一个飞书应用的 `card.action.trigger` 回调字段 `event.operator.operator_id.open_id`，不能使用手机号、chat id、user_id 或另一个应用下的 open_id。飞书应用、机器人能力、权限和长连接订阅在 [飞书开放平台开发者后台](https://open.feishu.cn/app) 配置。
 
 ### `self-hosted-runtime`
 
@@ -420,6 +481,6 @@ Code2Lark 负责构建接入包，也可以探测目标服务是否可达；但�
 - operator allowlist
 - duplicate-action 去重
 - `image-agent-web` 的真实长连接样板已经完成真人飞书验证
-- `calendar-stock-updater` 已进入 `generic_http_api` 工作流
+- `calendar-stock-updater` 已具备专用业务 Profile 和 dry-run-first Mode B 隔离安装流程；全新 replay 的本地安装、离线阻断、冲突阻断与模块合同已验证；真实长连接、发卡和回调到达已观察，当前需修正当前应用维度的 operator open_id 白名单后继续 Level 2
 
 但 webhook / standalone 的真实 Level 2，以及更多目标项目的真实飞书接入，仍然是后续阶段的工作。

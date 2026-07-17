@@ -1,4 +1,5 @@
 import { buildFormFieldMaps, formFieldName } from "../field-mapping.js";
+import { hostModeUsesLongConnection, type HostReceiveMode } from "../host-mode.js";
 import type { CapabilityMap, ServiceManifest } from "../types.js";
 
 export interface ImageAgentMeta {
@@ -293,8 +294,8 @@ function buildAdapterHandlerTemplateData(capabilities: CapabilityMap, meta: Imag
   return { defaultPreset, requiredFieldsByTemplate, fieldLabels };
 }
 
-export function adapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
-  return stripAdapterCardsTypeScript(adapterCardsTs(service, capabilities, meta));
+export function adapterCardsJs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined, hostReceiveMode: HostReceiveMode): string {
+  return stripAdapterCardsTypeScript(adapterCardsTs(service, capabilities, meta, hostReceiveMode));
 }
 
 function stripAdapterCardsTypeScript(source: string): string {
@@ -306,12 +307,17 @@ function stripAdapterCardsTypeScript(source: string): string {
     .replace(/\(message: string\): Record<string, unknown>/g, "(message)")
     .replace(/: unknown\[\](?= =)/g, "")
     .replace(/\(value: unknown\): number/g, "(value)")
-    .replace(/\(value: unknown\): string/g, "(value)");
+    .replace(/\(value: unknown\): string/g, "(value)")
+    .replace(/\(template: string, title: string, elements: unknown\[\]\): Record<string, unknown>/g, "(template, title, elements)")
+    .replace(/\(text: string, name: string, value: Record<string, unknown>\): Record<string, unknown>/g, "(text, name, value)");
 }
 
-export function adapterCardsTs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined): string {
+export function adapterCardsTs(service: ServiceManifest, capabilities: CapabilityMap, meta: ImageAgentMeta | undefined, hostReceiveMode: HostReceiveMode): string {
   const { defaultPreset, templateSpecs, fieldSpecs, fieldMaps } = buildAdapterCardTemplateData(capabilities, meta);
+  const useJson2Card = hostModeUsesLongConnection(hostReceiveMode);
   return `export const defaultPreset = ${JSON.stringify(defaultPreset, null, 2)};
+
+const useJson2Card = ${JSON.stringify(useJson2Card)};
 
 export const templateSpecs = ${JSON.stringify(templateSpecs, null, 2)};
 
@@ -323,10 +329,7 @@ export const formFieldToTemplateKey: Record<string, string> = ${JSON.stringify(f
 
 export function buildStartCard(): Record<string, unknown> {
   const defaultBatchItemsJson = JSON.stringify([{ fields: defaultPreset.fields }], null, 2);
-  return {
-    config: { wide_screen_mode: true },
-    header: { template: "blue", title: { tag: "plain_text", content: "Image Agent MVP" } },
-    elements: [
+  const elements: unknown[] = [
       { tag: "markdown", content: "**Target service:** " + ${JSON.stringify(service.service.name)} + "\\n\\n**Templates:** " + templateSpecs.map((template) => template.id).join(", ") + "\\n\\nFill the parameters and submit to run /api/generate." },
       {
         tag: "form",
@@ -336,7 +339,7 @@ export function buildStartCard(): Record<string, unknown> {
           { tag: "input", name: "param_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
           ...fieldSpecs.map((field) => ({ tag: "input", name: templateKeyToFormField[field.key] || field.name, required: field.required, default_value: field.defaultValue, width: "fill", label: { tag: "plain_text", content: field.label }, placeholder: { tag: "plain_text", content: field.placeholder || field.defaultValue || "Enter value" } })),
           { tag: "input", name: "param_message", required: false, default_value: defaultPreset.message || "", width: "fill", input_type: "multiline_text", rows: 2, auto_resize: true, label: { tag: "plain_text", content: "Message" }, placeholder: { tag: "plain_text", content: "Optional extra instruction" } },
-          { tag: "button", text: { tag: "plain_text", content: "Generate image" }, type: "primary", action_type: "form_submit", name: "submit_image_generate", value: { action: "image.generate.submit", preset: defaultPreset } },
+          callbackSubmitButton("Generate image", "submit_image_generate", { action: "image.generate.submit", preset: defaultPreset }),
           { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_generate" },
         ],
       },
@@ -349,12 +352,12 @@ export function buildStartCard(): Record<string, unknown> {
           { tag: "input", name: "param_batch_template_id", required: true, default_value: defaultPreset.template_id, width: "fill", label: { tag: "plain_text", content: "Batch template ID" }, placeholder: { tag: "plain_text", content: templateSpecs.map((template) => template.id).join(" / ") } },
           { tag: "input", name: "param_batch_size", required: true, default_value: defaultPreset.size, width: "fill", label: { tag: "plain_text", content: "Batch size" }, placeholder: { tag: "plain_text", content: "WIDTHxHEIGHT" } },
           { tag: "input", name: "param_batch_items_json", required: true, default_value: defaultBatchItemsJson, width: "fill", input_type: "multiline_text", rows: 5, auto_resize: true, label: { tag: "plain_text", content: "Batch items JSON" }, placeholder: { tag: "plain_text", content: "[{ \\\"fields\\\": { ... } }]" } },
-          { tag: "button", text: { tag: "plain_text", content: "Start batch" }, type: "primary", action_type: "form_submit", name: "submit_image_batch", value: { action: "image.batch.submit" } },
+          callbackSubmitButton("Start batch", "submit_image_batch", { action: "image.batch.submit" }),
           { tag: "button", text: { tag: "plain_text", content: "Reset" }, type: "default", action_type: "form_reset", name: "reset_image_batch" },
         ],
       },
-    ],
-  };
+  ];
+  return card("blue", "Image Agent MVP", elements);
 }
 
 export function buildSuccessCard(result: Record<string, unknown>): Record<string, unknown> {
@@ -383,18 +386,15 @@ export function buildSuccessCard(result: Record<string, unknown>): Record<string
           tag: "button",
           text: { tag: "plain_text", content: "Iterate image" },
           type: "primary",
-          action_type: "form_submit",
           name: "submit_image_iterate",
-          value: { action: "image.iterate.submit", session_id: sessionId },
+          ...(useJson2Card
+            ? { form_action_type: "submit", behaviors: [{ type: "callback", value: { action: "image.iterate.submit", session_id: sessionId } }] }
+            : { action_type: "form_submit", value: { action: "image.iterate.submit", session_id: sessionId } }),
         },
       ],
     });
   }
-  return {
-    config: { wide_screen_mode: true },
-    header: { template: "green", title: { tag: "plain_text", content: "Image generation complete" } },
-    elements,
-  };
+  return card("green", "Image generation complete", elements);
 }
 
 export function buildBatchStatusCard(status: Record<string, unknown>, downloadUrl: string): Record<string, unknown> {
@@ -423,26 +423,36 @@ export function buildBatchStatusCard(status: Record<string, unknown>, downloadUr
     elements.push({ tag: "markdown", content: "[Download completed images ZIP](" + downloadUrl + ")" });
   }
   if (batchId) {
-    elements.push({
-      tag: "action",
-      actions: [
-        {
-          tag: "button",
-          text: { tag: "plain_text", content: "Refresh status" },
-          type: "default",
-          value: { action: "image.batch.refresh", batch_id: batchId },
-        },
-      ],
-    });
+    if (useJson2Card) {
+      elements.push({ tag: "button", text: { tag: "plain_text", content: "Refresh status" }, type: "default", behaviors: [{ type: "callback", value: { action: "image.batch.refresh", batch_id: batchId } }] });
+    } else {
+      elements.push({
+        tag: "action",
+        actions: [
+          {
+            tag: "button",
+            text: { tag: "plain_text", content: "Refresh status" },
+            type: "default",
+            value: { action: "image.batch.refresh", batch_id: batchId },
+          },
+        ],
+      });
+    }
   }
-  return {
-    config: { wide_screen_mode: true },
-    header: {
-      template: running ? "blue" : failedCount > 0 ? "red" : "green",
-      title: { tag: "plain_text", content: running ? "Batch running" : failedCount > 0 ? "Batch finished with failures" : "Batch complete" },
-    },
-    elements,
-  };
+  return card(running ? "blue" : failedCount > 0 ? "red" : "green", running ? "Batch running" : failedCount > 0 ? "Batch finished with failures" : "Batch complete", elements);
+}
+
+function callbackSubmitButton(text: string, name: string, value: Record<string, unknown>): Record<string, unknown> {
+  return useJson2Card
+    ? { tag: "button", text: { tag: "plain_text", content: text }, type: "primary", form_action_type: "submit", name, behaviors: [{ type: "callback", value }] }
+    : { tag: "button", text: { tag: "plain_text", content: text }, type: "primary", action_type: "form_submit", name, value };
+}
+
+function card(template: string, title: string, elements: unknown[]): Record<string, unknown> {
+  if (useJson2Card) {
+    return { schema: "2.0", config: { update_multi: true, wide_screen_mode: true }, header: { template, title: { tag: "plain_text", content: title } }, body: { elements } };
+  }
+  return { config: { wide_screen_mode: true }, header: { template, title: { tag: "plain_text", content: title } }, elements };
 }
 
 function numberValue(value: unknown): number {
@@ -454,11 +464,7 @@ function stringValue(value: unknown): string {
 }
 
 export function buildFailureCard(message: string): Record<string, unknown> {
-  return {
-    config: { wide_screen_mode: true },
-    header: { template: "red", title: { tag: "plain_text", content: "Image generation failed" } },
-    elements: [{ tag: "markdown", content: "**What happened:** " + message }],
-  };
+  return card("red", "Image generation failed", [{ tag: "markdown", content: "**What happened:** " + message }]);
 }
 `;
 }
@@ -2637,7 +2643,7 @@ const server = http.createServer(async (req, res) => {
       imageAgentBaseUrl: config.imageAgentBaseUrl,
       imageAgentTimeoutMs: config.imageAgentTimeoutMs,
       debugEnabled: config.allowDebugWithoutFeishu,
-      debugProtected: Boolean(config.debugAccessToken),
+      debugProtected: !config.allowDebugWithoutFeishu || Boolean(config.debugAccessToken),
     }));
     return;
   }

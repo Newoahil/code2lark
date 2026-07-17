@@ -4,7 +4,7 @@ import { getStringOption, hasOption } from "../args.js";
 import { writeJson, writeText } from "../fs-utils.js";
 import { getJsonWithTimeout } from "../http-utils.js";
 import { hostModeUsesLongConnection, hostModeUsesWebhook, normalizeHostReceiveMode, type HostReceiveMode } from "../host-mode.js";
-import { buildReadinessSummary, type ReadinessSummary } from "./readiness.js";
+import { buildReadinessSummary, resolveHandoffProfile, type HandoffProfile, type ReadinessSummary } from "./readiness.js";
 
 type DoctorVerdict = "pass" | "not_ready";
 type TargetPreflightStatus = "pass" | "warn" | "fail" | "missing";
@@ -20,8 +20,8 @@ export interface TargetLiveProbeReport {
 }
 
 export interface TargetPreflightReport {
-  check_name: "target:/api/meta";
-  check_path: "/api/meta";
+  check_name: "target:/api/meta" | "target:/api/state";
+  check_path: "/api/meta" | "/api/state";
   status: TargetPreflightStatus;
   detail: string;
   last_checked_at: string;
@@ -450,7 +450,8 @@ function shouldProbeTarget(options: Record<string, string | boolean>): boolean {
 }
 
 async function probeLiveTarget(summary: ReadinessSummary): Promise<TargetLiveProbeReport> {
-  const checkUrl = joinUrlPath(resolveTargetBaseUrl(summary), "/api/meta");
+  const spec = targetPreflightSpec(summary);
+  const checkUrl = joinUrlPath(resolveTargetBaseUrl(summary), spec.checkPath);
   const checkedAt = new Date().toISOString();
   const probe = await getJsonWithTimeout(checkUrl, 5000);
   const status: TargetLiveProbeStatus = probe.status === "available"
@@ -470,11 +471,12 @@ async function probeLiveTarget(summary: ReadinessSummary): Promise<TargetLivePro
 }
 
 function defaultTargetLiveProbe(summary: ReadinessSummary): TargetLiveProbeReport {
+  const spec = targetPreflightSpec(summary);
   return {
     requested: false,
     status: "not_requested",
     checked_at: "",
-    check_url: joinUrlPath(resolveTargetBaseUrl(summary), "/api/meta"),
+    check_url: joinUrlPath(resolveTargetBaseUrl(summary), spec.checkPath),
     detail: "Not requested; run doctor --probe-target to test current target reachability without rewriting verification_report.json.",
     blocking: false,
   };
@@ -490,6 +492,7 @@ function resolveTargetBaseUrl(summary: ReadinessSummary): string {
 function buildBlockers(summary: ReadinessSummary, missingRequiredValues: string[], liveProbe: TargetLiveProbeReport): string[] {
   const blockers: string[] = [];
   const selfHosted = summary.context?.integration_mode === "self-hosted-runtime" || summary.report?.context?.mode === "self-hosted-runtime";
+  const calendarModeB = resolveHandoffProfile(summary.context, summary.service) === "calendar-stock-updater";
   if (missingRequiredValues.length) {
     blockers.push(`Missing required external values: ${missingRequiredValues.join(", ")}.`);
   }
@@ -512,7 +515,8 @@ function buildBlockers(summary: ReadinessSummary, missingRequiredValues: string[
     blockers.push(`Latest verification has FAIL checks: ${summary.reportCounts.fail}.`);
   }
 
-  const targetPreflight = summary.report?.checks?.find((check) => check.name === "target:/api/meta");
+  const spec = targetPreflightSpec(summary);
+  const targetPreflight = summary.report?.checks?.find((check) => check.name === spec.checkName);
   if (targetPreflight && targetPreflight.status !== "pass") {
     blockers.push(`Target service preflight is not passing (${targetPreflight.status}): ${targetPreflight.detail}. Lark-deployer does not start or manage the target service.`);
   }
@@ -520,7 +524,7 @@ function buildBlockers(summary: ReadinessSummary, missingRequiredValues: string[
     blockers.push(`Live target probe is not passing (${liveProbe.status}): ${liveProbe.detail}. Lark-deployer does not start or manage the target service.`);
   }
 
-  if (!selfHosted && summary.report?.context?.level2 !== true) {
+  if (!selfHosted && !calendarModeB && summary.report?.context?.level2 !== true) {
     blockers.push("Latest verification was not run in real Level 2 mode with verify --level2.");
   } else if (summary.report?.status === "warn") {
     blockers.push(`Level 2 preflight still has WARN checks: ${summary.reportCounts.warn}.`);
@@ -543,8 +547,7 @@ function buildBlockers(summary: ReadinessSummary, missingRequiredValues: string[
 }
 
 function buildTargetPreflightReport(summary: ReadinessSummary, liveProbe: TargetLiveProbeReport): TargetPreflightReport {
-  const checkName = "target:/api/meta";
-  const checkPath = "/api/meta";
+  const { checkName, checkPath } = targetPreflightSpec(summary);
   const targetCheck = summary.report?.checks?.find((check) => check.name === checkName);
   const status = targetCheck?.status || "missing";
   const targetBaseUrl = resolveTargetBaseUrl(summary);
@@ -565,6 +568,14 @@ function buildTargetPreflightReport(summary: ReadinessSummary, liveProbe: Target
     rerun_command: findVerifyCommand(summary) || "node $env:LARK_DEPLOYER_CLI verify .",
     live_probe: liveProbe,
   };
+}
+
+function targetPreflightSpec(summary: ReadinessSummary): { checkName: TargetPreflightReport["check_name"]; checkPath: TargetPreflightReport["check_path"]; profile: HandoffProfile } {
+  const profile = resolveHandoffProfile(summary.context, summary.service);
+  if (profile === "calendar-stock-updater") {
+    return { checkName: "target:/api/state", checkPath: "/api/state", profile };
+  }
+  return { checkName: "target:/api/meta", checkPath: "/api/meta", profile };
 }
 
 function joinUrlPath(baseUrl: string, urlPath: string): string {
@@ -607,7 +618,7 @@ function printDoctorReport(report: DoctorReport, gateMode: boolean): void {
   console.log(`State: ${report.state}`);
   console.log(`Integration mode: ${report.integration_mode}`);
   console.log(`Host receive mode: ${report.host_receive_mode}`);
-  console.log(`Delivery mode: ${doctorDeliveryMode(report.integration_mode)}`);
+  console.log(`Delivery mode: ${doctorDeliveryMode(report)}`);
   console.log(`Target service: ${report.target_service}`);
   console.log(`Package: ${report.package_path}`);
   console.log(`Gate passed: ${report.gate_passed ? "yes" : "no"}`);
@@ -664,11 +675,14 @@ function printDoctorReport(report: DoctorReport, gateMode: boolean): void {
   }
 }
 
-function doctorDeliveryMode(integrationMode: string): string {
-  if (integrationMode === "self-hosted-runtime") {
+function doctorDeliveryMode(report: Pick<DoctorReport, "integration_mode" | "target_preflight">): string {
+  if (report.target_preflight.check_name === "target:/api/state") {
+    return "installable Mode B integrations/lark module for the calendar target project.";
+  }
+  if (report.integration_mode === "self-hosted-runtime") {
     return "Mode A external host / sidecar path today; self-hosted-runtime host module is the Mode B embedded host-module foundation.";
   }
-  if (integrationMode === "embedded-adapter") {
+  if (report.integration_mode === "embedded-adapter") {
     return "embedded-adapter package for an existing host; use Mode A when that host is external, and use Mode B only after embedding a host module into the target project.";
   }
   return "standalone-runtime reference host; not the primary product shape.";
@@ -736,7 +750,7 @@ This report is generated from readiness evidence. It does not include Feishu sec
 - State: ${report.state}
 - Integration mode: ${report.integration_mode}
 - Host receive mode: ${report.host_receive_mode}
-- Delivery mode: ${doctorDeliveryMode(report.integration_mode)}
+- Delivery mode: ${doctorDeliveryMode(report)}
 - Target service: ${report.target_service}
 - Package: ${report.package_path}
 - Missing required values: ${missing}

@@ -23,6 +23,7 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
   let authRuntime;
   let timeoutRuntime;
   let placeholderRuntime;
+  let safeDefaultRuntime;
   try {
     writeImageAgentLikeSource(target);
 
@@ -41,6 +42,10 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     runNpm(["install", "--ignore-scripts", "--no-audit", "--no-fund"], runtimeDir);
     runNpm(["run", "build"], runtimeDir);
 
+    const runtimeEnvExample = fs.readFileSync(path.join(runtimeDir, ".env.example"), "utf8");
+    assert.match(runtimeEnvExample, /^HOST=127\.0\.0\.1$/m);
+    assert.match(runtimeEnvExample, /^ALLOW_DEBUG_WITHOUT_FEISHU=0$/m);
+
     const invalidModeRuntime = startRuntime(runtimeDir, await reservePort(), { CARD_ACTION_MODE: "asnyc" });
     const invalidModeExit = await waitForProcessExit(invalidModeRuntime);
     assert.notEqual(invalidModeExit.code, 0);
@@ -50,6 +55,30 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     const invalidPortExit = await waitForProcessExit(invalidPortRuntime);
     assert.notEqual(invalidPortExit.code, 0);
     assert.match(invalidPortExit.stderr, /PORT must be an integer between 1 and 65535/);
+
+    const safeDefaultRuntimePort = await reservePort();
+    safeDefaultRuntime = startRuntime(runtimeDir, safeDefaultRuntimePort, {
+      APP_ID: "safe_default_app",
+      APP_SECRET: "safe_default_secret",
+      VERIFICATION_TOKEN: "safe_default_token",
+      TEST_CHAT_ID: "safe_default_chat",
+      IMAGE_AGENT_BASE_URL: mockTarget.baseUrl,
+      ALLOW_DEBUG_WITHOUT_FEISHU: "0",
+    });
+    const safeDefaultHealth = await waitForJson(`http://127.0.0.1:${safeDefaultRuntimePort}/health`);
+    assert.equal(safeDefaultHealth.debugEnabled, false);
+    assert.equal(safeDefaultHealth.debugProtected, true);
+    const safeDefaultDebugDenied = await fetch(`http://127.0.0.1:${safeDefaultRuntimePort}/debug/simulate-generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(safeDefaultDebugDenied.status, 403);
+    const safeDefaultAuditDenied = await fetch(`http://127.0.0.1:${safeDefaultRuntimePort}/debug/audit-tail`);
+    assert.equal(safeDefaultAuditDenied.status, 403);
+    safeDefaultRuntime.kill();
+    await waitForProcessExit(safeDefaultRuntime);
+    safeDefaultRuntime = undefined;
 
     const placeholderRuntimePort = await reservePort();
     placeholderRuntime = startRuntime(runtimeDir, placeholderRuntimePort, {
@@ -83,6 +112,13 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
 
     runtime = startRuntime(runtimeDir, runtimePort);
     const runtimeUrl = `http://127.0.0.1:${runtimePort}`;
+    const debugEnv = path.join(temp, "debug-runtime.env");
+    fs.writeFileSync(
+      debugEnv,
+      fs.readFileSync(path.join(runtimeDir, ".env"), "utf8")
+        .replace(/^ALLOW_DEBUG_WITHOUT_FEISHU=.*$/m, "ALLOW_DEBUG_WITHOUT_FEISHU=1"),
+      "utf8",
+    );
     const health = await waitForJson(`${runtimeUrl}/health`);
 
     assert.equal(health.ok, true);
@@ -476,7 +512,7 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
       && entry.event === "card_action_received"
     )));
 
-    await runCli(["verify", generated, "--runtime-url", runtimeUrl, "--simulate"]);
+    await runCli(["verify", generated, "--env", debugEnv, "--runtime-url", runtimeUrl, "--simulate"]);
     const report = JSON.parse(fs.readFileSync(path.join(generated, "verification_report.json"), "utf8"));
     const targetCheck = report.checks.find((check) => check.name === "target:/api/meta");
     const challengeCheck = report.checks.find((check) => check.name === "runtime:/webhook/card:challenge");
@@ -853,6 +889,7 @@ test("generated runtime can simulate the image-agent-web card flow locally", { t
     authRuntime?.kill();
     timeoutRuntime?.kill();
     placeholderRuntime?.kill();
+    safeDefaultRuntime?.kill();
     await mockTarget.close();
     fs.rmSync(temp, { recursive: true, force: true });
   }

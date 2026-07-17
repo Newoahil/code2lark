@@ -2,8 +2,10 @@ node_modules/
 dist/
 out/
 generated/
+handoff/
 .env
 *.log
+.debug-journal.md
 .omo/
 .claude/
 .worktrees/
