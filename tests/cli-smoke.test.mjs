@@ -747,18 +747,20 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
     const contractOutput = runPython([path.join(selfHostedFeishuHost, "local_contract_test.py")], { cwd: selfHostedFeishuHost });
     assert.match(contractOutput, /feishu-host contract: PASS/);
   }
-  const sendStartCardMissingChat = runPythonExpectFailure([path.join(selfHostedFeishuHost, "app.py"), "--send-start-card"], {
-    cwd: selfHostedFeishuHost,
-    env: {
-      ...process.env,
-      FEISHU_APP_ID: "dummy_app_id",
-      FEISHU_APP_SECRET: "dummy_app_secret",
-      TEST_CHAT_ID: "",
-      FEISHU_CONNECTION_MODE: "",
-      IMAGE_AGENT_BASE_URL: "",
-    },
-  });
-  assert.match(sendStartCardMissingChat, /TEST_CHAT_ID is required to send the start card/);
+  if (pythonCanImport("lark_oapi")) {
+    const sendStartCardMissingChat = runPythonExpectFailure([path.join(selfHostedFeishuHost, "app.py"), "--send-start-card"], {
+      cwd: selfHostedFeishuHost,
+      env: {
+        ...process.env,
+        FEISHU_APP_ID: "dummy_app_id",
+        FEISHU_APP_SECRET: "dummy_app_secret",
+        TEST_CHAT_ID: "",
+        FEISHU_CONNECTION_MODE: "",
+        IMAGE_AGENT_BASE_URL: "",
+      },
+    });
+    assert.match(sendStartCardMissingChat, /TEST_CHAT_ID is required to send the start card/);
+  }
   const selfHostedVerifyOutput = pythonCanImport("requests") && pythonCanImport("lark_oapi")
     ? run(["verify", selfHostedGenerated, "--mode", "self-hosted-runtime", "--strict"])
     : run(["verify", selfHostedGenerated, "--mode", "self-hosted-runtime"]);
