@@ -135,6 +135,285 @@ test("generate refuses to overwrite non-managed non-empty output directories", (
   run(["generate", workspace, "--out", managed, "--force"]);
 });
 
+test("analyze --backend internal succeeds and records internal backend metadata", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-internal-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    writeBackendSelectionTarget(target);
+
+    run(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "internal"]);
+
+    const service = readServiceManifest(workspace);
+    assert.equal(service.source_scan.structural_backend?.requested, "internal");
+    assert.equal(service.source_scan.structural_backend?.used, "internal");
+    assert.equal(service.source_scan.structural_backend?.status, "used");
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("analyze --backend auto falls back to internal when codegraph executable is unavailable", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-auto-missing-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    writeBackendSelectionTarget(target);
+
+    runWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "auto"], {
+      PATH: path.join(temp, "empty-bin"),
+      Path: path.join(temp, "empty-bin"),
+    });
+
+    const service = readServiceManifest(workspace);
+    assert.equal(service.source_scan.structural_backend?.requested, "auto");
+    assert.equal(service.source_scan.structural_backend?.used, "internal");
+    assert.equal(service.source_scan.structural_backend?.status, "fallback");
+    assert.match(service.source_scan.structural_backend?.reason || "", /codegraph.*(unavailable|not found|missing)/i);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("analyze --backend codegraph fails clearly when executable is unavailable", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-codegraph-missing-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    writeBackendSelectionTarget(target);
+
+    const output = runExpectFailureWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "codegraph"], {
+      PATH: path.join(temp, "empty-bin"),
+      Path: path.join(temp, "empty-bin"),
+    });
+    assert.match(output, /codegraph/i);
+    assert.match(output, /unavailable|not found|missing|install/i);
+    assert.equal(fs.existsSync(path.join(workspace, "manifest", "service_manifest.json")), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("analyze --backend auto falls back when fake codegraph status is uninitialized", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-status-uninit-auto-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    const fake = installFakeCodegraph(temp, "uninitialized");
+    writeBackendSelectionTarget(target);
+
+    runWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "auto"], fake.env);
+
+    const service = readServiceManifest(workspace);
+    assert.equal(service.source_scan.structural_backend?.requested, "auto");
+    assert.equal(service.source_scan.structural_backend?.used, "internal");
+    assert.equal(service.source_scan.structural_backend?.status, "fallback");
+    assert.match(service.source_scan.structural_backend?.reason || "", /not initialized|uninitialized/i);
+    assert.deepEqual(readFakeCodegraphArgv(fake.logPath), [["status", target, "--json"]]);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("analyze --backend codegraph fails when fake codegraph status is uninitialized", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-status-uninit-explicit-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    const fake = installFakeCodegraph(temp, "uninitialized");
+    writeBackendSelectionTarget(target);
+
+    const output = runExpectFailureWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "codegraph"], fake.env);
+    assert.match(output, /codegraph/i);
+    assert.match(output, /not initialized|uninitialized/i);
+    assert.deepEqual(readFakeCodegraphArgv(fake.logPath), [["status", target, "--json"]]);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("analyze --backend auto falls back when fake codegraph status has stale pendingRefs", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-status-stale-pending-refs-auto-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    const fake = installFakeCodegraph(temp, "stale-pending-refs");
+    writeBackendSelectionTarget(target);
+
+    runWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "auto"], fake.env);
+
+    const service = readServiceManifest(workspace);
+    assert.equal(service.source_scan.structural_backend?.requested, "auto");
+    assert.equal(service.source_scan.structural_backend?.used, "internal");
+    assert.equal(service.source_scan.structural_backend?.status, "fallback");
+    assert.match(service.source_scan.structural_backend?.reason || "", /pendingRefs is not 0/i);
+    assert.deepEqual(readFakeCodegraphArgv(fake.logPath), [["status", target, "--json"]]);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("analyze --backend codegraph accepts missing journalMode metadata when status is otherwise fresh", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-journal-missing-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    const fake = installFakeCodegraph(temp, "fresh-journal-missing");
+    writeBackendSelectionTarget(target);
+
+    runWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "codegraph"], fake.env);
+
+    const service = readServiceManifest(workspace);
+    assert.equal(service.source_scan.structural_backend?.requested, "codegraph");
+    assert.equal(service.source_scan.structural_backend?.used, "codegraph");
+    assert.equal(service.source_scan.structural_backend?.status, "used");
+    assert.deepEqual(readFakeCodegraphArgv(fake.logPath), [
+      ["status", target, "--json"],
+      ["query", "route", "--kind", "route", "--path", target, "--json"],
+    ]);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("analyze --backend codegraph accepts non-WAL journalMode when status is otherwise fresh", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-journal-memory-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    const fake = installFakeCodegraph(temp, "fresh-journal-memory");
+    writeBackendSelectionTarget(target);
+
+    runWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "codegraph"], fake.env);
+
+    const service = readServiceManifest(workspace);
+    assert.equal(service.source_scan.structural_backend?.requested, "codegraph");
+    assert.equal(service.source_scan.structural_backend?.used, "codegraph");
+    assert.equal(service.source_scan.structural_backend?.status, "used");
+    assert.deepEqual(readFakeCodegraphArgv(fake.logPath), [
+      ["status", target, "--json"],
+      ["query", "route", "--kind", "route", "--path", target, "--json"],
+    ]);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+for (const staleCase of [
+  {
+    mode: "pending-changes",
+    output: /pendingChanges is not empty/i,
+  },
+  {
+    mode: "worktree-mismatch",
+    output: /worktreeMismatch is true/i,
+  },
+  {
+    mode: "incomplete-state",
+    output: /index\.state is not complete/i,
+  },
+  {
+    mode: "pending-refs",
+    output: /pendingRefs is not 0/i,
+  },
+  {
+    mode: "reindex-recommended",
+    output: /reindexRecommended is true/i,
+  },
+]) {
+  test(`analyze --backend codegraph rejects stale codegraph status: ${staleCase.mode}`, () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), `lark-deployer-backend-status-stale-${staleCase.mode}-explicit-`));
+    try {
+      const target = path.join(temp, "target");
+      const workspace = path.join(temp, "out");
+      const fake = installFakeCodegraph(temp, `stale-${staleCase.mode}`);
+      writeBackendSelectionTarget(target);
+
+      const output = runExpectFailureWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "codegraph"], fake.env);
+      assert.match(output, /codegraph/i);
+      assert.match(output, staleCase.output);
+      assert.deepEqual(readFakeCodegraphArgv(fake.logPath), [["status", target, "--json"]]);
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  });
+}
+
+test("analyze --backend codegraph invokes fake route query and normalizes results", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-codegraph-fresh-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    const fake = installFakeCodegraph(temp, "fresh");
+    writeBackendSelectionTarget(target);
+
+    runWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "codegraph"], fake.env);
+
+    const service = readServiceManifest(workspace);
+    assert.equal(service.source_scan.structural_backend?.requested, "codegraph");
+    assert.equal(service.source_scan.structural_backend?.used, "codegraph");
+    assert.equal(service.source_scan.structural_backend?.status, "used");
+    assert.deepEqual(readFakeCodegraphArgv(fake.logPath), [
+      ["status", target, "--json"],
+      ["query", "route", "--kind", "route", "--path", target, "--json"],
+    ]);
+    assert.deepEqual(service.source_scan.route_provenance, [
+      { method: "GET", path: "/api/codegraph-health", source: "codegraph", file: "server.js", line: 8 },
+      { method: "POST", path: "/api/codegraph-route", source: "codegraph", file: "server.js", line: 2 },
+    ]);
+    const serializedService = JSON.stringify(service);
+    assert.doesNotMatch(serializedService, /score/);
+    assert.doesNotMatch(serializedService, /highlights/);
+    assert.ok(service.source_scan.endpoint_coverage.some((item) => item.method === "POST" && item.path === "/api/codegraph-route"));
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("analyze --backend auto falls back when fake codegraph returns invalid query JSON", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-invalid-json-auto-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    const fake = installFakeCodegraph(temp, "invalid-query-json");
+    writeBackendSelectionTarget(target);
+
+    runWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "auto"], fake.env);
+
+    const service = readServiceManifest(workspace);
+    assert.equal(service.source_scan.structural_backend?.requested, "auto");
+    assert.equal(service.source_scan.structural_backend?.used, "internal");
+    assert.equal(service.source_scan.structural_backend?.status, "fallback");
+    assert.match(service.source_scan.structural_backend?.reason || "", /invalid.*json|json.*parse/i);
+    assert.deepEqual(readFakeCodegraphArgv(fake.logPath), [
+      ["status", target, "--json"],
+      ["query", "route", "--kind", "route", "--path", target, "--json"],
+    ]);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("analyze --backend codegraph fails when fake codegraph returns invalid query JSON", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-backend-invalid-json-explicit-"));
+  try {
+    const target = path.join(temp, "target");
+    const workspace = path.join(temp, "out");
+    const fake = installFakeCodegraph(temp, "invalid-query-json");
+    writeBackendSelectionTarget(target);
+
+    const output = runExpectFailureWithEnv(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--backend", "codegraph"], fake.env);
+    assert.match(output, /codegraph/i);
+    assert.match(output, /invalid.*json|json.*parse/i);
+    assert.deepEqual(readFakeCodegraphArgv(fake.logPath), [
+      ["status", target, "--json"],
+      ["query", "route", "--kind", "route", "--path", target, "--json"],
+    ]);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test("CLI can analyze, plan, generate, and verify an image-agent-web-like target", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-smoke-"));
   const target = path.join(temp, "image-agent-web");
@@ -2420,6 +2699,7 @@ test("generic HTTP API target can analyze generate and verify", () => {
       "",
       "- GET /health",
       "- GET /api/tickets/{ticket_id}",
+      "- POST /api/items/{id}",
       "- POST /api/tickets",
     ].join("\n"),
     "utf8",
@@ -2433,6 +2713,8 @@ test("generic HTTP API target can analyze generate and verify", () => {
       "async def health(): pass",
       "@app.get(\"/api/tickets/{ticket_id}\")",
       "async def get_ticket(ticket_id: str): pass",
+      "@app.post(\"/api/items/{id}\")",
+      "async def update_item(id: str): pass",
       "@app.post(\"/api/tickets\")",
       "async def create_ticket(): pass",
     ].join("\n"),
@@ -2573,6 +2855,10 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
 
   assert.match(secondTargetPlan, /calendar-stock-updater/);
   assert.match(secondTargetPlan, /Mode A/);
+  assert.match(secondTargetPlan, /Integration mode: embedded-adapter/);
+  assert.match(secondTargetPlan, /Host receive mode: embedded-long-connection/);
+  assert.doesNotMatch(secondTargetPlan, /PUBLIC_CALLBACK_BASE_URL.*required/i);
+  assert.doesNotMatch(secondTargetPlan, /\/webhook\/card.*required/i);
   assert.match(secondTargetPlan, /query/i);
   assert.match(secondTargetPlan, /action/i);
 
@@ -2654,6 +2940,404 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
   assert.doesNotMatch(handoffManifest, /image\.generate|image_url|session_id/);
   const doctorJson = JSON.parse(run(["doctor", generated, "--mode", "embedded-adapter", "--json"]));
   assert.equal(doctorJson.package_validation.status, "pass");
+
+  const generatedLong = path.join(temp, "generated-long");
+  run(["generate", workspace, "--out", generatedLong, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection"]);
+  const longSummary = JSON.parse(fs.readFileSync(path.join(generatedLong, "generation_summary.json"), "utf8"));
+  assert.equal(longSummary.schema_version, "0.2");
+  assert.equal(longSummary.integration_mode, "embedded-adapter");
+  assert.equal(longSummary.host_receive_mode, "embedded-long-connection");
+  const longPermissions = JSON.parse(fs.readFileSync(path.join(generatedLong, "manifest", "required_permissions.json"), "utf8"));
+  assert.doesNotMatch(JSON.stringify(longPermissions), /Card callback verification token|verification_token/);
+  assert.ok(longPermissions.callbacks.some((callback) => callback.callback === "card.action.trigger" && callback.security.includes("long_connection")));
+  const longDeploymentChecklist = fs.readFileSync(path.join(generatedLong, "deployment_checklist.md"), "utf8");
+  assert.match(longDeploymentChecklist, /doctor \. --mode embedded-adapter --host-mode embedded-long-connection --gate/);
+  const longReadme = fs.readFileSync(path.join(generatedLong, "README.md"), "utf8");
+  const longContextMarkdown = fs.readFileSync(path.join(generatedLong, "feishu_context.template.md"), "utf8");
+  const longContextRequest = fs.readFileSync(path.join(generatedLong, "feishu_context.request.md"), "utf8");
+  const longContextReply = fs.readFileSync(path.join(generatedLong, "feishu_context.reply.template.md"), "utf8");
+  const longIntegrationGuide = fs.readFileSync(path.join(generatedLong, "docs", "integration_guide.md"), "utf8");
+  const longLevel2Record = fs.readFileSync(path.join(generatedLong, "level2_verification_record.md"), "utf8");
+  const longSidecarReadme = fs.readFileSync(path.join(generatedLong, "sidecar-long-connection", "README.md"), "utf8");
+  const longContext = JSON.parse(fs.readFileSync(path.join(generatedLong, "feishu_context.template.json"), "utf8"));
+  assert.equal(longContext.handoff_request.required_values.some((item) => item.key === "TARGET_BASE_URL" && item.required_for_level_2), true);
+  assert.equal(longContext.handoff_request.required_values.some((item) => item.key === "IMAGE_AGENT_BASE_URL"), false);
+  assert.match(`${longReadme}\n${longContextMarkdown}\n${longContextRequest}\n${longContextReply}\n${longIntegrationGuide}\n${longLevel2Record}\n${longSidecarReadme}`, /APP_ID/);
+  assert.match(`${longReadme}\n${longContextMarkdown}\n${longContextRequest}\n${longContextReply}\n${longIntegrationGuide}\n${longLevel2Record}\n${longSidecarReadme}`, /APP_SECRET/);
+  assert.match(`${longReadme}\n${longContextMarkdown}\n${longContextRequest}\n${longContextReply}\n${longIntegrationGuide}\n${longLevel2Record}\n${longSidecarReadme}`, /TEST_CHAT_ID/);
+  assert.match(`${longReadme}\n${longContextMarkdown}\n${longContextRequest}\n${longContextReply}\n${longIntegrationGuide}\n${longLevel2Record}\n${longSidecarReadme}`, /TARGET_BASE_URL/);
+  assert.match(longIntegrationGuide, /card\.action\.trigger/);
+  assert.match(longIntegrationGuide, /handleGenericHttpCardAction\(\)/);
+  assert.match(longLevel2Record, /card\.action\.trigger/);
+  assert.match(longLevel2Record, /handleGenericHttpCardAction\(\)/);
+  assert.doesNotMatch(`${longReadme}\n${longContextMarkdown}\n${longContextRequest}\n${longContextReply}\n${longIntegrationGuide}\n${longLevel2Record}`, /PUBLIC_CALLBACK_BASE_URL/);
+  assert.doesNotMatch(`${longReadme}\n${longContextMarkdown}\n${longContextRequest}\n${longContextReply}\n${longIntegrationGuide}\n${longLevel2Record}`, /VERIFICATION_TOKEN/);
+  assert.doesNotMatch(`${longReadme}\n${longContextMarkdown}\n${longContextRequest}\n${longContextReply}\n${longIntegrationGuide}\n${longLevel2Record}`, /\/webhook\/card/);
+  const longCards = fs.readFileSync(path.join(generatedLong, "adapter", "cards.ts"), "utf8");
+  assert.match(longCards, /schema:\s*["']2\.0["']/);
+  assert.doesNotMatch(longCards, /http\.post\.api\.stop\.submit/);
+  const longVerifyOutput = run(["verify", generatedLong, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection", "--strict"]);
+  assert.match(longVerifyOutput, /adapter:action:http\.get\.api\.state\.submit/);
+  assert.match(longVerifyOutput, /adapter:action:http\.post\.api\.run\.submit/);
+  assert.doesNotMatch(longVerifyOutput, /adapter:action:http\.post\.api\.stop\.submit/);
+  const longDoctorJson = JSON.parse(run(["doctor", generatedLong, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection", "--json"]));
+  assert.equal(longDoctorJson.host_receive_mode, "embedded-long-connection");
+  assert.equal(longDoctorJson.blockers.some((item) => item.includes("/webhook/card") || item.includes("PUBLIC_CALLBACK_BASE_URL") || item.includes("VERIFICATION_TOKEN")), false);
+  const longReadinessOutput = run(["readiness", generatedLong]);
+  assert.doesNotMatch(longReadinessOutput, /PUBLIC_CALLBACK_BASE_URL|VERIFICATION_TOKEN/);
+  const longHandoffCopy = path.join(temp, "handoff-long");
+  assert.match(run(["handoff", generatedLong, "--copy-to", longHandoffCopy, "--check"]), /Handoff check passed/);
+  assert.ok(fs.existsSync(path.join(longHandoffCopy, "docs", "integration_guide.md")));
+});
+
+test("calendar-stock-updater business profile generates typed long-connection cards", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lark-deployer-calendar-profile-"));
+  const target = path.join(temp, "calendar-target");
+  const workspace = path.join(temp, "out");
+  const generated = path.join(temp, "generated");
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, "server.js"), [
+    "if (req.method === 'GET' && pathname === '/api/state') {}",
+    "if (req.method === 'GET' && pathname === '/api/events') {}",
+    "if (req.method === 'POST' && pathname === '/api/run') {}",
+    "if (req.method === 'POST' && pathname === '/api/stop') {}",
+  ].join("\n"), "utf8");
+  fs.writeFileSync(path.join(target, "task-config.js"), "function resolveProductIdRange() {}\n", "utf8");
+  fs.writeFileSync(path.join(target, "update-calendar-stock.js"), "// updateAllSkuRows SPECIAL_SKU_KEYWORD\n", "utf8");
+
+  run(["analyze", target, "--base-url", "http://127.0.0.1:1", "--out", workspace, "--name", "calendar-stock-updater"]);
+  run(["plan", workspace]);
+  const service = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "service_manifest.json"), "utf8"));
+  const capabilities = JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "capability_map.json"), "utf8"));
+  assert.equal(service.source_scan.analysis_strategy, "calendar_stock_updater");
+  assert.equal(capabilities.target_profile, "calendar-stock-updater");
+  assert.deepEqual(capabilities.capabilities.map((item) => item.id).sort(), ["calendar.status", "calendar.task.run", "calendar.task.stop"]);
+  assert.deepEqual(capabilities.capabilities.map((item) => item.source.path).sort(), ["/api/run", "/api/state", "/api/stop"]);
+  assert.ok(service.source_scan.endpoint_coverage.some((item) => item.path === "/api/events" && item.status === "supporting"));
+
+  run(["generate", workspace, "--out", generated, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection"]);
+  const cards = fs.readFileSync(path.join(generated, "adapter", "cards.ts"), "utf8");
+  const handlers = fs.readFileSync(path.join(generated, "adapter", "handlers.ts"), "utf8");
+  const contract = JSON.parse(fs.readFileSync(path.join(generated, "manifest", "profile_contract.json"), "utf8"));
+  const startHere = fs.readFileSync(path.join(generated, "START_HERE.md"), "utf8");
+  const level2Record = fs.readFileSync(path.join(generated, "level2_verification_record.md"), "utf8");
+  const deploymentChecklist = fs.readFileSync(path.join(generated, "deployment_checklist.md"), "utf8");
+  const cardPlan = fs.readFileSync(path.join(generated, "card_plan.md"), "utf8");
+  const manualEvidence = JSON.parse(fs.readFileSync(path.join(generated, "level2_manual_evidence.template.json"), "utf8"));
+  const context = JSON.parse(fs.readFileSync(path.join(generated, "feishu_context.template.json"), "utf8"));
+  const contextMarkdown = fs.readFileSync(path.join(generated, "feishu_context.template.md"), "utf8");
+  const contextRequest = fs.readFileSync(path.join(generated, "feishu_context.request.md"), "utf8");
+  for (const adapterFile of ["cards.ts", "handlers.ts", "service-client.ts", "validation.ts", "types.ts", "audit-events.ts"]) {
+    const adapterSource = fs.readFileSync(path.join(generated, "adapter", adapterFile), "utf8");
+    assert.doesNotMatch(adapterSource, /@ts-nocheck|@ts-ignore|@ts-expect-error/, `calendar adapter ${adapterFile} must not suppress TypeScript checks`);
+  }
+  const safeCardRuntimeOutput = runNode(["--input-type=module", "-e", `
+    import assert from "node:assert/strict";
+    import http from "node:http";
+    import path from "node:path";
+    import { pathToFileURL } from "node:url";
+
+    const generatedRoot = path.resolve(process.argv[1]);
+    const cards = await import(pathToFileURL(path.join(generatedRoot, "adapter", "cards.js")).href);
+    const handlers = await import(pathToFileURL(path.join(generatedRoot, "adapter", "handlers.js")).href);
+    const validation = await import(pathToFileURL(path.join(generatedRoot, "adapter", "validation.js")).href);
+    const longMessage = "第一行\\n第二行 " + "长消息".repeat(80);
+    const operations = cards.buildOperationsCard({ task: { status: "running", currentMessage: longMessage }, logs: [] });
+    const currentLine = operations.body.elements[0].content.split("\\n").find((line) => line.startsWith("**当前消息：**"));
+    assert.ok(currentLine);
+    assert.match(currentLine, /第一行 第二行/);
+    assert.doesNotMatch(currentLine, /第一行\\n第二行/);
+    assert.ok(currentLine.endsWith("…"));
+    assert.ok(currentLine.length <= "**当前消息：** ".length + 120);
+
+    const stopCard = cards.buildStopConfirmationCard({ confirmationId: "confirm-1", task: { currentMessage: longMessage } });
+    const stopText = stopCard.body.elements[0].content.split("\\n").at(-1);
+    assert.match(stopText, /当前消息：第一行 第二行/);
+    assert.ok(stopText.endsWith("…"));
+
+    const sensitiveOperations = cards.buildOperationsCard({
+      task: { status: "running", currentMessage: "https://internal.example/task APP_SECRET=status-secret ou_status" },
+      logs: [
+        { timestamp: "2026-07-17T01:00:00Z", message: "正常日志" },
+        { timestamp: "2026-07-17T01:00:01Z", message: "operator_open_id=ou_log chat_id=oc_log token=log-secret" },
+      ],
+    });
+    const sensitiveText = JSON.stringify(sensitiveOperations);
+    assert.match(sensitiveText, /状态消息已脱敏/);
+    assert.match(sensitiveText, /日志内容已脱敏/);
+    assert.doesNotMatch(sensitiveText, /internal\.example|status-secret|ou_status|ou_log|oc_log|log-secret|operator_open_id|chat_id/i);
+
+    const sensitiveStopCard = JSON.stringify(cards.buildStopConfirmationCard({
+      confirmationId: "confirm-sensitive",
+      task: { currentMessage: "<html>private status</html>" },
+    }));
+    assert.match(sensitiveStopCard, /状态消息已脱敏/);
+    assert.doesNotMatch(sensitiveStopCard, /html|private status/i);
+
+    const bareAuthOperations = JSON.stringify(cards.buildOperationsCard({
+      task: { status: "running", currentMessage: "auth=status-auth-value" },
+      logs: [{ timestamp: "2026-07-17T01:00:02Z", message: "auth=log-auth-value" }],
+    }));
+    assert.match(bareAuthOperations, /状态消息已脱敏/);
+    assert.match(bareAuthOperations, /日志内容已脱敏/);
+    assert.doesNotMatch(bareAuthOperations, /status-auth-value|log-auth-value|auth=/i);
+    const bareAuthStop = JSON.stringify(cards.buildStopConfirmationCard({ confirmationId: "confirm-auth", task: { currentMessage: "auth=stop-auth-value" } }));
+    assert.match(bareAuthStop, /状态消息已脱敏/);
+    assert.doesNotMatch(bareAuthStop, /stop-auth-value|auth=/i);
+    const bareAuthFailure = JSON.stringify(cards.buildFailureCard("auth=failure-auth-value"));
+    assert.match(bareAuthFailure, /操作失败，请检查目标服务与模块配置后重试/);
+    assert.doesNotMatch(bareAuthFailure, /failure-auth-value|auth=/i);
+
+    assert.throws(() => validation.calendarTaskInput({ targetDate: "2026-07-17", stock: "1", stepDelayMs: "10001" }, "run"), /普通操作停顿/);
+    assert.throws(() => validation.assertAllowedOperator("ou_denied", []), /尚未配置获准操作人/);
+    assert.throws(() => validation.assertAllowedOperator("ou_denied", ["ou_allowed"]), /当前操作人未获授权/);
+    const missingAllowlist = await handlers.handleCardAction(
+      { action: "calendar.status.refresh", operatorOpenId: "ou_denied" },
+      { targetBaseUrl: "http://127.0.0.1:1", allowedOperatorOpenIds: [] },
+    );
+    const unauthorized = await handlers.handleCardAction(
+      { action: "calendar.status.refresh", operatorOpenId: "ou_denied" },
+      { targetBaseUrl: "http://127.0.0.1:1", allowedOperatorOpenIds: ["ou_allowed"] },
+    );
+    const authorizationCards = JSON.stringify([missingAllowlist.card, unauthorized.card]);
+    assert.match(authorizationCards, /尚未配置获准操作人/);
+    assert.match(authorizationCards, /当前操作人未获授权/);
+    assert.doesNotMatch(authorizationCards, /No approved operators|Operator is not authorized/i);
+    const rawFailure = JSON.stringify(cards.buildFailureCard("APP_SECRET=top-secret <html>private</html>"));
+    assert.doesNotMatch(rawFailure, /APP_SECRET|top-secret|html|private/i);
+
+    const rawTargetBody = "APP_SECRET=target-secret <html>gateway detail</html>";
+    const server = http.createServer((_request, response) => {
+      response.statusCode = 502;
+      response.end(rawTargetBody);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("mock server did not expose a TCP address");
+      const result = await handlers.handleCardAction(
+        { action: "calendar.status.refresh", operatorOpenId: "ou_allowed" },
+        { targetBaseUrl: "http://127.0.0.1:" + address.port, allowedOperatorOpenIds: ["ou_allowed"] },
+      );
+      const rendered = JSON.stringify(result.card);
+      assert.equal(result.ok, false);
+      assert.match(rendered, /HTTP 502/);
+      assert.doesNotMatch(rendered, /APP_SECRET|target-secret|html|gateway detail/i);
+    } finally {
+      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+    console.log("calendar safe card text: PASS");
+  `, generated]);
+  assert.match(safeCardRuntimeOutput, /calendar safe card text: PASS/);
+  assert.match(cards, /calendar_task_form/);
+  assert.match(cards, /calendar\.task\.run\.prepare/);
+  assert.match(cards, /schema: "2\.0"/);
+  assert.doesNotMatch(cards, /body_json|\/api\/events|taskMode|special-window|targeted-window/);
+  const operationsCardSource = cards.slice(cards.indexOf("export function buildOperationsCard"), cards.indexOf("export function buildRunConfirmationCard"));
+  const runConfirmationSource = cards.slice(cards.indexOf("export function buildRunConfirmationCard"), cards.indexOf("export function buildStopConfirmationCard"));
+  const stopConfirmationSource = cards.slice(cards.indexOf("export function buildStopConfirmationCard"), cards.indexOf("export function buildFailureCard"));
+  assert.match(operationsCardSource, /状态摘要/);
+  assert.match(operationsCardSource, /仅显示最近 8 条/);
+  assert.match(operationsCardSource, /长行会截断/);
+  assert.match(cards, /timestamp|createdAt|item\.time/);
+  for (const field of ["targetDate", "stock", "stepDelayMs", "datePickerDelayMs", "startProductId", "endProductId"]) {
+    assert.match(runConfirmationSource, new RegExp(field));
+  }
+  assert.match(runConfirmationSource, /风险提示/);
+  assert.match(stopConfirmationSource, /当前运行任务/);
+  assert.doesNotMatch(`${operationsCardSource}\n${runConfirmationSource}\n${stopConfirmationSource}`, /⚠️|✅|❌|🚨/u);
+  assert.match(handlers, /handleCardAction/);
+  assert.match(handlers, /calendar\.task\.stop\.confirm/);
+  assert.doesNotMatch(handlers, /\/api\/(run|stop)\/(prepare|confirm|cancel)/);
+  assert.ok(fs.existsSync(path.join(generated, "integrations", "lark", "install-manifest.json")));
+  assert.match(startHere, /install \. --target/);
+  assert.match(level2Record, /Calendar Mode B/);
+  assert.match(level2Record, /mode=dry-run/);
+  for (const fieldLabel of [
+    "Start card message ID",
+    "Status result message ID or screenshot",
+    "Dry-run result message ID or screenshot",
+    "Formal-run confirmation/result message IDs or screenshots",
+    "Stop confirmation/result message IDs or screenshots",
+    "Sanitized host log path",
+    "Trace ID",
+  ]) {
+    assert.match(level2Record, new RegExp(`- ${fieldLabel}:`));
+  }
+  for (const completionLabel of [
+    "Level 2 verified.",
+    "Remaining issues documented.",
+    "This generated package can be handed to another FDE using `README.md`, `deployment_checklist.md`, and this file.",
+  ]) {
+    assert.match(level2Record, new RegExp(`- \\[ \\] ${completionLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  }
+  assert.doesNotMatch(level2Record, /Real Feishu Level 2 verified|Generic action ID|Target request summary|Target response summary|Result card message ID or screenshot|Generated image|Batch ID|Batch status|Batch download/i);
+  assert.doesNotMatch(level2Record, /image_url|Generated image|Batch ID/);
+  for (const endpoint of ["GET /api/state", "POST /api/run", "POST /api/stop"]) {
+    assert.match(deploymentChecklist, new RegExp(endpoint.replace("/", "\\/")));
+  }
+  assert.match(deploymentChecklist, /dry-run/i);
+  assert.match(deploymentChecklist, /install .*--apply/is);
+  assert.match(deploymentChecklist, /integrations[\\/]lark/);
+  assert.match(deploymentChecklist, /module-local|模块本地/i);
+  assert.match(deploymentChecklist, /npm test/);
+  assert.match(deploymentChecklist, /real Feishu Level 2|真实飞书 Level 2/i);
+  assert.match(cardPlan, /status|状态/i);
+  assert.match(cardPlan, /dry-run|预演/i);
+  assert.match(cardPlan, /prepare|confirm|cancel/i);
+  assert.match(cardPlan, /recent logs|最近日志/i);
+  assert.doesNotMatch(`${deploymentChecklist}\n${cardPlan}`, /\/api\/meta|generated image|image preview|image batch|\/api\/batch|Mount generated `adapter`|统一启动|unified startup/i);
+  assert.equal(typeof manualEvidence.values.run_confirmation_message_id, "string");
+  assert.deepEqual(Object.keys(manualEvidence.values).sort(), [
+    "date",
+    "dry_run_result_message_id",
+    "dry_run_screenshot",
+    "feishu_app_name",
+    "notes",
+    "operator",
+    "run_confirmation_message_id",
+    "run_result_message_id",
+    "run_result_screenshot",
+    "sanitized_host_log_path",
+    "start_message_id",
+    "status_result_message_id",
+    "status_screenshot",
+    "stop_confirmation_message_id",
+    "stop_result_message_id",
+    "stop_result_screenshot",
+    "test_chat",
+    "trace_id",
+  ]);
+  assert.equal("generated_image_url" in manualEvidence.values, false);
+  assert.equal("batch_id" in manualEvidence.values, false);
+  assert.equal("generic_action_id" in manualEvidence.values, false);
+  assert.equal("target_request_summary" in manualEvidence.values, false);
+  assert.equal("target_response_summary" in manualEvidence.values, false);
+  assert.equal(context.target_profile, "calendar-stock-updater");
+  assert.equal(Object.hasOwn(context.runtime_config, "upload_image_to_lark"), false);
+  assert.deepEqual(Object.keys(context.runtime_config).sort(), ["allowed_operator_open_ids", "target_timeout_seconds", "target_wait_seconds"]);
+  const existingAppQuestion = context.readiness_questions.find((item) => item.id === "existing_feishu_app")?.question || "";
+  assert.match(existingAppQuestion, /FEISHU_APP_ID and FEISHU_APP_SECRET/);
+  assert.ok(context.handoff_request.required_values.some((item) => item.key === "FEISHU_APP_ID"));
+  assert.equal(context.handoff_request.required_values.some((item) => item.key === "APP_ID"), false);
+  assert.ok(context.handoff_request.verification_commands.some((command) => command.includes(" install ")));
+  assert.match(`${contextMarkdown}\n${contextRequest}`, /integrations\/lark/);
+  assert.doesNotMatch(`${contextMarkdown}\n${contextRequest}`, /UPLOAD_IMAGE_TO_LARK/);
+  assert.doesNotMatch(`${contextMarkdown}\n${contextRequest}`, /mount the adapter in the existing Feishu SDK host/i);
+  assert.equal(contract.profile_id, "calendar-stock-updater");
+  assert.match(run(["verify", generated, "--mode", "embedded-adapter", "--host-mode", "embedded-long-connection", "--strict"]), /adapter:action:calendar\.task\.run\.confirm/);
+  const verificationReport = JSON.parse(fs.readFileSync(path.join(generated, "verification_report.json"), "utf8"));
+  assert.equal(verificationReport.checks.some((check) => String(check.name).startsWith("target:")), false);
+  const verificationMarkdown = fs.readFileSync(path.join(generated, "verification_report.md"), "utf8");
+  assert.doesNotMatch(verificationMarkdown, /IMAGE_AGENT_BASE_URL|\/api\/meta|generated images?|batch paths?|bot-runtime/i);
+  const readinessOutput = run(["readiness", generated]);
+  assert.match(readinessOutput, /Readiness status:/);
+  const handoffStatus = fs.readFileSync(path.join(generated, "handoff_status.md"), "utf8");
+  assert.match(readinessOutput, /Delivery mode: .*installable Mode B.*integrations[\\/]lark/i);
+  assert.match(handoffStatus, /Env file checked: .*integrations[\\/]lark[\\/].env/);
+  assert.match(handoffStatus, /installable Mode B .*integrations[\\/]lark/i);
+  for (const key of ["FEISHU_APP_ID", "FEISHU_APP_SECRET", "TEST_CHAT_ID", "TARGET_BASE_URL", "ALLOWED_OPERATOR_OPEN_IDS"]) {
+    assert.equal(handoffStatus.includes(`| \`${key}\` |`), true);
+  }
+  for (const key of ["APP_ID", "APP_SECRET", "IMAGE_AGENT_BASE_URL", "PUBLIC_CALLBACK_BASE_URL", "VERIFICATION_TOKEN"]) {
+    assert.equal(handoffStatus.includes(`| \`${key}\` |`), false);
+  }
+  assert.match(handoffStatus, /\| `TARGET_TIMEOUT_MS` \| provided \| context \|/);
+  assert.match(handoffStatus, /\| `TARGET_WAIT_MS` \| provided \| context \|/);
+  for (const key of ["CARD_ACTION_MODE", "UPLOAD_IMAGE_TO_LARK", "HOST", "PORT", "DEBUG_ACCESS_TOKEN", "ALLOW_DEBUG_WITHOUT_FEISHU"]) {
+    assert.equal(handoffStatus.includes(`| \`${key}\` |`), false);
+  }
+  assert.match(handoffStatus, /Current required module values are missing or incomplete: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `TEST_CHAT_ID`, `ALLOWED_OPERATOR_OPEN_IDS`/);
+  for (const phrase of [
+    /Start or expose the calendar target service so `GET <TARGET_BASE_URL>\/api\/state` passes/i,
+    /Run `node \$env:LARK_DEPLOYER_CLI install \. --target <calendar-project> --target-base-url http:\/\/127\.0\.0\.1:1` to review the zero-write install plan/i,
+    /Run `node \$env:LARK_DEPLOYER_CLI install \. --target <calendar-project> --target-base-url http:\/\/127\.0\.0\.1:1 --apply` after reviewing the dry-run/i,
+    /Copy `integrations\/lark\/.env\.example` to `integrations\/lark\/.env` and fill/i,
+    /Run `npm install` inside `integrations\/lark`/i,
+    /Run `npm test` inside `integrations\/lark`/i,
+    /Run `npm start` inside `integrations\/lark`/i,
+  ]) {
+    assert.match(handoffStatus, phrase);
+  }
+  assert.match(handoffStatus, /Manually copy private worksheet values into matching fields in `level2_verification_record\.md`/);
+  assert.doesNotMatch(handoffStatus, /Import command:|--manual-evidence|init-local|\bconfigure\b|mount the adapter|existing Feishu SDK host|host simulation|--host-runtime-url|automated evidence import/i);
+  assert.match(handoffStatus, /Status result message ID or screenshot|status_result_message_id/);
+  assert.match(handoffStatus, /Dry-run result message ID or screenshot|dry_run_result_message_id/);
+  assert.match(handoffStatus, /Formal-run confirmation\/result message IDs or screenshots|run_confirmation_message_id/);
+  assert.match(handoffStatus, /Stop confirmation\/result message IDs or screenshots|stop_confirmation_message_id/);
+  assert.match(handoffStatus, /sanitized_host_log_path/);
+  assert.doesNotMatch(handoffStatus, /\/api\/meta|Generic action ID|target_request_summary|target_response_summary|generated_image_url|batch_id|batch_status|batch_download/i);
+  const doctorReportPath = path.join(generated, "doctor_report.json");
+  assert.match(run(["doctor", generated, "--out", doctorReportPath, "--json"]), /Doctor report written/);
+  const doctorJson = JSON.parse(fs.readFileSync(doctorReportPath, "utf8"));
+  assert.equal(doctorJson.missing_required_values.includes("ALLOWED_OPERATOR_OPEN_IDS"), true);
+  assert.equal(doctorJson.missing_required_values.includes("APP_ID"), false);
+  assert.equal(doctorJson.missing_required_values.includes("APP_SECRET"), false);
+  assert.equal(doctorJson.target_preflight.check_name, "target:/api/state");
+  assert.equal(doctorJson.target_preflight.check_path, "/api/state");
+  assert.equal(doctorJson.target_preflight.status, "missing");
+  assert.equal(doctorJson.target_preflight.check_url, "http://127.0.0.1:1/api/state");
+  assert.equal(doctorJson.target_preflight.live_probe.check_url, "http://127.0.0.1:1/api/state");
+  assert.deepEqual(doctorJson.manual_evidence.missing_fields, [
+    "date",
+    "operator",
+    "feishu_app_name",
+    "test_chat",
+    "start_message_id",
+    "status_result_message_id",
+    "status_screenshot",
+    "dry_run_result_message_id",
+    "dry_run_screenshot",
+    "run_confirmation_message_id",
+    "run_result_message_id",
+    "run_result_screenshot",
+    "stop_confirmation_message_id",
+    "stop_result_message_id",
+    "stop_result_screenshot",
+    "sanitized_host_log_path",
+    "trace_id",
+    "notes",
+  ]);
+  assert.equal(doctorJson.blockers.some((item) => item.includes("verify --level2")), false);
+  assert.doesNotMatch(JSON.stringify(doctorJson), /\/api\/meta|generated_image_url|batch_id|batch_status|batch_download|generic_action_id|target_request_summary|target_response_summary/i);
+  const doctorMarkdown = fs.readFileSync(path.join(generated, "doctor_report.md"), "utf8");
+  assert.match(doctorMarkdown, /installable Mode B .*integrations[\\/]lark/i);
+  assert.doesNotMatch(doctorMarkdown, /existing host|verify --level2/i);
+  const handoffCopy = path.join(temp, "handoff-copy");
+  assert.match(run(["handoff", generated, "--copy-to", handoffCopy, "--check"]), /Handoff check passed/);
+  const copiedContext = JSON.parse(fs.readFileSync(path.join(handoffCopy, "feishu_context.template.json"), "utf8"));
+  const copiedCommands = copiedContext.handoff_request.command_sets.flatMap((set) => set.commands);
+  assert.ok(copiedCommands.some((command) => /\bstatus\b/.test(command)));
+  assert.ok(copiedCommands.some((command) => /\breadiness\b/.test(command)));
+  assert.ok(copiedCommands.some((command) => /\bdoctor\b/.test(command) && !command.includes("--probe-target") && !command.includes("--gate")));
+  assert.ok(copiedCommands.some((command) => /\bdoctor\b/.test(command) && command.includes("--probe-target") && command.includes("--gate")));
+  assert.ok(copiedCommands.some((command) => /\bverify\b/.test(command) && command.includes("--mode embedded-adapter") && command.includes("--host-mode embedded-long-connection") && command.includes("--strict")));
+  assert.ok(copiedCommands.some((command) => /\binstall\b/.test(command) && command.includes("--target <calendar-project>") && command.includes("--target-base-url http://127.0.0.1:1") && !command.includes("--apply")));
+  assert.ok(copiedCommands.some((command) => /\binstall\b/.test(command) && command.includes("--target <calendar-project>") && command.includes("--target-base-url http://127.0.0.1:1") && command.includes("--apply")));
+  assert.ok(copiedCommands.some((command) => /\bhandoff\b/.test(command)));
+  assert.equal(copiedCommands.some((command) => /init-local|\bconfigure\b|--simulate|--host-runtime-url|\bevidence\b/i.test(command)), false);
+  const copiedManifest = JSON.parse(fs.readFileSync(path.join(handoffCopy, "handoff_manifest.json"), "utf8"));
+  assert.deepEqual(copiedManifest.warnings, []);
+  const copiedExcludedPaths = copiedManifest.excluded_paths.map((item) => item.path).sort();
+  assert.deepEqual(copiedExcludedPaths, [
+    "feishu_context.local.json",
+    "feishu_context.reply.local.json",
+    "feishu_context.reply.local.md",
+    "integrations/lark/.code2lark-install.json",
+    "integrations/lark/.env",
+    "integrations/lark/node_modules",
+    "integrations/lark/npm-debug.log",
+    "level2_manual_evidence.local.json",
+  ].sort());
+  assert.equal(copiedExcludedPaths.some((item) => /bot-runtime|feishu-host|configure_report/.test(item)), false);
+  const copiedDoctorJson = JSON.parse(fs.readFileSync(path.join(handoffCopy, "doctor_report.json"), "utf8"));
+  assert.equal(copiedDoctorJson.target_preflight.check_name, "target:/api/state");
+  assert.equal(copiedDoctorJson.target_preflight.check_path, "/api/state");
+  assert.equal(copiedDoctorJson.blockers.some((item) => item.includes("verify --level2")), false);
+  const copiedHandoffStatus = fs.readFileSync(path.join(handoffCopy, "handoff_status.md"), "utf8");
+  assert.doesNotMatch(copiedCommands.join("\n"), /init-local|\bconfigure\b|--simulate|--host-runtime-url|\bevidence\b/i);
+  assert.doesNotMatch(`${JSON.stringify(copiedDoctorJson)}\n${copiedHandoffStatus}`, /init-local|\bconfigure\b|--simulate|--host-runtime-url|\bevidence\s+\.|--manual-evidence|`APP_ID`|`APP_SECRET`|IMAGE_AGENT_BASE_URL|PUBLIC_CALLBACK_BASE_URL|VERIFICATION_TOKEN|\/api\/meta/i);
+  assert.match(runNode([path.join(generated, "sidecar-long-connection", "local-contract-test.mjs")], { cwd: generated }), /calendar contract: PASS/);
 });
 
 test("image-agent-web mapping profile is isolated from generator orchestration", () => {
@@ -2698,6 +3382,188 @@ function run(args) {
   });
 }
 
+function runWithEnv(args, envOverrides) {
+  return execFileSync(process.execPath, [cli, ...args], {
+    cwd: root,
+    env: { ...process.env, ...envOverrides },
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+}
+
+function runExpectFailureWithEnv(args, envOverrides) {
+  try {
+    runWithEnv(args, envOverrides);
+  } catch (error) {
+    if (error && typeof error === "object") {
+      const output = [];
+      if ("stdout" in error && error.stdout) output.push(String(error.stdout));
+      if ("stderr" in error && error.stderr) output.push(String(error.stderr));
+      if ("message" in error && error.message) output.push(String(error.message));
+      return output.join("\n");
+    }
+    return String(error);
+  }
+  assert.fail(`Expected command to fail: ${args.join(" ")}`);
+}
+
+function readServiceManifest(workspace) {
+  return JSON.parse(fs.readFileSync(path.join(workspace, "manifest", "service_manifest.json"), "utf8"));
+}
+
+function writeBackendSelectionTarget(target) {
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, "server.js"), [
+    "const http = require('node:http');",
+    "const { URL } = require('node:url');",
+    "http.createServer((req, res) => {",
+    "  const pathname = new URL(req.url, 'http://127.0.0.1').pathname;",
+    "  if (req.method === 'GET' && pathname === '/api/internal-health') res.end(JSON.stringify({ ok: true }));",
+    "  if (req.method === 'POST' && pathname === '/api/internal-run') res.end(JSON.stringify({ ok: true }));",
+    "});",
+  ].join("\n"), "utf8");
+}
+
+function installFakeCodegraph(temp, mode) {
+  const binDir = path.join(temp, "fake-codegraph-bin");
+  const logPath = path.join(temp, "fake-codegraph-argv.jsonl");
+  const status = buildFakeCodegraphStatus(mode);
+  const scriptPath = path.join(binDir, "fake-codegraph.mjs");
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(scriptPath, fakeCodegraphScript(), "utf8");
+  fs.writeFileSync(path.join(binDir, "codegraph.cmd"), [
+    "@echo off",
+    "\"%FAKE_CODEGRAPH_NODE%\" \"%~dp0fake-codegraph.mjs\" %*",
+  ].join("\r\n"), "utf8");
+  fs.writeFileSync(path.join(binDir, "codegraph"), [
+    "#!/bin/sh",
+    "exec \"$FAKE_CODEGRAPH_NODE\" \"$(dirname \"$0\")/fake-codegraph.mjs\" \"$@\"",
+  ].join("\n"), "utf8");
+  fs.chmodSync(path.join(binDir, "codegraph"), 0o755);
+  return {
+    logPath,
+    env: {
+      FAKE_CODEGRAPH_NODE: process.execPath,
+      CODEGRAPH_FAKE_LOG: logPath,
+      CODEGRAPH_FAKE_MODE: mode,
+      CODEGRAPH_FAKE_STATUS: JSON.stringify(status),
+      PATH: `${binDir}${path.delimiter}${process.env.PATH || ""}`,
+      Path: `${binDir}${path.delimiter}${process.env.Path || process.env.PATH || ""}`,
+    },
+  };
+}
+
+function buildFakeCodegraphStatus(mode) {
+  if (mode === "fresh") {
+    return {};
+  }
+  if (mode === "uninitialized") {
+    return {
+      initialized: false,
+    };
+  }
+  if (mode === "invalid-query-json") {
+    return {};
+  }
+  if (mode === "fresh-journal-missing") {
+    return {
+      index: { state: "complete", pendingRefs: 0, reindexRecommended: false },
+    };
+  }
+  if (mode === "fresh-journal-memory") {
+    return {
+      journalMode: "memory",
+      index: { state: "complete", pendingRefs: 0, reindexRecommended: false },
+    };
+  }
+  if (mode === "stale-pending-changes") {
+    return {
+      pendingChanges: [{ path: "src/server.ts" }],
+      index: { state: "complete", pendingRefs: 0, reindexRecommended: false },
+    };
+  }
+  if (mode === "stale-worktree-mismatch") {
+    return {
+      worktreeMismatch: true,
+      index: { state: "complete", pendingRefs: 0, reindexRecommended: false },
+    };
+  }
+  if (mode === "stale-incomplete-state") {
+    return {
+      index: { state: "partial", pendingRefs: 0, reindexRecommended: false },
+    };
+  }
+  if (mode === "stale-pending-refs") {
+    return {
+      index: { state: "complete", pendingRefs: 4, reindexRecommended: false },
+    };
+  }
+  if (mode === "stale-reindex-recommended") {
+    return {
+      index: { state: "complete", pendingRefs: 0, reindexRecommended: true },
+    };
+  }
+  return {};
+}
+
+function fakeCodegraphScript() {
+  return `
+    import fs from "node:fs";
+    const argv = process.argv.slice(2);
+    fs.appendFileSync(process.env.CODEGRAPH_FAKE_LOG, JSON.stringify(argv) + "\\n", "utf8");
+    const status = parseStatusConfig(process.env.CODEGRAPH_FAKE_STATUS);
+    if (["implement", "init", "sync"].includes(argv[0])) {
+      console.error("fake codegraph must not be asked to " + argv[0]);
+      process.exit(70);
+    }
+    if (argv[0] === "status" && argv[2] === "--json") {
+      const initialized = status.initialized ?? (process.env.CODEGRAPH_FAKE_MODE !== "uninitialized");
+      console.log(JSON.stringify({
+        initialized,
+        repo: argv[1],
+        lastIndexed: status.lastIndexed ?? "2026-07-16T00:00:00.000Z",
+        indexPath: argv[1] + "/.codegraph/index.sqlite",
+        pendingChanges: status.pendingChanges ?? [],
+        worktreeMismatch: status.worktreeMismatch ?? false,
+        ...(status.journalMode ? { journalMode: status.journalMode } : {}),
+        index: {
+          state: status.index?.state ?? (initialized ? "complete" : "missing"),
+          pendingRefs: status.index?.pendingRefs ?? 0,
+          reindexRecommended: status.index?.reindexRecommended ?? false,
+        },
+      }));
+      process.exit(0);
+    }
+    if (argv.join("\\u0000") === ["query", "route", "--kind", "route", "--path", argv[5], "--json"].join("\\u0000")) {
+      if (process.env.CODEGRAPH_FAKE_MODE === "invalid-query-json") {
+        process.stdout.write("{not-json");
+        process.exit(0);
+      }
+      console.log(JSON.stringify([
+        { node: { kind: "route", name: "POST /api/codegraph-route", filePath: argv[5] + "/server.js", startLine: 2 }, score: 0.98, highlights: ["server.js:2"] },
+        { node: { kind: "route", name: "GET /api/codegraph-health", filePath: argv[5] + "/server.js", startLine: 8 }, score: 0.83, highlights: ["server.js:8"] },
+      ]));
+      process.exit(0);
+    }
+    console.error("unexpected fake codegraph argv: " + JSON.stringify(argv));
+    process.exit(64);
+
+    function parseStatusConfig(rawValue) {
+      if (!rawValue) return {};
+      try {
+        const parsed = JSON.parse(rawValue);
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch (error) {
+        return {};
+      }
+    }
+  `.replace(/^ {4}/gm, "").trimStart();
+}
+
+function readFakeCodegraphArgv(logPath) {
+  return fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
 function assertFileExists(filePath) {
   assert.ok(fs.existsSync(filePath), `Expected file to exist: ${filePath}`);
 }
@@ -2722,6 +3588,11 @@ function genericAdapterContractScript(generated) {
       req.on("end", () => {
         const body = Buffer.concat(chunks).toString("utf8");
         requests.push({ method: req.method, url: req.url, body });
+        if (req.url === "/api/items/leak") {
+          res.writeHead(502, { "content-type": "text/html" });
+          res.end("<html>APP_SECRET=generic-target-secret stack trace</html>");
+          return;
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, method: req.method, url: req.url, body: body ? JSON.parse(body) : null }));
       });
@@ -2743,6 +3614,14 @@ function genericAdapterContractScript(generated) {
         formValue: { body_json: '{"title":"Printer broken"}' },
       }, { targetBaseUrl });
       if (!postResult.ok) throw new Error("POST action failed: " + JSON.stringify(postResult));
+      const failureResult = await handlers.handleGenericHttpCardAction({
+        action: "http.post.api.items.id.submit",
+        formValue: { id: "leak", body_json: '{"title":"Private"}' },
+      }, { targetBaseUrl });
+      const failureCardText = JSON.stringify(failureResult.card);
+      if (failureResult.ok) throw new Error("generic non-2xx action unexpectedly succeeded");
+      if (!failureCardText.includes("POST /api/items/{id} returned HTTP 502.")) throw new Error("generic failure card is missing method/path/status: " + failureCardText);
+      if (/APP_SECRET|generic-target-secret|stack trace|html/i.test(failureCardText)) throw new Error("generic failure card leaked the raw target response: " + failureCardText);
       if (!requests.some((item) => item.method === "GET" && item.url === "/api/tickets/TICKET-42")) throw new Error("GET path was not rendered from form input: " + JSON.stringify(requests));
       if (!requests.some((item) => item.method === "POST" && item.url === "/api/tickets" && item.body.includes("Printer broken"))) throw new Error("POST JSON body was not sent: " + JSON.stringify(requests));
       console.log("generic adapter contract: PASS");
