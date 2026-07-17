@@ -8,6 +8,7 @@ import { evidenceCommand } from "./commands/evidence.js";
 import { generateCommand } from "./commands/generate.js";
 import { handoffCommand } from "./commands/handoff.js";
 import { initLocalCommand } from "./commands/init-local.js";
+import { installCommand } from "./commands/install.js";
 import { planCommand } from "./commands/plan.js";
 import { readinessCommand } from "./commands/readiness.js";
 import { statusCommand } from "./commands/status.js";
@@ -56,6 +57,9 @@ async function main(): Promise<void> {
     case "init-local":
       await initLocalCommand(parsed.positionals, parsed.options);
       return;
+    case "install":
+      await installCommand(parsed.positionals, parsed.options);
+      return;
     case "verify":
       await verifyCommand(parsed.positionals, parsed.options);
       return;
@@ -68,7 +72,13 @@ function printHelp(): void {
   console.log(`Lark-deployer MVP CLI
 
 Usage:
-  lark-deployer analyze <target-path> --base-url <url> [--out <dir>] [--name <name>]
+  lark-deployer analyze <target-path> --base-url <url> [--out <dir>] [--name <name>] [--backend auto|internal|codegraph]
+  Analyze options:
+    --backend auto|internal|codegraph (default: auto)
+      auto: try codegraph first, then fall back to internal if needed.
+      codegraph: requires a user-maintained fresh index and is never auto-installed/initialized/synced.
+      internal: use the built-in structural scan only.
+
   lark-deployer plan <analysis-workspace>
   lark-deployer generate <analysis-workspace> [--out <generated-dir>] [--force] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime]
   lark-deployer context <analysis-workspace-or-generated-package> [--out <file>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime]
@@ -79,10 +89,12 @@ Usage:
   lark-deployer evidence <generated-package> [--env <file>] [--report <file>] [--audit <file>] [--runtime-url <url>] [--out <file>] [--update-record] [--manual-evidence <file>] [--start-message-id <id>] [--result-message-id <id>] [--result-screenshot <path-or-url>] [--generated-image-url <url>] [--generated-image-key <key>] [--batch-id <id>] [--batch-status-message-id <id>] [--batch-status-screenshot <path-or-url>] [--batch-download-url <url>] [--batch-download-screenshot <path-or-url>] [--trace-id <id>]
   lark-deployer handoff <generated-package> [--out <file>] [--copy-to <dir>] [--check]
   lark-deployer init-local <generated-package> [--context] [--reply] [--manual-evidence] [--all] [--force]
+  lark-deployer install <generated-package> --target <target-project> [--target-base-url <url>] [--apply]
   lark-deployer verify <generated-package> [--env <file>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime] [--runtime-url <url>] [--host-runtime-url <url>] [--simulate] [--send-start-card] [--level2] [--strict] [--allow-local-callback]
 
-MVP target:
+Validated targets:
   image-agent-web /api/generate, /api/iterate, and /api/batch progress integration.
+  calendar-stock-updater isolated Mode B host for /api/state, /api/run, and /api/stop.
 
 Boundary:
   Lark-deployer builds the integration package and verifies availability.
