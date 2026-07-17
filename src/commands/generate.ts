@@ -6,6 +6,8 @@ import { copyFileIfExists, ensureDir, readJsonFile, slugify, writeJson, writeTex
 import { buildFormFieldMaps } from "../field-mapping.js";
 import { hostModeUsesLongConnection, hostModeUsesWebhook, normalizeHostReceiveMode, type HostReceiveMode, type IntegrationMode } from "../host-mode.js";
 import { adapterCardsJs, adapterCardsTs, adapterHandlersJs, adapterHandlersTs, adapterServiceClientJs, adapterServiceClientTs, buildAdapterCardTemplateData, buildPythonHostEndpointsSpec, buildStartCardSpec, pythonHostCardsPy, pythonHostHandlersPy, pythonHostLocalContractTestPy, pythonHostServiceClientPy, runtimeCardsTs, runtimeImageAgentClientTs, runtimeIndexTs, type ImageAgentMeta, type RuntimeFieldSpec } from "../profiles/image-agent-web.js";
+import { calendarAdapterCardsSource, calendarAdapterHandlersSource, calendarAdapterServiceClientSource, calendarAdapterValidationSource } from "../profiles/calendar-stock-updater.js";
+import { writeCalendarModeBModule } from "../profiles/calendar-stock-updater-mode-b.js";
 import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
 import { buildDeploymentChecklist } from "./plan.js";
 
@@ -24,7 +26,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   const service = readJsonFile<ServiceManifest>(path.join(manifestDir, "service_manifest.json"));
   const capabilities = readJsonFile<CapabilityMap>(path.join(manifestDir, "capability_map.json"));
   const interactions = readJsonFile<InteractionContract>(path.join(manifestDir, "interaction_contract.json"));
-  const permissions = readJsonFile<RequiredPermissions>(path.join(manifestDir, "required_permissions.json"));
+  const analysisPermissions = readJsonFile<RequiredPermissions>(path.join(manifestDir, "required_permissions.json"));
   const meta = readOptionalJson<ImageAgentMeta>(path.join(manifestDir, "image_agent_meta.snapshot.json"));
   const targetProfile = capabilities.target_profile || "image-agent-web";
   const defaultOut = path.resolve("generated", `${slugify(service.service.name)}-lark`);
@@ -32,8 +34,12 @@ export async function generateCommand(args: string[], options: Record<string, st
   assertSafeOutputDirectory(outDir, hasOption(options, "force"));
   const integrationMode = normalizeIntegrationMode(getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime"))));
   const hostReceiveMode = normalizeHostReceiveMode(getStringOption(options, "host-mode", getStringOption(options, "hostMode", "")), integrationMode);
-  if (targetProfile === "generic-http-api" && integrationMode !== "embedded-adapter") {
-    throw new Error("generic-http-api targets currently support --mode embedded-adapter only.");
+  const permissions = packageRequiredPermissions(analysisPermissions, integrationMode, hostReceiveMode, targetProfile);
+  if (usesHttpAdapter(targetProfile) && integrationMode !== "embedded-adapter") {
+    throw new Error(`${targetProfile} targets currently support --mode embedded-adapter only.`);
+  }
+  if (targetProfile === "calendar-stock-updater" && hostReceiveMode !== "embedded-long-connection") {
+    throw new Error("calendar-stock-updater requires --host-mode embedded-long-connection.");
   }
   const adapterDir = path.join(outDir, "adapter");
   const docsDir = path.join(outDir, "docs");
@@ -50,6 +56,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   ensureDir(path.join(outDir, "manifest"));
 
   copyManifestArtifacts(workspace, outDir);
+  writeJson(path.join(outDir, "manifest", "required_permissions.json"), permissions);
   writeJson(path.join(outDir, "generation_summary.json"), {
     schema_version: "0.2",
     generated_at: new Date().toISOString(),
@@ -69,13 +76,22 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(outDir, "package.json"), generatedPackageJson(service.service.name));
   writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode, hostReceiveMode, targetProfile));
   writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode, hostReceiveMode, targetProfile, interactions));
-  writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions, integrationMode));
+  writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions, integrationMode, hostReceiveMode, targetProfile));
   writeText(path.join(docsDir, "integration_guide.md"), integrationMode === "self-hosted-runtime" ? buildSelfHostedIntegrationGuide(service) : buildEmbeddedIntegrationGuide(service, permissions, hostReceiveMode, targetProfile, interactions));
   writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode, hostReceiveMode, targetProfile, interactions));
-  writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service, targetProfile));
-  writePackageContext(workspace, outDir, service, permissions, integrationMode, hostReceiveMode);
+  writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service, targetProfile, hostReceiveMode));
+  writePackageContext(workspace, outDir, service, permissions, integrationMode, hostReceiveMode, targetProfile);
   if (targetProfile === "generic-http-api") {
     writeGenericAdapterFiles(adapterDir, service, capabilities, interactions, hostReceiveMode);
+  } else if (targetProfile === "calendar-stock-updater") {
+    writeCalendarAdapterFiles(adapterDir);
+    writeJson(path.join(outDir, "manifest", "profile_contract.json"), {
+      profile_id: "calendar-stock-updater",
+      profile_version: "1",
+      host_receive_mode: hostReceiveMode,
+      adapter_exports: ["buildStartCard", "handleCardAction", "handleCalendarStockCardAction"],
+      action_ids: interactions.interactions.map((interaction) => interaction.action_id),
+    });
   } else {
     writeText(path.join(adapterDir, "types.ts"), adapterTypesTs());
     writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
@@ -108,6 +124,9 @@ export async function generateCommand(args: string[], options: Record<string, st
     writePythonFeishuHost(feishuHostDir, service, capabilities, meta);
   } else if (fs.existsSync(feishuHostDir)) {
     fs.rmSync(feishuHostDir, { recursive: true, force: true });
+  }
+  if (targetProfile === "calendar-stock-updater") {
+    writeCalendarModeBModule(outDir, service);
   }
 
   console.log(`Generated Lark integration package at ${outDir}`);
@@ -153,6 +172,36 @@ function writeRuntimeAdapterJs(adapterDir: string, service: ServiceManifest, cap
   ].join("\n"));
 }
 
+function writeCalendarAdapterFiles(adapterDir: string): void {
+  const cardsTs = calendarAdapterCardsSource({ typed: true });
+  const handlersTs = calendarAdapterHandlersSource({ typed: true });
+  const clientTs = calendarAdapterServiceClientSource({ typed: true });
+  const validationTs = calendarAdapterValidationSource({ typed: true });
+  const cardsJs = calendarAdapterCardsSource();
+  const handlersJs = calendarAdapterHandlersSource();
+  const clientJs = calendarAdapterServiceClientSource();
+  const validationJs = calendarAdapterValidationSource();
+  const audit = `export function auditEvent(event: string, detail: Record<string, unknown> = {}): { event: string; detail: Record<string, unknown> } { return { event, detail }; }\n`;
+  const types = `export type CalendarRecord = Record<string, unknown>;\nexport type CalendarCardElement = Record<string, unknown>;\nexport type CalendarCard = Record<string, unknown>;\nexport interface CalendarTaskState extends CalendarRecord { defaults?: CalendarRecord; task?: CalendarRecord; logs?: unknown[]; }\nexport interface CalendarTaskRunInput extends CalendarRecord { mode: string; targetDate: string; stock: string; stepDelayMs: string; datePickerDelayMs: string; startProductId: string; endProductId: string; }\nexport interface AdapterActionContext { action: string; value?: CalendarRecord; formValue?: CalendarRecord; operatorOpenId?: string; openMessageId?: string; openChatId?: string; }\nexport interface AdapterDependencies { targetBaseUrl: string; timeoutMs?: number; allowedOperatorOpenIds?: readonly string[]; }\nexport interface AdapterAuditEvent { event: string; detail: CalendarRecord; }\nexport interface AdapterResult { ok: boolean; card: CalendarCard; result?: CalendarRecord; auditEvents: AdapterAuditEvent[]; }\n`;
+  writeText(path.join(adapterDir, "types.ts"), types);
+  writeText(path.join(adapterDir, "audit-events.ts"), audit);
+  writeText(path.join(adapterDir, "validation.ts"), validationTs);
+  writeText(path.join(adapterDir, "service-client.ts"), clientTs);
+  writeText(path.join(adapterDir, "cards.ts"), cardsTs);
+  writeText(path.join(adapterDir, "handlers.ts"), handlersTs);
+  writeText(path.join(adapterDir, "audit-events.js"), "export function auditEvent(event, detail = {}) { return { event, detail }; }\n");
+  writeText(path.join(adapterDir, "validation.js"), validationJs);
+  writeText(path.join(adapterDir, "service-client.js"), clientJs);
+  writeText(path.join(adapterDir, "cards.js"), cardsJs);
+  writeText(path.join(adapterDir, "handlers.js"), handlersJs);
+  writeText(path.join(adapterDir, "handlers.d.ts"), `export function handleCardAction(ctx: Record<string, unknown>, deps: Record<string, unknown>): Promise<Record<string, unknown>>;\nexport const handleCalendarStockCardAction: typeof handleCardAction;\n`);
+  writeText(path.join(adapterDir, "service-client.d.ts"), `export function callCalendar(baseUrl: string, method: string, path: string, body?: Record<string, unknown>, timeoutMs?: number): Promise<Record<string, unknown>>;\n`);
+}
+
+function usesHttpAdapter(targetProfile: string): boolean {
+  return targetProfile === "generic-http-api" || targetProfile === "calendar-stock-updater";
+}
+
 function writeGenericAdapterFiles(adapterDir: string, service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract, hostReceiveMode: HostReceiveMode): void {
   writeText(path.join(adapterDir, "types.ts"), genericAdapterTypesTs());
   writeText(path.join(adapterDir, "audit-events.ts"), adapterAuditEventsTs());
@@ -170,6 +219,24 @@ function writeGenericAdapterFiles(adapterDir: string, service: ServiceManifest, 
 }
 
 function sidecarLongConnectionReadme(service: ServiceManifest, hostReceiveMode: HostReceiveMode, targetProfile: string): string {
+  if (targetProfile === "calendar-stock-updater") {
+    return `# Calendar Stock Updater Long-Connection Host Contract
+
+This generated calendar profile is an adapter for a Feishu SDK long-connection host. It does not manage the calendar process lifecycle.
+
+- Event subscription: \`card.action.trigger\`
+- Required receive mode: \`${hostReceiveMode}\`
+- Target: \`TARGET_BASE_URL=${service.service.base_url || "http://127.0.0.1:3069"}\`
+
+The host must normalize the event context and call \`handleCardAction()\` from \`adapter/handlers.js\`. Use the generated state-aware card builders without rebuilding business card JSON by hand. The profile exposes typed calendar task cards, host-local formal-run/stop confirmations, and state refresh; it intentionally does not expose the browser-only \`/api/events\` SSE endpoint.
+
+Run the local contract check from the package root:
+
+\`\`\`powershell
+node sidecar-long-connection/local-contract-test.mjs
+\`\`\`
+`;
+  }
   if (targetProfile === "generic-http-api") {
     return `# Sidecar Long-Connection Gateway Starter
 
@@ -233,6 +300,39 @@ The script starts an in-process mock \`${service.service.name}\` HTTP API and pr
 }
 
 function sidecarLocalContractTestMjs(service: ServiceManifest, capabilities: CapabilityMap, interactions: InteractionContract, targetProfile: string): string {
+  if (targetProfile === "calendar-stock-updater") {
+    return `import http from "node:http";
+import { buildStartCard } from "../adapter/cards.js";
+import { handleCardAction } from "../adapter/handlers.js";
+
+const requests = [];
+const server = http.createServer((req, res) => {
+  const chunks = [];
+  req.on("data", (chunk) => chunks.push(chunk));
+  req.on("end", () => {
+    const body = Buffer.concat(chunks).toString("utf8");
+    requests.push({ method: req.method, url: req.url, body });
+    res.writeHead(200, { "content-type": "application/json" });
+    if (req.method === "GET" && req.url === "/api/state") return res.end(JSON.stringify({ defaults: { targetDate: "2026-10-01", stock: "100", stepDelayMs: "500", datePickerDelayMs: "500" }, task: { status: "idle", currentMessage: "ready" }, logs: [] }));
+    if (req.method === "POST" && req.url === "/api/run") return res.end(JSON.stringify({ ok: true, task: { status: "running", currentMessage: "preview started" } }));
+    if (req.method === "POST" && req.url === "/api/stop") return res.end(JSON.stringify({ ok: true, task: { status: "stopped", currentMessage: "stopped" } }));
+    res.end(JSON.stringify({ error: "not found" }));
+  });
+});
+const listen = () => new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+const close = () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+try {
+  await listen();
+  const targetBaseUrl = "http://127.0.0.1:" + server.address().port;
+  const startCard = buildStartCard();
+  if (!JSON.stringify(startCard).includes("calendar.task.dry-run")) throw new Error("calendar start card is missing typed action");
+  if (JSON.stringify(startCard).includes("body_json") || JSON.stringify(startCard).includes("/api/events")) throw new Error("calendar card exposed generic or SSE controls");
+  const result = await handleCardAction({ action: "calendar.status.refresh", operatorOpenId: "sidecar-contract-operator" }, { targetBaseUrl, timeoutMs: 5000, allowedOperatorOpenIds: ["sidecar-contract-operator"] });
+  if (!result.ok || !requests.some((item) => item.method === "GET" && item.url === "/api/state")) throw new Error("calendar refresh contract failed");
+  console.log("sidecar-long-connection calendar contract: PASS for ${service.service.name}");
+} finally { await close(); }
+`;
+  }
   if (targetProfile === "generic-http-api") {
     const specs = buildGenericActionSpecs(capabilities, interactions);
     return `import http from "node:http";
@@ -242,6 +342,7 @@ import { handleGenericHttpCardAction } from "../adapter/handlers.js";
 const actionSpecs = ${JSON.stringify(specs, null, 2)};
 const actionSpec = actionSpecs.find((item) => item.method === "POST") || actionSpecs[0];
 if (!actionSpec) throw new Error("No generic HTTP action specs were generated.");
+const expectedPath = actionSpec.path.replace(/\{[^}]+\}/g, "contract-ticket");
 
 const requests = [];
 const server = http.createServer((req, res) => {
@@ -250,9 +351,9 @@ const server = http.createServer((req, res) => {
   req.on("end", () => {
     const body = Buffer.concat(chunks).toString("utf8");
     requests.push({ method: req.method, url: req.url, body });
-    if (req.url && req.url.startsWith("/api/tickets")) {
+    if (req.url && req.url.startsWith(expectedPath)) {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, ticket_id: "contract-ticket", trace_id: "trace-generic-sidecar" }));
+      res.end(JSON.stringify({ ok: true, path: expectedPath, trace_id: "trace-generic-sidecar" }));
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
@@ -283,7 +384,7 @@ try {
     allowedOperatorOpenIds: [],
   });
 
-  const targetRequest = requests.find((item) => item.url && item.url.startsWith("/api/tickets"));
+  const targetRequest = requests.find((item) => item.url && item.url.startsWith(expectedPath));
   if (!targetRequest) throw new Error("generic adapter did not call the mock target endpoint");
   if (!result.ok) throw new Error("generic adapter returned failure: " + JSON.stringify(result.card));
   if (!JSON.stringify(result.card).includes("trace-generic-sidecar")) throw new Error("success card did not include target JSON result");
@@ -294,8 +395,9 @@ try {
 
 function buildGenericFormValue(spec) {
   const formValue = {};
+  const pathParamNames = new Set(Array.from(spec.path.matchAll(/\{([^}]+)\}/g), (match) => match[1]));
   for (const input of spec.inputs || []) {
-    if (input.name === "ticket_id") formValue[input.name] = "contract-ticket";
+    if (pathParamNames.has(input.name)) formValue[input.name] = "contract-ticket";
     else if (input.name === "body_json") formValue[input.name] = JSON.stringify({ title: "Sidecar contract ticket" });
     else formValue[input.name] = "sidecar-contract-value";
   }
@@ -870,6 +972,11 @@ const LEVEL2_RECORD_PRESERVE_FIELDS = [
   "Batch ID",
   "Batch status card message ID or screenshot",
   "Batch download URL or screenshot",
+  "Status result message ID or screenshot",
+  "Dry-run result message ID or screenshot",
+  "Formal-run confirmation/result message IDs or screenshots",
+  "Stop confirmation/result message IDs or screenshots",
+  "Sanitized host log path",
   "Trace ID",
   "Notes",
 ];
@@ -920,6 +1027,7 @@ function writePackageContext(
   permissions: RequiredPermissions,
   integrationMode: IntegrationMode,
   hostReceiveMode: HostReceiveMode,
+  targetProfile: string,
 ): void {
   const sourceContext = readOptionalJson<Partial<ContextTemplate>>(path.join(workspace, "feishu_context.template.json"));
   const mergedContext = mergeContextValues(
@@ -928,6 +1036,7 @@ function writePackageContext(
       packageRootCliPath: toCliPath(path.relative(outDir, path.resolve("dist", "index.js"))),
       integrationMode,
       hostReceiveMode,
+      targetProfile,
     }),
     sourceContext,
   );
@@ -949,7 +1058,7 @@ function writePackageContext(
 
 function mergeContextValues(base: ContextTemplate, source: Partial<ContextTemplate> | undefined): ContextTemplate {
   if (!source) return base;
-  return {
+  const merged = {
     ...base,
     target_service: {
       ...base.target_service,
@@ -964,10 +1073,11 @@ function mergeContextValues(base: ContextTemplate, source: Partial<ContextTempla
       ...source.feishu_app,
     },
   };
+  return normalizeMergedContextRuntimeConfig(merged);
 }
 
 function sanitizeContextTemplate(context: ContextTemplate): ContextTemplate {
-  return {
+  const sanitized: ContextTemplate = {
     ...context,
     feishu_app: {
       ...context.feishu_app,
@@ -975,9 +1085,21 @@ function sanitizeContextTemplate(context: ContextTemplate): ContextTemplate {
       verification_token: "",
       encrypt_key: "",
     },
+    runtime_config: context.runtime_config.debug_access_token === undefined
+      ? context.runtime_config
+      : { ...context.runtime_config, debug_access_token: "" },
+  };
+  return normalizeMergedContextRuntimeConfig(sanitized);
+}
+
+function normalizeMergedContextRuntimeConfig(context: ContextTemplate): ContextTemplate {
+  if (context.target_profile !== "calendar-stock-updater") return context;
+  return {
+    ...context,
     runtime_config: {
-      ...context.runtime_config,
-      debug_access_token: "",
+      target_timeout_seconds: context.runtime_config.target_timeout_seconds,
+      target_wait_seconds: context.runtime_config.target_wait_seconds || 30,
+      allowed_operator_open_ids: context.runtime_config.allowed_operator_open_ids || [],
     },
   };
 }
@@ -1022,6 +1144,36 @@ function copyManifestArtifacts(workspace: string, outDir: string): void {
   ]) {
     copyFileIfExists(path.join(workspace, entry), path.join(outDir, entry));
   }
+}
+
+function packageRequiredPermissions(
+  permissions: RequiredPermissions,
+  integrationMode: IntegrationMode,
+  hostReceiveMode: HostReceiveMode,
+  targetProfile: string,
+): RequiredPermissions {
+  if (integrationMode !== "embedded-adapter" || hostReceiveMode !== "embedded-long-connection" || targetProfile !== "generic-http-api") {
+    return permissions;
+  }
+
+  return {
+    ...permissions,
+    context_requirements: permissions.context_requirements
+      .filter((item) => !/callback verification token|verification token|public callback|webhook/i.test(item))
+      .concat("Existing Feishu SDK long-connection host subscribed to card.action.trigger."),
+    callbacks: permissions.callbacks
+      .filter((callback) => callback.callback === "card.action.trigger")
+      .map((callback) => ({
+        ...callback,
+        reason: "Receive interactive card button clicks through Feishu SDK long connection.",
+        security: ["long_connection"],
+      })),
+    manual_steps: permissions.manual_steps.map((item) => (
+      /callback handling/i.test(item)
+        ? "Subscribe the existing Feishu SDK long-connection host to card.action.trigger."
+        : item
+    )),
+  };
 }
 
 function generatedPackageGitignore(): string {
@@ -1074,15 +1226,52 @@ audit.log
 `;
 }
 
-function buildLevel2ManualEvidenceTemplate(service: ServiceManifest, targetProfile: string): Record<string, unknown> {
+function buildLevel2ManualEvidenceTemplate(service: ServiceManifest, targetProfile: string, hostReceiveMode: HostReceiveMode): Record<string, unknown> {
+  if (targetProfile === "calendar-stock-updater") {
+    return {
+      schema_version: "0.1",
+      purpose: "Copy this file to level2_manual_evidence.local.json and record sanitized real Feishu observations for the calendar Mode B module.",
+      target_service: service.service.name,
+      target_profile: targetProfile,
+      instructions: [
+        "Do not paste FEISHU_APP_SECRET, target login credentials, raw operator IDs, or private task logs here.",
+        "Record message IDs or sanitized screenshot paths for status refresh, dry-run, formal-run confirmation/result, and stop confirmation/result.",
+        "Record only the target method/path and redacted field names; do not include inventory credentials or private response bodies.",
+        "This helper never marks Level 2 complete; the human verifier still decides final sign-off.",
+      ],
+      values: {
+        date: "",
+        operator: "",
+        feishu_app_name: "",
+        test_chat: "",
+        start_message_id: "",
+        status_result_message_id: "",
+        status_screenshot: "",
+        dry_run_result_message_id: "",
+        dry_run_screenshot: "",
+        run_confirmation_message_id: "",
+        run_result_message_id: "",
+        run_result_screenshot: "",
+        stop_confirmation_message_id: "",
+        stop_result_message_id: "",
+        stop_result_screenshot: "",
+        sanitized_host_log_path: "",
+        trace_id: "",
+        notes: "",
+      },
+    };
+  }
   if (targetProfile === "generic-http-api") {
+    const longConnection = hostReceiveMode === "embedded-long-connection";
     return {
       schema_version: "0.1",
       purpose: "Copy this file to level2_manual_evidence.local.json and fill real Feishu Level 2 observations for this generic HTTP adapter. The local file is ignored by git and sanitized handoff.",
       target_service: service.service.name,
       target_profile: targetProfile,
       instructions: [
-        "Do not paste APP_SECRET, VERIFICATION_TOKEN, ENCRYPT_KEY, DEBUG_ACCESS_TOKEN, target API tokens, or private response payloads here.",
+        longConnection
+          ? "Do not paste APP_SECRET, ENCRYPT_KEY, DEBUG_ACCESS_TOKEN, target API tokens, or private response payloads here."
+          : "Do not paste APP_SECRET, VERIFICATION_TOKEN, ENCRYPT_KEY, DEBUG_ACCESS_TOKEN, target API tokens, or private response payloads here.",
         "Use result_message_id when you can read the Feishu message id; use result_screenshot for a local screenshot path or shared evidence URL.",
         "Use generic_action_id and target_request_summary to record which generated HTTP adapter action was clicked and which target endpoint was reached without exposing sensitive request data.",
         "Run `node $env:LARK_DEPLOYER_CLI evidence . --manual-evidence level2_manual_evidence.local.json --update-record` from the generated package root to copy blank fields into level2_verification_record.md.",
@@ -1138,6 +1327,55 @@ function buildLevel2ManualEvidenceTemplate(service: ServiceManifest, targetProfi
 
 function buildStartHere(service: ServiceManifest, integrationMode: IntegrationMode, hostReceiveMode: HostReceiveMode, targetProfile: string): string {
   const hostModeOption = integrationMode === "embedded-adapter" && hostReceiveMode !== "embedded-webhook" ? ` --host-mode ${hostReceiveMode}` : "";
+  if (targetProfile === "calendar-stock-updater") {
+    return `# Start Here - Calendar Mode B
+
+This generated package is the source of truth. It contains an installable, self-contained Node long-connection module at \`integrations/lark/\`; generation did not modify the target project.
+
+## 1. Validate The Candidate
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter --host-mode embedded-long-connection --strict
+\`\`\`
+
+## 2. Review The Zero-Write Install Plan
+
+Start the existing calendar service with its documented command, then run:
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI install . --target <calendar-project> --target-base-url ${service.service.base_url || "http://127.0.0.1:3069"}
+\`\`\`
+
+The command must report a passing \`GET /api/state\` probe and planned files under \`integrations/lark\` without writing the target.
+
+## 3. Apply The Isolated Module
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI install . --target <calendar-project> --target-base-url ${service.service.base_url || "http://127.0.0.1:3069"} --apply
+cd <calendar-project>\\integrations\\lark
+npm install
+npm test
+Copy-Item .env.example .env
+\`\`\`
+
+Fill only the module-local \`.env\`, then run the target service and \`npm start\` in \`integrations/lark\` separately. The target API/UI/root startup files remain unchanged.
+
+## Target Contract
+
+- \`GET /api/state\`: health, defaults, status, logs.
+- \`POST /api/run\`: dry-run or confirmed formal run.
+- \`POST /api/stop\`: confirmed stop.
+- Run/stop prepare, confirm, and cancel are host-local card actions, not target endpoints.
+
+## Completion States
+
+1. Candidate generated.
+2. Install dry-run reviewed.
+3. Locally installed and verified.
+
+Real Feishu Level 2 is a separate state. Do not mark it complete until the app, long connection, test chat, real card clicks, and sanitized evidence in \`level2_verification_record.md\` are complete.
+`;
+  }
   const usesWebhook = hostModeUsesWebhook(hostReceiveMode);
   const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
   const level2HostRequirement = usesWebhook && usesLongConnection
@@ -1494,7 +1732,7 @@ function genericAdapterServiceClientTs(): string {
     const text = await response.text();
     const parsed = parseJson(text);
     if (!response.ok) {
-      throw new Error(method + " " + pathTemplate + " returned HTTP " + response.status + ": " + text);
+      throw new Error(method + " " + pathTemplate + " returned HTTP " + response.status + ".");
     }
     return parsed;
   } finally {
@@ -1533,7 +1771,7 @@ function genericAdapterServiceClientJs(): string {
     const text = await response.text();
     const parsed = parseJson(text);
     if (!response.ok) {
-      throw new Error(method + " " + pathTemplate + " returned HTTP " + response.status + ": " + text);
+      throw new Error(method + " " + pathTemplate + " returned HTTP " + response.status + ".");
     }
     return parsed;
   } finally {
@@ -1855,6 +2093,46 @@ function buildEmbeddedIntegrationGuide(service: ServiceManifest, permissions: Re
   const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
   const hybrid = hostReceiveMode === "hybrid";
   const hostModeOption = hostReceiveMode === "embedded-webhook" ? "" : ` --host-mode ${hostReceiveMode}`;
+  if (targetProfile === "calendar-stock-updater") {
+    const actions = interactions.interactions.map((interaction) => `- \`${interaction.action_id}\` -> \`${interaction.capability_id}\``).join("\n");
+    return `# Calendar Stock Updater Embedded Adapter Guide
+
+This is a typed business adapter for \`${service.service.name}\`, designed for a target-project Mode B Feishu SDK long-connection host.
+
+- Required host receive mode: \`${hostReceiveMode}\`
+- Feishu event: \`card.action.trigger\`
+- Target base URL: \`${service.service.base_url || "<TARGET_BASE_URL>"}\`
+
+## Adapter facade
+
+\`adapter/cards.ts\` exports \`buildStartCard()\`. \`adapter/handlers.ts\` exports \`handleCardAction()\`. The host passes its normalized Feishu event context and \`targetBaseUrl\`; it must not recreate calendar mapping or cards.
+
+## Business actions
+
+${actions}
+
+The cards mirror the recommended Web console: target date, stock, delay values, and optional product ID range. They never expose \`body_json\`, advanced environment-only modes, endpoint names, or the browser-only \`/api/events\` stream. Formal inventory writes and task stopping use expiring, operator-bound confirmation state inside the generated host before calling the unchanged \`/api/run\` or \`/api/stop\` endpoint.
+
+## Host shape
+
+\`\`\`ts
+import { handleCardAction } from "./adapter/handlers";
+const result = await handleCardAction({ action, value, formValue, operatorOpenId, openMessageId, openChatId }, { targetBaseUrl, timeoutMs, allowedOperatorOpenIds });
+return result.card;
+\`\`\`
+
+The generated \`integrations/lark\` host owns Feishu SDK initialization, module-local secret/config loading, long-connection lifecycle, idempotency, confirmation state, audit output, and process lifecycle. The adapter owns business input validation, the three discovered target calls, and success/failure cards.
+
+## Package validation
+
+\`\`\`powershell
+node ..\\..\\dist\\index.js verify . --mode embedded-adapter --host-mode embedded-long-connection --strict
+node sidecar-long-connection/local-contract-test.mjs
+\`\`\`
+
+Real Feishu Level 2 remains a manual action: confirm long connection is online, send the generated start card, click a typed card flow, and record sanitized evidence.
+`;
+  }
   if (targetProfile === "generic-http-api") {
     const actions = interactions.interactions.map((interaction) => `- \`${interaction.action_id}\` -> \`${interaction.capability_id}\``).join("\n") || "- No card actions were discovered.";
     return `# Embedded Adapter Integration Guide
@@ -2054,8 +2332,40 @@ function buildGeneratedReadme(service: ServiceManifest, permissions: RequiredPer
     const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
     const hybrid = hostReceiveMode === "hybrid";
     const hostModeOption = hostReceiveMode === "embedded-webhook" ? "" : ` --host-mode ${hostReceiveMode}`;
+    if (targetProfile === "calendar-stock-updater") {
+      const actions = interactions.interactions.map((interaction) => `- \`${interaction.action_id}\` handles \`${interaction.capability_id}\``).join("\n");
+      return `# ${service.service.name} Lark Mode B Candidate Package
+
+This generated package is the source of truth for a two-stage, isolated Mode B installation. Generation does not write to the target project.
+
+- Target profile: calendar-stock-updater
+- Integration mode: embedded-adapter
+- Host receive mode: ${hostReceiveMode}
+- Installable closure: \`integrations/lark/\`
+- Target calls: \`GET /api/state\`, \`POST /api/run\`, \`POST /api/stop\`
+
+## Generated Actions
+
+${actions}
+
+Run/stop prepare, confirm, and cancel are host-local card actions. They do not add target endpoints. The form mirrors the target Web console and hydrates defaults from \`GET /api/state\`.
+
+## Validate And Install
+
+\`\`\`powershell
+node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --strict
+node $env:LARK_DEPLOYER_CLI install . --target <target-project>
+node $env:LARK_DEPLOYER_CLI install . --target <target-project> --apply
+\`\`\`
+
+The install command defaults to dry-run and may write only \`<target-project>/integrations/lark\`. See \`integrations/lark/README.md\` for module-local configuration, tests, cleanup, maturity states, and the separate real Feishu Level 2 boundary.
+`;
+    }
     if (targetProfile === "generic-http-api") {
       const actions = interactions.interactions.map((interaction) => `- \`${interaction.action_id}\` handles \`${interaction.capability_id}\``).join("\n") || "- No generic HTTP card actions were discovered.";
+      const contextRequirements = longConnection
+        ? permissions.context_requirements.filter((item) => !/callback verification token|PUBLIC_CALLBACK_BASE_URL|\/webhook\/card|public callback/i.test(item))
+        : permissions.context_requirements;
       return `# ${service.service.name} Lark Generic HTTP Adapter Package
 
 This package was generated by Lark-deployer for a generic HTTP API target. It exposes generic card-action forms that call discovered target endpoints and render structured JSON results.
@@ -2064,7 +2374,7 @@ ${deliveryModeModelMarkdown()}
 
 ## Boundary
 
-Lark-deployer generated an embeddable adapter package. It does not run or manage the target service lifecycle and this embedded-adapter package does not include a standalone \`bot-runtime/\` host.
+Lark-deployer generated an embeddable adapter package. It does not run or manage the target service lifecycle and this embedded-adapter package leaves Feishu ingress to the existing host or sidecar.
 
 - Target service: ${service.service.name}
 - Target base URL: ${service.service.base_url || "<TARGET_BASE_URL>"}
@@ -2087,7 +2397,7 @@ ${actions}
 
 ## Required Context
 
-${permissions.context_requirements.map((item) => `- ${item}`).join("\n")}
+${contextRequirements.map((item) => `- ${item}`).join("\n")}
 
 ## Package Validation
 
@@ -2577,7 +2887,9 @@ At least one failure path should be observed before considering this package sta
       ...(usesLongConnection ? ["- [ ] The host routes long-connection card.action.trigger events into `adapter/handlers.ts`."] : []),
     ].join("\n");
     const preflightRows = [
-      "- [ ] `GET <target_base_url>/api/meta` succeeds from the existing host environment.",
+      targetProfile === "generic-http-api"
+        ? "- [ ] The target health/read endpoint selected by analysis succeeds from the existing host environment."
+        : "- [ ] `GET <target_base_url>/api/meta` succeeds from the existing host environment.",
       "- [ ] `GET <host_runtime_url>/health` succeeds on the existing host.",
       ...(usesWebhook ? [
         "- [ ] `POST <host_runtime_url>/webhook/card` answers a local `url_verification` challenge.",
@@ -2592,6 +2904,84 @@ At least one failure path should be observed before considering this package sta
       `- [ ] \`verify . --mode embedded-adapter${hostModeOption} --host-runtime-url <host_runtime_url> --simulate\` records host health checks and either passes host-owned simulation or records the manual-check warning for the host debug surface.`,
       "- [ ] `verification_report.md` has no unexpected FAIL checks.",
     ].join("\n");
+    if (targetProfile === "calendar-stock-updater") {
+      const calendarActions = interactions.interactions.map((interaction) => `- [ ] \`${interaction.action_id}\` was rendered and routed to \`${interaction.capability_id}\`.`).join("\n");
+      return `# Level 2 Verification Record - Calendar Mode B
+
+Use this file only for real Feishu/Lark verification of the installed \`integrations/lark\` module. Local generation and installation evidence alone do not complete Level 2.
+
+## Environment
+
+- Date:
+- Operator:
+- Target service: ${service.service.name}
+- Target base URL: ${service.service.base_url || "<TARGET_BASE_URL>"}
+- Generated package path:
+- Installed module path: <calendar-project>/integrations/lark
+- Feishu app name:
+- Test chat:
+
+## Required Feishu Setup
+
+- [ ] Bot capability is enabled and the bot is in the test chat.
+- [ ] Long connection is enabled and only the new \`card.action.trigger\` callback is subscribed.
+- [ ] \`integrations/lark/.env\` contains \`FEISHU_APP_ID\`, \`FEISHU_APP_SECRET\`, \`TEST_CHAT_ID\`, \`TARGET_BASE_URL\`, and a non-empty \`ALLOWED_OPERATOR_OPEN_IDS\`.
+- [ ] Secrets were supplied through a secure channel and are absent from shared evidence.
+
+## Required Scopes And Callbacks
+
+${scopes}
+
+${callbacks}
+
+## Local Preflight
+
+- [ ] Strict package verification passes.
+- [ ] Install dry-run passes while writing no target files.
+- [ ] Install apply writes only \`integrations/lark\`.
+- [ ] \`npm test\` passes inside the installed module.
+- [ ] The existing calendar service responds to \`GET /api/state\`.
+- [ ] Host logs show the SDK long connection online without exposing operator/chat IDs or secrets.
+
+## Card And Target Evidence
+
+${calendarActions}
+- [ ] The start card renders target date, stock, two delay fields, and optional start/end product IDs using defaults from \`GET /api/state\`.
+- [ ] Status refresh calls only \`GET /api/state\` and shows bounded recent logs.
+- [ ] Ordinary preview calls \`POST /api/run\` with \`mode=dry-run\`.
+- [ ] Formal run first shows a host-local confirmation card; confirmation calls \`POST /api/run\` with \`mode=run\` exactly once.
+- [ ] Stop first shows a host-local confirmation bound to the active task; confirmation calls \`POST /api/stop\` exactly once.
+- [ ] Cancel actions return to current state without calling a target write endpoint.
+- [ ] No request is made to a target prepare, confirm, cancel, or \`/api/events\` endpoint.
+
+## Failure And Replay Evidence
+
+- [ ] Invalid form values return a red failure card before a target write.
+- [ ] An unapproved operator cannot preview, run, or stop a task.
+- [ ] A wrong-operator, expired, reused, or mismatched confirmation cannot call the target.
+- [ ] A repeated callback/event does not execute run or stop twice.
+- [ ] Target unavailability returns a readable failure and install remains blocked.
+
+## Artifacts
+
+- Verification report path:
+- Module test output path:
+- Start card message ID:
+- Status result message ID or screenshot:
+- Dry-run result message ID or screenshot:
+- Formal-run confirmation/result message IDs or screenshots:
+- Stop confirmation/result message IDs or screenshots:
+- Sanitized host log path:
+- Trace ID:
+- Notes:
+
+## Completion Decision
+
+- [ ] Level 2 verified.
+- [ ] Remaining issues documented.
+- [ ] This generated package can be handed to another FDE using \`README.md\`, \`deployment_checklist.md\`, and this file.
+`;
+    }
     if (targetProfile === "generic-http-api") {
       const genericActions = interactions.interactions.map((interaction) => `- [ ] \`${interaction.action_id}\` was rendered in the start card and routed to \`${interaction.capability_id}\`.`).join("\n") || "- [ ] At least one generated generic HTTP action is present in the start card.";
       return `# Level 2 Verification Record
