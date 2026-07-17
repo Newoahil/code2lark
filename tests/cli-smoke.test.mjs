@@ -2576,7 +2576,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.match(contextMarkdown, /Project Root/);
   assert.match(contextMarkdown, /Generated Package Root/);
   assert.match(contextMarkdown, /Moved Package Root/);
-  assert.match(contextMarkdown, /node \.\.\\\.\.\\dist\\index\.js verify \./);
+  assert.match(contextMarkdown, new RegExp(`node \\.\\.${escapeRegExp(path.sep)}\\.\\.${escapeRegExp(path.sep)}dist${escapeRegExp(path.sep)}index\\.js verify \\.`));
   assert.match(contextMarkdown, /LARK_DEPLOYER_CLI/);
   assert.match(contextMarkdown, /status \./);
   assert.match(contextMarkdown, /--level2/);
