@@ -117,6 +117,8 @@ export interface ContextReplyStatus {
   readyForLocalConfigure: boolean;
 }
 
+export type HandoffProfile = "image-agent-web" | "generic-http-api" | "calendar-stock-updater";
+
 const REQUIRED_VALUE_DEFS = [
   {
     key: "APP_ID",
@@ -142,6 +144,10 @@ const REQUIRED_VALUE_DEFS = [
     key: "IMAGE_AGENT_BASE_URL",
     note: "Target service base URL reachable from the bot runtime environment.",
   },
+  {
+    key: "TARGET_BASE_URL",
+    note: "Target service base URL reachable from the existing host or sidecar.",
+  },
 ] as const;
 
 const SELF_HOSTED_REQUIRED_VALUE_DEFS = [
@@ -152,6 +158,14 @@ const SELF_HOSTED_REQUIRED_VALUE_DEFS = [
   { key: "FEISHU_ALLOWED_USERS", note: "Optional comma-separated Feishu operator open_id allowlist." },
   { key: "IMAGE_AGENT_TIMEOUT_MS", note: "Target HTTP timeout in milliseconds." },
   { key: "TEST_CHAT_ID", note: "Optional chat receive id for sending the start card during manual Level 2." },
+] as const;
+
+const CALENDAR_REQUIRED_VALUE_DEFS = [
+  { key: "FEISHU_APP_ID", note: "Feishu custom app id for integrations/lark/.env. Value is intentionally hidden in this status file." },
+  { key: "FEISHU_APP_SECRET", note: "Feishu custom app secret for integrations/lark/.env. Value is intentionally hidden in this status file." },
+  { key: "TEST_CHAT_ID", note: "Chat receive id where the bot has been added and can send the calendar start card." },
+  { key: "TARGET_BASE_URL", note: "Existing calendar service base URL reachable from the installed integrations/lark module." },
+  { key: "ALLOWED_OPERATOR_OPEN_IDS", note: "Required comma-separated Feishu operator open_id allowlist for mutating calendar actions." },
 ] as const;
 
 export async function readinessCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
@@ -178,7 +192,9 @@ export function buildReadinessSummary(
   const permissions = readJsonFile<RequiredPermissions>(path.join(manifestDir, "required_permissions.json"));
   const { contextPath, context } = readContext(packagePath);
   const selfHosted = context?.integration_mode === "self-hosted-runtime";
-  const envPath = path.resolve(getStringOption(options, "env", path.join(packagePath, selfHosted ? "feishu-host" : "bot-runtime", ".env")));
+  const embedded = context?.integration_mode === "embedded-adapter";
+  const profile = resolveHandoffProfile(context, service);
+  const envPath = path.resolve(getStringOption(options, "env", profile === "calendar-stock-updater" ? path.join(packagePath, "integrations", "lark", ".env") : embedded ? path.join(packagePath, "existing-host.env") : path.join(packagePath, selfHosted ? "feishu-host" : "bot-runtime", ".env")));
   const env = readEnvFileIfExists(envPath);
   const contextRequestPath = path.join(packagePath, "feishu_context.request.md");
   const contextReply = buildContextReplyStatus(packagePath);
@@ -186,15 +202,17 @@ export function buildReadinessSummary(
   const report = readOptionalJson<VerificationReport>(reportPath);
   const level2RecordPath = path.join(packagePath, "level2_verification_record.md");
   const level2Record = readTextIfExists(level2RecordPath);
-  const manualEvidence = buildManualEvidenceStatus(packagePath, context, level2Record);
-  const completionDecision = parseCompletionDecision(level2Record);
+  const manualEvidence = buildManualEvidenceStatus(packagePath, context, service, level2Record);
+  const completionDecision = parseCompletionDecision(level2Record, profile);
 
-  const requiredValueDefs = selfHosted ? SELF_HOSTED_REQUIRED_VALUE_DEFS : REQUIRED_VALUE_DEFS;
-  const requiredValues = requiredValueDefs.map((item) => buildRequiredValueRow(item.key, item.note, env, context, service));
-  const runtimeRows = buildRuntimeRows(env, context);
+  const requiredValueDefs = profile === "calendar-stock-updater" ? CALENDAR_REQUIRED_VALUE_DEFS : selfHosted ? SELF_HOSTED_REQUIRED_VALUE_DEFS : REQUIRED_VALUE_DEFS;
+  const requiredValues = requiredValueDefs
+    .filter((item) => keepRequiredValueDef(item.key, context, service))
+    .map((item) => buildRequiredValueRow(item.key, item.note, env, context, service));
+  const runtimeRows = buildRuntimeRows(env, context, service);
   const reportCounts = countReportChecks(report);
   const securityWarnings = buildSecurityWarnings(env, context, service);
-  const state = determineState(requiredValues, report, completionDecision, manualEvidence);
+  const state = determineState(requiredValues, report, completionDecision, manualEvidence, profile);
   const nextActions = buildNextActions(state, context, report, requiredValues, contextRequestPath, contextReply, manualEvidence, packagePath, service);
 
   return {
@@ -221,9 +239,28 @@ export function buildReadinessSummary(
   };
 }
 
-function parseCompletionDecision(record: string): CompletionDecision {
+function keepRequiredValueDef(key: string, context: ContextTemplate | undefined, service: ServiceManifest): boolean {
+  if (resolveHandoffProfile(context, service) === "calendar-stock-updater") return true;
+  if (context?.integration_mode === "self-hosted-runtime") return true;
+  const genericTarget = service.source_scan?.analysis_strategy === "generic_http_api"
+    || context?.handoff_request.required_values.some((item) => item.key === "TARGET_BASE_URL") === true;
+  if (genericTarget && context?.host_receive_mode === "embedded-long-connection" && (key === "PUBLIC_CALLBACK_BASE_URL" || key === "VERIFICATION_TOKEN")) return false;
+  if (genericTarget) return key !== "IMAGE_AGENT_BASE_URL";
+  return key !== "TARGET_BASE_URL";
+}
+
+export function resolveHandoffProfile(context: ContextTemplate | undefined, service: ServiceManifest): HandoffProfile {
+  if (context?.target_profile === "calendar-stock-updater" || context?.target_profile === "generic-http-api" || context?.target_profile === "image-agent-web") {
+    return context.target_profile;
+  }
+  if (service.source_scan?.analysis_strategy === "calendar_stock_updater") return "calendar-stock-updater";
+  if (service.source_scan?.analysis_strategy === "generic_http_api") return "generic-http-api";
+  return "image-agent-web";
+}
+
+function parseCompletionDecision(record: string, profile: HandoffProfile): CompletionDecision {
   const level2Verified = isChecked(record, "Level 2 verified.");
-  const missingManualEvidence = findMissingManualEvidence(record);
+  const missingManualEvidence = findMissingManualEvidence(record, profile);
   const manualEvidencePresent = missingManualEvidence.length === 0;
   const remainingIssuesDocumented = isChecked(record, "Remaining issues documented.");
   const handoffApproved = /-\s*\[[xX]\]\s*This generated package can be handed to another FDE/.test(record);
@@ -237,8 +274,23 @@ function parseCompletionDecision(record: string): CompletionDecision {
   };
 }
 
-function findMissingManualEvidence(record: string): string[] {
-  const requiredFields = [
+function findMissingManualEvidence(record: string, profile: HandoffProfile): string[] {
+  const requiredFields = profile === "generic-http-api" ? [
+    "Start card message ID",
+    "Generic action ID",
+    "Target request summary",
+    "Target response summary",
+    "Result card message ID or screenshot",
+    "Trace ID",
+  ] : profile === "calendar-stock-updater" ? [
+    "Start card message ID",
+    "Status result message ID or screenshot",
+    "Dry-run result message ID or screenshot",
+    "Formal-run confirmation/result message IDs or screenshots",
+    "Stop confirmation/result message IDs or screenshots",
+    "Sanitized host log path",
+    "Trace ID",
+  ] : [
     "Start card message ID",
     "Result card message ID or screenshot",
     "Generated image URL or image key",
@@ -281,6 +333,11 @@ function buildRequiredValueRow(
   context: ContextTemplate | undefined,
   service: ServiceManifest,
 ): RequiredValueRow {
+  const profile = resolveHandoffProfile(context, service);
+  if (profile === "calendar-stock-updater" && key === "ALLOWED_OPERATOR_OPEN_IDS") {
+    const resolved = resolveRequiredValue(key, env, context, service);
+    return { key, status: resolved.value ? "provided" : "missing", source: resolved.source, note };
+  }
   if (context?.integration_mode === "self-hosted-runtime" && (key === "FEISHU_ALLOWED_USERS" || key === "IMAGE_AGENT_TIMEOUT_MS" || key === "TEST_CHAT_ID")) {
     const resolved = resolveRequiredValue(key, env, context, service);
     return { key, status: resolved.value ? "provided" : "optional", source: resolved.source, note };
@@ -326,22 +383,29 @@ function resolveRequiredValue(
     TEST_CHAT_ID: feishu?.test_chat_id,
     PUBLIC_CALLBACK_BASE_URL: feishu?.public_callback_base_url,
     IMAGE_AGENT_BASE_URL: context?.target_service.base_url,
+    TARGET_BASE_URL: context?.target_service.base_url,
     FEISHU_ALLOWED_USERS: context?.runtime_config.allowed_operator_open_ids?.join(","),
+    ALLOWED_OPERATOR_OPEN_IDS: context?.runtime_config.allowed_operator_open_ids?.join(","),
     IMAGE_AGENT_TIMEOUT_MS: context?.runtime_config.target_timeout_seconds ? String(context.runtime_config.target_timeout_seconds * 1000) : "120000",
   };
   const contextValue = configuredValue(contextValueByKey[key]);
   if (contextValue) return { value: contextValue, source: "context" };
 
   const manifestBaseUrl = configuredValue(service.service.base_url);
-  if (key === "IMAGE_AGENT_BASE_URL" && manifestBaseUrl) {
+  if ((key === "IMAGE_AGENT_BASE_URL" || key === "TARGET_BASE_URL") && manifestBaseUrl) {
     return { value: manifestBaseUrl, source: "manifest" };
   }
 
   return { value: "", source: "none" };
 }
 
-function buildRuntimeRows(env: Record<string, string>, context: ContextTemplate | undefined): RequiredValueRow[] {
+function buildRuntimeRows(env: Record<string, string>, context: ContextTemplate | undefined, service: ServiceManifest): RequiredValueRow[] {
   const rows: RequiredValueRow[] = [];
+  if (resolveHandoffProfile(context, service) === "calendar-stock-updater") {
+    rows.push(buildRuntimeRow("TARGET_TIMEOUT_MS", env.TARGET_TIMEOUT_MS, "30000", "Target HTTP timeout for /api/state, /api/run, and /api/stop from integrations/lark."));
+    rows.push(buildRuntimeRow("TARGET_WAIT_MS", env.TARGET_WAIT_MS, "30000", "Maximum startup wait for the existing calendar service before module checks."));
+    return rows;
+  }
   if (context?.integration_mode === "self-hosted-runtime") {
     rows.push(buildRuntimeRow("FEISHU_CONNECTION_MODE", env.FEISHU_CONNECTION_MODE, "websocket", "Required by feishu-host long connection."));
     rows.push(buildRuntimeRow("IMAGE_AGENT_TIMEOUT_MS", env.IMAGE_AGENT_TIMEOUT_MS, context?.runtime_config.target_timeout_seconds ? String(context.runtime_config.target_timeout_seconds * 1000) : "120000", "Target HTTP timeout for service_client.py."));
@@ -351,10 +415,14 @@ function buildRuntimeRows(env: Record<string, string>, context: ContextTemplate 
   }
   rows.push(buildRuntimeRow("CARD_ACTION_MODE", env.CARD_ACTION_MODE, context?.runtime_config.card_action_mode || "sync", "sync waits for target completion; async returns a running card and patches later."));
   rows.push(buildRuntimeRow("UPLOAD_IMAGE_TO_LARK", env.UPLOAD_IMAGE_TO_LARK, boolToEnv(context?.runtime_config.upload_image_to_lark, "1"), "1 uploads result images to Feishu when API credentials and scope are available."));
-  rows.push(buildRuntimeRow("IMAGE_AGENT_TIMEOUT_MS", env.IMAGE_AGENT_TIMEOUT_MS, context?.runtime_config.target_timeout_seconds ? String(context.runtime_config.target_timeout_seconds * 1000) : "120000", "Target service call and image download timeout."));
+  if (context?.handoff_request.required_values.some((item) => item.key === "TARGET_BASE_URL")) {
+    rows.push(buildRuntimeRow("TARGET_TIMEOUT_MS", env.TARGET_TIMEOUT_MS, context?.runtime_config.target_timeout_seconds ? String(context.runtime_config.target_timeout_seconds * 1000) : "120000", "Target service call timeout."));
+  } else {
+    rows.push(buildRuntimeRow("IMAGE_AGENT_TIMEOUT_MS", env.IMAGE_AGENT_TIMEOUT_MS, context?.runtime_config.target_timeout_seconds ? String(context.runtime_config.target_timeout_seconds * 1000) : "120000", "Target service call and image download timeout."));
+  }
   rows.push(buildRuntimeRow("HOST", env.HOST, context?.runtime_config.host || "127.0.0.1", "HTTP bind host for the generated bot runtime."));
   rows.push(buildRuntimeRow("PORT", env.PORT, context?.runtime_config.port ? String(context.runtime_config.port) : "3978", "HTTP port for the generated bot runtime."));
-  rows.push(buildOptionalRuntimeRow("DEBUG_ACCESS_TOKEN", env.DEBUG_ACCESS_TOKEN, context?.runtime_config.debug_access_token || "", "Protects /debug/* endpoints when the runtime is reachable through a public callback URL. Value is intentionally hidden."));
+  rows.push(buildOptionalRuntimeRow("DEBUG_ACCESS_TOKEN", env.DEBUG_ACCESS_TOKEN, context?.runtime_config.debug_access_token || "", context?.host_receive_mode === "embedded-long-connection" ? "Protects host-owned debug endpoints if the host exposes them. Value is intentionally hidden." : "Protects /debug/* endpoints when the runtime is reachable through a public callback URL. Value is intentionally hidden."));
   rows.push(buildOptionalRuntimeRow("ALLOWED_OPERATOR_OPEN_IDS", env.ALLOWED_OPERATOR_OPEN_IDS, operatorOpenIdStatus(context?.runtime_config.allowed_operator_open_ids), "Optional operator open_id allowlist for card actions. Values are not printed in this status file."));
   rows.push(buildRuntimeRow("ALLOW_DEBUG_WITHOUT_FEISHU", env.ALLOW_DEBUG_WITHOUT_FEISHU, boolToEnv(context?.runtime_config.allow_debug_without_feishu, "0"), "1 explicitly enables local debug simulation before real Feishu credentials are filled."));
   return rows;
@@ -528,10 +596,43 @@ function countNonEmptyStrings(value: unknown): number {
   return value.filter((item) => Boolean(configuredValue(item))).length;
 }
 
-function buildManualEvidenceStatus(packagePath: string, context: ContextTemplate | undefined, level2Record: string): ManualEvidenceStatus {
+function buildManualEvidenceStatus(packagePath: string, context: ContextTemplate | undefined, service: ServiceManifest, level2Record: string): ManualEvidenceStatus {
   const templatePath = path.join(packagePath, "level2_manual_evidence.template.json");
   const localPath = path.join(packagePath, "level2_manual_evidence.local.json");
-  const fields = [
+  const profile = resolveHandoffProfile(context, service);
+  const fields = profile === "generic-http-api" ? [
+    "date",
+    "operator",
+    "feishu_app_name",
+    "test_chat",
+    "start_message_id",
+    "generic_action_id",
+    "target_request_summary",
+    "target_response_summary",
+    "result_message_id",
+    "result_screenshot",
+    "trace_id",
+    "notes",
+  ] : profile === "calendar-stock-updater" ? [
+    "date",
+    "operator",
+    "feishu_app_name",
+    "test_chat",
+    "start_message_id",
+    "status_result_message_id",
+    "status_screenshot",
+    "dry_run_result_message_id",
+    "dry_run_screenshot",
+    "run_confirmation_message_id",
+    "run_result_message_id",
+    "run_result_screenshot",
+    "stop_confirmation_message_id",
+    "stop_result_message_id",
+    "stop_result_screenshot",
+    "sanitized_host_log_path",
+    "trace_id",
+    "notes",
+  ] : [
     "date",
     "operator",
     "feishu_app_name",
@@ -565,6 +666,7 @@ function buildManualEvidenceStatus(packagePath: string, context: ContextTemplate
   const missingFields = fields.filter((field) => !filledFields.includes(field));
   const importedFields = filledFields.filter((field) => manualEvidenceFieldImported(field, level2Record));
   const pendingImportFields = filledFields.filter((field) => !importedFields.includes(field));
+  const calendarModeB = profile === "calendar-stock-updater";
   return {
     templatePath,
     templatePresent: fs.existsSync(templatePath),
@@ -575,8 +677,8 @@ function buildManualEvidenceStatus(packagePath: string, context: ContextTemplate
     missingFields,
     importedFields,
     pendingImportFields,
-    readyToImport: fs.existsSync(localPath) && !parseError && pendingImportFields.length > 0,
-    importCommand: manualEvidenceImportCommand(packagePath, context),
+    readyToImport: !calendarModeB && fs.existsSync(localPath) && !parseError && pendingImportFields.length > 0,
+    importCommand: calendarModeB ? "" : manualEvidenceImportCommand(packagePath, context),
   };
 }
 
@@ -593,8 +695,22 @@ function manualEvidenceRecordField(field: string): string {
     feishu_app_name: "Feishu app name",
     test_chat: "Test chat",
     start_message_id: "Start card message ID",
+    generic_action_id: "Generic action ID",
+    target_request_summary: "Target request summary",
+    target_response_summary: "Target response summary",
     result_message_id: "Result card message ID or screenshot",
     result_screenshot: "Result card message ID or screenshot",
+    status_result_message_id: "Status result message ID or screenshot",
+    status_screenshot: "Status result message ID or screenshot",
+    dry_run_result_message_id: "Dry-run result message ID or screenshot",
+    dry_run_screenshot: "Dry-run result message ID or screenshot",
+    run_confirmation_message_id: "Formal-run confirmation/result message IDs or screenshots",
+    run_result_message_id: "Formal-run confirmation/result message IDs or screenshots",
+    run_result_screenshot: "Formal-run confirmation/result message IDs or screenshots",
+    stop_confirmation_message_id: "Stop confirmation/result message IDs or screenshots",
+    stop_result_message_id: "Stop confirmation/result message IDs or screenshots",
+    stop_result_screenshot: "Stop confirmation/result message IDs or screenshots",
+    sanitized_host_log_path: "Sanitized host log path",
     generated_image_url: "Generated image URL or image key",
     generated_image_key: "Generated image URL or image key",
     batch_id: "Batch ID",
@@ -668,6 +784,7 @@ function determineState(
   report: VerificationReport | undefined,
   completionDecision: CompletionDecision,
   manualEvidence: ManualEvidenceStatus,
+  profile: HandoffProfile,
 ): ReadinessState {
   const selfHosted = report?.context?.mode === "self-hosted-runtime";
   if (requiredValues.some((item) => item.status === "missing")) return "external_context_missing";
@@ -680,6 +797,12 @@ function determineState(
     return "handoff_ready";
   }
   if (report.context?.mode === "embedded-adapter") {
+    if (profile === "calendar-stock-updater") {
+      if (report.status === "warn") return "level2_preflight_has_warnings";
+      if (manualEvidence.parseError) return "manual_evidence_invalid";
+      if (!completionDecision.complete) return "manual_click_evidence_needed";
+      return "handoff_ready";
+    }
     if (!report.context.hostRuntimeUrl || report.context.simulate !== true) return "runtime_preflight_needed";
   } else if (!report.context?.runtimeUrl || report.context.simulate !== true) return "runtime_preflight_needed";
   if (report.context?.mode !== "embedded-adapter" && report.context?.level2 !== true) return "level2_preflight_needed";
@@ -700,6 +823,9 @@ function buildNextActions(
   packagePath: string,
   service: ServiceManifest,
 ): string[] {
+  if (resolveHandoffProfile(context, service) === "calendar-stock-updater") {
+    return buildCalendarNextActions(state, context, report, requiredValues, manualEvidence, packagePath, service);
+  }
   const configureCommand = withoutConfigureDryRun(withConfigureStrict(findPackageCommand(packagePath, context, " configure ") || "node ..\\..\\dist\\index.js configure ."));
   const configureDryRunCommand = withConfigureDryRun(configureCommand);
   const initContextCommand = findPackageCommand(packagePath, context, " init-local ") || "node ..\\..\\dist\\index.js init-local . --context --reply";
@@ -729,7 +855,7 @@ function buildNextActions(
       ]
     : [];
   const contextReplyActions = buildContextReplyActions(contextReply);
-  const targetPreflightActions = buildTargetPreflightActions(report, service, verifyCommand);
+  const targetPreflightActions = buildTargetPreflightActions(report, service, verifyCommand, context);
   const manualEvidenceCommands = manualEvidence.readyToImport
     ? [manualEvidence.importCommand]
     : manualEvidence.localPresent && manualEvidence.filledFields.length
@@ -814,6 +940,43 @@ function buildNextActions(
   }
 }
 
+function buildCalendarNextActions(
+  state: ReadinessState,
+  context: ContextTemplate | undefined,
+  report: VerificationReport | undefined,
+  requiredValues: RequiredValueRow[],
+  manualEvidence: ManualEvidenceStatus,
+  packagePath: string,
+  service: ServiceManifest,
+): string[] {
+  const targetBaseUrl = configuredValue(context?.target_service.base_url) || configuredValue(service.service.base_url) || "<TARGET_BASE_URL>";
+  const installDryRun = `node $env:LARK_DEPLOYER_CLI install . --target <calendar-project> --target-base-url ${targetBaseUrl}`;
+  const installApply = installDryRun.includes("--apply") ? installDryRun : `${installDryRun} --apply`;
+  const missingValues = requiredValues.filter((item) => item.status === "missing").map((item) => item.key);
+  const actions = [
+    `Start or expose the calendar target service so \`GET <TARGET_BASE_URL>/api/state\` passes from the target project environment. Current target base URL: ${targetBaseUrl}.`,
+    `Run \`${installDryRun}\` to review the zero-write install plan.`,
+    `Run \`${installApply}\` after reviewing the dry-run.`,
+    "Copy `integrations/lark/.env.example` to `integrations/lark/.env` and fill FEISHU_APP_ID, FEISHU_APP_SECRET, TEST_CHAT_ID, TARGET_BASE_URL, and ALLOWED_OPERATOR_OPEN_IDS through a secure channel.",
+    "Run `npm install` inside `integrations/lark`.",
+    "Run `npm test` inside `integrations/lark`.",
+    "Run `npm start` inside `integrations/lark` for the Feishu long-connection module when ready for manual Level 2.",
+  ];
+  if (missingValues.length) {
+    actions.unshift(`Current required module values are missing or incomplete: ${missingValues.map((item) => `\`${item}\``).join(", ")}.`);
+  }
+  if (report?.status === "fail") {
+    actions.push("Open verification_report.md and fix each FAIL check before handoff.");
+  }
+  if (manualEvidence.parseError) {
+    actions.push(`Fix invalid level2_manual_evidence.local.json before using manual evidence status: ${manualEvidence.parseError}`);
+  }
+  if (state === "manual_click_evidence_needed" || state === "handoff_ready") {
+    actions.push("Manually copy private worksheet values into matching fields in `level2_verification_record.md`, then review and check the final completion boxes manually.");
+  }
+  return actions;
+}
+
 function replaceInitLocalSelection(command: string, selection: string): string {
   const base = command
     .replace(/\s+--context\b/g, "")
@@ -845,8 +1008,9 @@ function buildContextReplyActions(contextReply: ContextReplyStatus): string[] {
   return actions;
 }
 
-function buildTargetPreflightActions(report: VerificationReport | undefined, service: ServiceManifest, verifyCommand: string): string[] {
-  const targetCheck = report?.checks?.find((check) => check.name === "target:/api/meta");
+function buildTargetPreflightActions(report: VerificationReport | undefined, service: ServiceManifest, verifyCommand: string, context?: ContextTemplate): string[] {
+  const spec = targetPreflightSpec(resolveHandoffProfile(context, service));
+  const targetCheck = report?.checks?.find((check) => check.name === spec.checkName);
   if (!targetCheck) return [];
   if (targetCheck.status === "pass") {
     const checkedAt = report?.generated_at || "unknown time";
@@ -854,15 +1018,22 @@ function buildTargetPreflightActions(report: VerificationReport | undefined, ser
       `Latest target preflight pass is a verification_report snapshot from ${checkedAt}; rerun verify after starting or exposing the target service to prove it is reachable now. ${verifyCommand}`,
     ];
   }
-  const targetBaseUrl = report?.context?.targetBaseUrl || "<IMAGE_AGENT_BASE_URL>";
+  const targetBaseUrl = report?.context?.targetBaseUrl || spec.baseUrlPlaceholder;
   const actions = [
-    `Start or expose the externally managed target service so GET ${targetBaseUrl}/api/meta passes, then rerun verify. Current target preflight status: ${targetCheck.status}.`,
+    `Start or expose the externally managed target service so GET ${targetBaseUrl}${spec.checkPath} passes, then rerun verify. Current target preflight status: ${targetCheck.status}.`,
   ];
   for (const hint of service.service.start_hints || []) {
     actions.push(`Target start hint: ${hint}`);
   }
   actions.push(verifyCommand);
   return actions;
+}
+
+function targetPreflightSpec(profile: HandoffProfile): { checkName: string; checkPath: string; baseUrlPlaceholder: string } {
+  if (profile === "calendar-stock-updater") {
+    return { checkName: "target:/api/state", checkPath: "/api/state", baseUrlPlaceholder: "<TARGET_BASE_URL>" };
+  }
+  return { checkName: "target:/api/meta", checkPath: "/api/meta", baseUrlPlaceholder: profile === "generic-http-api" ? "<TARGET_BASE_URL>" : "<IMAGE_AGENT_BASE_URL>" };
 }
 
 function withConfigureStrict(command: string): string {
@@ -948,14 +1119,23 @@ function printReadinessSummary(summary: ReadinessSummary, outPath: string): void
 
 export function buildReadinessMarkdown(summary: ReadinessSummary): string {
   const missing = summary.requiredValues.filter((item) => item.status === "missing").map((item) => item.key);
+  const profile = resolveHandoffProfile(summary.context, summary.service);
+  const calendarModeB = profile === "calendar-stock-updater";
+  const genericLongConnection = summary.context?.host_receive_mode === "embedded-long-connection"
+    && summary.context?.handoff_request.required_values.some((item) => item.key === "TARGET_BASE_URL") === true;
   const requiredRows = summary.requiredValues.map(formatValueRow).join("\n");
   const runtimeRows = summary.runtimeRows.map(formatValueRow).join("\n");
   const scopeRows = summary.permissions.scopes
     .map((scope) => `| \`${scope.scope}\` | ${scope.risk} | ${scope.reason} |`)
     .join("\n");
   const callbackRows = summary.permissions.callbacks
-    .map((callback) => `| \`${callback.callback}\` | ${callback.reason} | ${callback.security.join(", ")} |`)
+    .map((callback) => `| \`${callback.callback}\` | ${genericLongConnection ? "Receive interactive card button clicks through the Feishu SDK long connection." : callback.reason} | ${genericLongConnection ? "long_connection" : callback.security.join(", ")} |`)
     .join("\n");
+  const secretHandling = calendarModeB
+    ? "confirm availability in normal chat, but send `FEISHU_APP_SECRET` and operator allowlist values through a secure channel only."
+    : genericLongConnection
+    ? "confirm availability in normal chat, but send `APP_SECRET`, `ENCRYPT_KEY`, and `DEBUG_ACCESS_TOKEN` through a secure channel only."
+    : "confirm availability in normal chat, but send `APP_SECRET`, `VERIFICATION_TOKEN`, `ENCRYPT_KEY`, and `DEBUG_ACCESS_TOKEN` through a secure channel only.";
   const failedChecks = (summary.report?.checks || [])
     .filter((check) => check.status === "fail")
     .map((check) => `- ${check.name}: ${check.detail}`)
@@ -967,6 +1147,10 @@ export function buildReadinessMarkdown(summary: ReadinessSummary): string {
   const securityWarnings = summary.securityWarnings
     .map((warning) => `- ${warning}`)
     .join("\n") || "- none";
+  const manualEvidenceImportBlock = calendarModeB
+    ? "Manual evidence values for calendar Mode B stay in the private worksheet or ignored local evidence file. Manually copy private worksheet values into matching fields in `level2_verification_record.md`; this command does not automate calendar evidence import."
+    : `Import command:\n\n\`\`\`powershell\n${summary.manualEvidence.importCommand}\n\`\`\``;
+  const contextReplyReadyLabel = calendarModeB ? "Ready for local module env intake" : "Ready for local configure intake";
 
   return `# Handoff Status
 
@@ -1012,7 +1196,7 @@ Missing required values: ${missing.length ? missing.map((item) => `\`${item}\``)
 - Request file: ${fs.existsSync(summary.contextRequestPath) ? summary.contextRequestPath : "missing"}
 - Intended recipient: Feishu app owner, permission admin, infrastructure owner, or FDE.
 - Missing values to request: ${missing.length ? missing.map((item) => `\`${item}\``).join(", ") : "none"}
-- Secret handling: confirm availability in normal chat, but send \`APP_SECRET\`, \`VERIFICATION_TOKEN\`, \`ENCRYPT_KEY\`, and \`DEBUG_ACCESS_TOKEN\` through a secure channel only.
+- Secret handling: ${secretHandling}
 
 ## Context Reply Intake
 
@@ -1032,7 +1216,7 @@ The local owner reply may include internal contact or deployment context. This s
 | Blocked-by entries | ${summary.contextReply.blockedCount} |
 | Secure secret channel recorded | ${summary.contextReply.secureSecretChannelPresent ? "yes" : "no"} |
 | Public value fields filled | ${summary.contextReply.publicValueFields.length ? summary.contextReply.publicValueFields.map((field) => `\`${field}\``).join(", ") : "none"} |
-| Ready for local configure intake | ${summary.contextReply.readyForLocalConfigure ? "yes" : "no"} |
+| ${contextReplyReadyLabel} | ${summary.contextReply.readyForLocalConfigure ? "yes" : "no"} |
 
 ## Manual Evidence Helper
 
@@ -1049,11 +1233,7 @@ The local manual evidence file may include operator, chat, message, screenshot, 
 | Pending import fields | ${summary.manualEvidence.pendingImportFields.length ? summary.manualEvidence.pendingImportFields.map((field) => `\`${field}\``).join(", ") : "none"} |
 | Ready to import | ${summary.manualEvidence.readyToImport ? "yes" : "no"} |
 
-Import command:
-
-\`\`\`powershell
-${summary.manualEvidence.importCommand}
-\`\`\`
+${manualEvidenceImportBlock}
 
 ## Runtime Choices
 
@@ -1102,6 +1282,9 @@ ${summary.nextActions.map((action) => `- ${action}`).join("\n")}
 
 function readinessDeliveryMode(summary: ReadinessSummary): string {
   const integrationMode = summary.context?.integration_mode || summary.report?.context?.mode || "standalone-runtime";
+  if (resolveHandoffProfile(summary.context, summary.service) === "calendar-stock-updater") {
+    return "installable Mode B integrations/lark module for the calendar target project.";
+  }
   if (integrationMode === "self-hosted-runtime") {
     return "Mode B embedded host-module path foundation; self-hosted-runtime host module verified externally today.";
   }
