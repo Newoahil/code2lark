@@ -1,6 +1,15 @@
 # Mode B Embedding Guide
 
-Mode B is the target-project embedded host-module path. The generated package remains the source of truth, but selected host files can be copied into the target repository as an incremental module.
+Mode B is the target-project embedded host-module path. The generated package remains the source of truth.
+
+For generated packages that contain `integrations/lark/install-manifest.json`, the standard path is:
+
+```powershell
+node dist/index.js install generated/<target>-lark --target <target-project>
+node dist/index.js install generated/<target>-lark --target <target-project> --apply
+```
+
+The first command is a zero-write dry-run. The second writes only `integrations/lark/` after live-target, package-integrity, and managed-file conflict checks. The manual copy guidance below remains for older target-language host packages that do not yet emit an installable closure.
 
 Related chooser: `docs/host-delivery-mode-selection.md`.
 
