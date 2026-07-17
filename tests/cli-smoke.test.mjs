@@ -565,7 +565,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.equal(context.runtime_config.target_timeout_seconds, 120);
   assert.equal(context.runtime_config.debug_access_token, "");
   assert.deepEqual(context.runtime_config.allowed_operator_open_ids, []);
-  assert.equal(context.handoff_request.generated_package_hint, "generated\\image-agent-web-lark");
+  assert.equal(context.handoff_request.generated_package_hint, ["generated", "image-agent-web-lark"].join(path.sep));
   assert.ok(context.handoff_request.verification_commands.some((command) => command.includes("configure ") && command.includes("--strict") && command.includes("--dry-run")));
   assert.ok(context.handoff_request.verification_commands.some((command) => command.includes("--level2")));
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "project_root" && set.commands.some((command) => command.includes(" status "))));
@@ -574,7 +574,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "project_root" && set.commands.some((command) => command.includes(" doctor "))));
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "project_root" && set.commands.some((command) => command.includes(" doctor ") && command.includes("--gate"))));
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "project_root" && set.commands.some((command) => command.includes(" doctor ") && command.includes("--probe-target") && command.includes("--gate"))));
-  assert.ok(context.handoff_request.command_sets.some((set) => set.name === "project_root" && set.commands.some((command) => command.includes("generated\\image-agent-web-lark"))));
+  assert.ok(context.handoff_request.command_sets.some((set) => set.name === "project_root" && set.commands.some((command) => command.includes(["generated", "image-agent-web-lark"].join(path.sep)))));
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("status ."))));
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("configure . --strict"))));
   assert.ok(context.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("configure . --strict --dry-run"))));
@@ -1589,12 +1589,12 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "project_root" && set.commands.some((command) => command.includes(generated))));
   assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "project_root" && set.commands.some((command) => command.includes("init-local") && command.includes("--context") && command.includes("--reply"))));
   assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "project_root" && set.commands.some((command) => command.includes(generated) && command.includes("--dry-run"))));
-  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("dist\\index.js status ."))));
-  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("dist\\index.js init-local . --context --reply"))));
-  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("dist\\index.js configure . --strict --dry-run"))));
-  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("dist\\index.js doctor . --gate"))));
-  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("dist\\index.js doctor . --probe-target --gate"))));
-  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("dist\\index.js verify ."))));
+  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes(["dist", "index.js"].join(path.sep) + " status ."))));
+  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes(["dist", "index.js"].join(path.sep) + " init-local . --context --reply"))));
+  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes(["dist", "index.js"].join(path.sep) + " configure . --strict --dry-run"))));
+  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes(["dist", "index.js"].join(path.sep) + " doctor . --gate"))));
+  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes(["dist", "index.js"].join(path.sep) + " doctor . --probe-target --gate"))));
+  assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes(["dist", "index.js"].join(path.sep) + " verify ."))));
   assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "generated_package_root" && set.commands.some((command) => command.includes("handoff ."))));
   assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "moved_package_root" && set.commands.some((command) => command.includes("node $env:LARK_DEPLOYER_CLI status ."))));
   assert.ok(generatedContext.handoff_request.command_sets.some((set) => set.name === "moved_package_root" && set.commands.some((command) => command.includes("node $env:LARK_DEPLOYER_CLI init-local . --context --reply"))));

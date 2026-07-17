@@ -169,9 +169,9 @@ export function buildContextTemplate(
   permissions: RequiredPermissions,
   options: { generatedPackageHint?: string; packageRootCliPath?: string; integrationMode?: IntegrationMode; hostReceiveMode?: HostReceiveMode; targetProfile?: string } = {},
 ): ContextTemplate {
-  const defaultGeneratedPackage = options.generatedPackageHint || `generated\\${slugify(service.service.name)}-lark`;
+  const defaultGeneratedPackage = options.generatedPackageHint || ["generated", `${slugify(service.service.name)}-lark`].join(path.sep);
   const commandPackageArg = quoteCommandArg(defaultGeneratedPackage);
-  const packageRootCliPath = options.packageRootCliPath || "..\\..\\dist\\index.js";
+  const packageRootCliPath = options.packageRootCliPath || ["..", "..", "dist", "index.js"].join(path.sep);
   const packageRootCli = quoteCommandArg(packageRootCliPath);
   const embedded = options.integrationMode === "embedded-adapter";
   const selfHosted = options.integrationMode === "self-hosted-runtime";

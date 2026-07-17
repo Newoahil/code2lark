@@ -391,8 +391,8 @@ function collectPathLikeMatches(value: string, output: string[]): void {
   for (const match of value.matchAll(windowsPathPattern)) {
     output.push(match[0]);
   }
-  if (/\bgenerated\\image-agent-web-lark\b/.test(value)) {
-    output.push("generated\\image-agent-web-lark");
+  if (/\bgenerated[\\\/]image-agent-web-lark\b/.test(value)) {
+    output.push(["generated", "image-agent-web-lark"].join(path.sep));
   }
 }
 
@@ -412,7 +412,7 @@ function uniquePathCandidates(candidates: string[], packagePath: string): string
 }
 
 function normalizePathCandidate(value: string): string {
-  return value.replace(/\//g, "\\").replace(/\\{2,}/g, "\\").replace(/[\\]+$/g, "").toLowerCase();
+  return value.split("/").join(path.sep).split("\\").join(path.sep).replace(new RegExp(`[${escapeRegExp(path.sep)}]+$`, "g"), "").toLowerCase();
 }
 
 function replacePackagePathStrings(value: unknown, sourcePackagePathCandidates: string[], packagePath: string): unknown {
@@ -945,7 +945,7 @@ function packageReferenceMatchesCurrent(reference: string, packagePath: string):
 }
 
 function isDefaultGeneratedPackageReference(reference: string, packagePath: string): boolean {
-  return normalizePathCandidate(reference) === "generated\\image-agent-web-lark"
+  return normalizePathCandidate(reference) === ["generated", "image-agent-web-lark"].join(path.sep).toLowerCase()
     && path.basename(packagePath).toLowerCase() === "image-agent-web-lark"
     && path.basename(path.dirname(packagePath)).toLowerCase() === "generated";
 }

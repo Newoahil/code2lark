@@ -1118,7 +1118,7 @@ function packageHintFromProjectRoot(outDir: string): string {
 }
 
 function toCliPath(value: string): string {
-  return value.replace(/\//g, "\\") || ".";
+  return value.split("/").join(path.sep) || ".";
 }
 
 function copyManifestArtifacts(workspace: string, outDir: string): void {
