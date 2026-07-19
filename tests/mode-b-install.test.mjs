@@ -28,11 +28,14 @@ test("calendar Mode B offline generation is isolated and emits the approved Lark
   assert.equal(fs.existsSync(path.join(generated, "integrations", "lark", "node_modules")), false);
   const moduleRoot = path.join(generated, "integrations", "lark");
   const moduleReadme = fs.readFileSync(path.join(moduleRoot, "README.md"), "utf8");
+  const moduleApp = fs.readFileSync(path.join(moduleRoot, "app.js"), "utf8");
   const modulePackage = readJson(path.join(moduleRoot, "package.json"));
   assert.match(moduleReadme, /Generated:/);
   assert.match(moduleReadme, /Dry-run reviewed:/);
   assert.match(moduleReadme, /Locally installed and verified:/);
   assert.match(moduleReadme, /Real Feishu verification is separate/);
+  assert.match(moduleApp, /setInterval\(\(\) => \{\}, 60 \* 60 \* 1000\)/, "long-connection host app must keep the Node process alive after start");
+  assert.match(moduleApp, /clearInterval\(keepAlive\)/, "long-connection host app must clear keepalive during shutdown");
   assert.ok(fs.existsSync(path.join(moduleRoot, ".env.example")));
   assert.equal(modulePackage.dependencies["@larksuiteoapi/node-sdk"], "1.71.1");
 

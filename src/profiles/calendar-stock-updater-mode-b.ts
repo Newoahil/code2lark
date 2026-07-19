@@ -156,9 +156,11 @@ async function main() {
   const config = loadLarkConfig();
   const host = createLarkHost({ config });
   let stopping = false;
+  const keepAlive = setInterval(() => {}, 60 * 60 * 1000);
   async function stop(signal) {
     if (stopping) return;
     stopping = true;
+    clearInterval(keepAlive);
     console.log("lark long connection stopping: " + signal);
     await host.stop();
     process.exit(0);
