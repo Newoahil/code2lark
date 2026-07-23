@@ -1,7 +1,7 @@
 # 项目进展文档
 
 初始记录：2026-07-02
-最后更新：2026-07-17
+最后更新：2026-07-21
 记录人：审计对话（Claude Code）
 
 本文档是对当前代码库和 `docs/` 现有资料的一次快照式审计总结，用于给后续开发和交接提供一个"此刻项目处于什么状态"的基准点。请在重大里程碑后更新此文档，而不是频繁小改。
@@ -9,6 +9,8 @@
 ## 1. 项目定位
 
 Lark-deployer 是一个构建时（build-time）生成器：分析一个已有服务或服务交互流程，生成可审查的服务契约（manifest / capability_map / interaction_contract / required_permissions）、飞书/Lark 交互设计、可嵌入适配器代码、权限说明、验证与交接材料。
+
+2026-07-21 方向同步：Code2Lark 后续产品形态应走 **skill-first 体验、CLI-core 内核**。CLI 继续承担可重复的 analyze / generate / install / verify / handoff；skill 负责交互式澄清目标项目、解释能力边界、选择 Mode A/B、引导演示联调、整理脱敏证据和判断外部 replay 是否保留。
 
 2026-07-02 的设计纠偏后，项目总方向以 `docs/development-charter.md` 为准：核心产物应是 `adapter/` 或目标语言宿主，而不是必须独立部署的 `bot-runtime`。当前已有 `bot-runtime` 应被保留为 standalone/reference host，用于没有现成飞书服务的用户或本地验证；对已有飞书 SDK 服务的场景，应优先生成可嵌入 adapter。2026-07-04 新增的 `self-hosted-runtime` 是第一种目标语言宿主，当前为 Python `feishu-host/`，使用 `lark-oapi` 长连接接收 `card.action.trigger`，通过 HTTP 调用 `image-agent-web`。
 
@@ -45,7 +47,7 @@ analyze → plan → context(生成给所有者的凭据请求) → generate(生
 - **image-agent-web self-hosted-runtime 已有真实飞书长连接 MVP 验证**：2026-07-07 后以 `docs/image-agent-web-mvp-verified-summary.md` 为回归锚点，确认长连接、`card.action.trigger`、Card JSON 2.0、异步 running + patch、generate / iterate / batch / refresh、失败路径已经跑通。webhook/standalone Level 2 仍按各自生成包证据记录独立管理。
 - **image-agent-web 样板分类**：The verified image-agent-web sample has completed deployment-test validation in Mode A with a Python self-hosted host module run externally, and it has also completed deployment-test validation in Mode B as a target-project embedded host module. This roadmap treats those validations as the current sample baseline and consolidates them into a reusable MVP integration package.
 - **self-hosted-runtime 本地 MVP 已作为目标形态落地**：生成物为 `generated/<target>-lark/feishu-host/`，包含 `.env.example`、`requirements.txt`、manifest-derived `spec/*.json`、Python card/client/validation/handler/app 文件、`local_contract_test.py` 和 `app.py --selfcheck`。最终本地完成证据必须在安装 Python 依赖后运行 strict verify，不能把缺依赖 WARN 当成绿灯。
-- **calendar-stock-updater 已完成结构后端纠偏后的 Mode B 本地验证与复审修正**：2026-07-16 至 2026-07-17 在全新 `C:\works\calendar-stock-updater-code2lark-replay-20260716-211227` 上保留原项目当前工作树，完成 `analyze --backend auto` 安全回退 internal、fresh plan → generate → strict verify、dry-run 零写入、`--apply` 仅写 `integrations/lark`、23 个根文件与原始项目 SHA-256 全匹配、模块 `8/8`、replay 根 `49/49`、离线门禁、托管文件冲突门禁和零漏洞审计。最终候选包为 `generated/calendar-stock-updater-codegraph-replay-20260717-0218-v6-lark`，最终脱敏交接包为 `handoff/calendar-stock-updater-codegraph-replay-20260717-0218-v7-lark`；strict verify 为 `32/0/0`，handoff warnings=`0`。生成的 calendar TypeScript 不再使用检查抑制，状态、日志和失败文本已限长与敏感模式脱敏，授权错误使用中文业务文案，generic HTTP 非 2xx 失败卡不再暴露原始响应正文，context/handoff 不再携带图片代理或 generic runtime 残留。专用 calendar Profile 只声明 `GET /api/state`、`POST /api/run`、`POST /api/stop`；正式执行和停止的确认状态留在隔离 Node 宿主。真实飞书预联调已成功建立长连接、发送起始卡并收到 `card.action.trigger`，但当前应用维度的 operator open_id 与本地白名单不匹配，操作被安全门禁拒绝；未发生正式执行，Level 2 仍未完成。
+- **calendar-stock-updater 已完成结构后端纠偏后的 Mode B 本地验证与真实飞书演示链路验证**：2026-07-16 至 2026-07-17 在全新 `C:\works\calendar-stock-updater-code2lark-replay-20260716-211227` 上保留原项目当前工作树，完成 `analyze --backend auto` 安全回退 internal、fresh plan → generate → strict verify、dry-run 零写入、`--apply` 仅写 `integrations/lark`、23 个根文件与原始项目 SHA-256 全匹配、模块 `8/8`、replay 根 `49/49`、离线门禁、托管文件冲突门禁和零漏洞审计。最终候选包为 `generated/calendar-stock-updater-codegraph-replay-20260717-0218-v6-lark`，最终脱敏交接包为 `handoff/calendar-stock-updater-codegraph-replay-20260717-0218-v7-lark`；strict verify 为 `32/0/0`，handoff warnings=`0`。生成的 calendar TypeScript 不再使用检查抑制，状态、日志和失败文本已限长与敏感模式脱敏，授权错误使用中文业务文案，generic HTTP 非 2xx 失败卡不再暴露原始响应正文，context/handoff 不再携带图片代理或 generic runtime 残留。专用 calendar Profile 只声明 `GET /api/state`、`POST /api/run`、`POST /api/stop`；正式执行和停止的确认状态留在隔离 Node 宿主。后续真实飞书联调已修正当前应用维度的 operator open_id 白名单，真实点击验证了 `calendar.status.refresh`、`calendar.task.dry-run`、`calendar.task.stop.prepare`、`calendar.task.stop.confirm`，目标最终状态为 `stopped`。可分享材料仍需整理脱敏截图、message ID 和签字证据；真实 `.env`、open_id、chat id 和日志原文不得提交。
 - 唯一一次真实目标服务联调记录：2026-07-01，临时启动 `C:\works\image-agent-web`，验证了 `GET /api/meta`、生成运行时 `/health`、本地卡片 URL 挑战等；`POST /api/generate` 之外的真实调用未覆盖（依赖外部图像/模型服务）。
 
 ## 5. 审计结论：优点
@@ -75,8 +77,8 @@ analyze → plan → context(生成给所有者的凭据请求) → generate(生
 
 ## 7. 处理记录
 
-- 2026-07-02：完成首次代码审计（本文档）；创建 `docs/development-direction.md` 记录后续开发方向；执行 `git init` 首次提交，锁定当前基线。
+- 2026-07-02：完成首次代码审计（本文档）；创建早期开发方向记录（现归档至 `docs/archive/`）；执行 `git init` 首次提交，锁定当前基线。
 - 2026-07-04：按 `docs/mvp-self-hosting-task-book.md` 推进 `self-hosted-runtime`，新增 Python `feishu-host/` 长连接宿主生成、local contract/selfcheck/strict verify 路径，并明确真实飞书 Level 2 仍是人工证据步骤。
 - 2026-07-07：冻结 `image-agent-web` self-hosted-runtime 真实飞书 MVP 为回归锚点；将 manifest 契约提升到 `0.2`；把 `analyze` 拆成 strategy-based 结构；新增 `generic_http_api` 粗粒度分析路径；新增 `generic-http-api` embedded-adapter 生成、strict verify、doctor package validation 测试路径。暂未扩展 Slack/企业微信、群 @、私聊命令、全自动部署或 skill 形态。
 - 2026-07-08：按当前路线补齐模式 A/B 产品化说明与 Mode B 迁入指南；补充 Node `server.js` 字面量路由发现，使 `calendar-stock-updater` 作为第二目标进入泛用工作流并通过 package validation。
-- 2026-07-08：补充 `docs/current-roadmap-verification-record.md` 记录最终验证证据和不重写 `master` 的提交顺序 waiver；路线任务书与相关阶段任务书已入库，`.claude/` 作为本地工具状态忽略。
+- 2026-07-08：补充路线验证记录（现归档至 `docs/archive/`）和不重写 `master` 的提交顺序 waiver；路线任务书与相关阶段任务书已入库，`.claude/` 作为本地工具状态忽略。

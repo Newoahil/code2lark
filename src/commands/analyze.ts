@@ -7,7 +7,7 @@ import { IMAGE_AGENT_WEB_PROFILE } from "../profiles/image-agent-web.js";
 import { buildCalendarProfileArtifacts, isCalendarStockUpdaterTarget } from "../profiles/calendar-stock-updater.js";
 import { collectStructuralFacts, parseStructuralBackendMode } from "../structural-analysis.js";
 import type { StructuralFacts } from "../structural-analysis.js";
-import type { CapabilityMap, InteractionContract, JsonObject, RequiredPermissions, ServiceManifest } from "../types.js";
+import type { Capability, CapabilityCandidate, CapabilityMap, EndpointCoverageStatus, InteractionContract, JsonObject, RequiredPermissions, ServiceManifest } from "../types.js";
 
 interface AnalyzeOptions {
   targetPath: string;
@@ -175,6 +175,7 @@ async function analyzeImageAgentWeb({ targetPath, baseUrl, outDir, name, structu
       endpoints,
       structural_backend: structuralFacts.backend,
       route_provenance: structuralFacts.routes,
+      structural_graph: structuralFacts.graph,
       endpoint_coverage: endpointCoverage,
       notes: [
         "MVP preset: image-agent-web FastAPI integration.",
@@ -557,6 +558,7 @@ async function analyzeCalendarStockUpdater({ targetPath, baseUrl, outDir, name, 
       endpoints,
       structural_backend: structuralFacts.backend,
       route_provenance: structuralFacts.routes,
+      structural_graph: structuralFacts.graph,
       endpoint_coverage: endpoints.map((endpoint) => {
         const capability = profileCapabilityFor(endpoint.path);
         if (endpoint.method === "GET" && endpoint.path === "/api/state") {
@@ -599,8 +601,9 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name, struct
 
   const secretFindings = scanPotentialSecrets(targetPath);
   const endpoints = endpointsFromStructuralFacts(structuralFacts);
-  const capabilityEndpoints = endpoints.filter((endpoint) => !isHealthEndpoint(endpoint));
-  const generatedCapabilityEndpoints = capabilityEndpoints.filter((endpoint) => genericEndpointStatus(endpoint) === "supported");
+  const capabilityCandidates = buildGenericCapabilityCandidates(endpoints, structuralFacts);
+  const capabilityCandidatesForMap = capabilityCandidates.filter((candidate) => candidate.coverage_status !== "supporting");
+  const supportedCapabilityCandidates = capabilityCandidates.filter((candidate) => candidate.coverage_status === "supported");
   const healthPath = endpoints.find(isHealthEndpoint)?.path || endpoints.find((endpoint) => endpoint.method === "GET")?.path || "/";
   const healthProbe = await getJsonWithTimeout(baseUrl ? `${baseUrl}${healthPath}` : "", 5000);
   const frameworks = detectFrameworks(targetPath);
@@ -633,20 +636,9 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name, struct
       endpoints,
       structural_backend: structuralFacts.backend,
       route_provenance: structuralFacts.routes,
-      endpoint_coverage: endpoints.map((endpoint) => {
-        if (isHealthEndpoint(endpoint)) {
-          return { ...endpoint, status: "supporting" as const, reason: "Used as a generic target healthcheck." };
-        }
-        const status = genericEndpointStatus(endpoint);
-        return {
-          ...endpoint,
-          status,
-          capability_id: capabilityIdForEndpoint(endpoint),
-          reason: status === "supported"
-            ? "Generic HTTP API endpoint exposed as a card-action backed capability."
-            : "Potentially destructive generic HTTP endpoint discovered for review but not generated as a direct card action.",
-        };
-      }),
+      structural_graph: structuralFacts.graph,
+      endpoint_coverage: buildGenericEndpointCoverage(capabilityCandidates),
+      capability_candidates: capabilityCandidates,
       notes: [
         "Analyzer strategy: generic_http_api.",
         "Generated manifest is a coarse HTTP API draft; review input and output schemas before production use.",
@@ -663,22 +655,7 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name, struct
     schema_version: "0.2",
     service_name: name,
     target_profile: "generic-http-api",
-    capabilities: capabilityEndpoints.map((endpoint) => ({
-      id: capabilityIdForEndpoint(endpoint),
-      name: `${endpoint.method} ${endpoint.path}`,
-      kind: endpoint.method === "GET" ? "query" : "action",
-      risk: inferGenericEndpointRisk(endpoint),
-      source: {
-        type: "http",
-        method: endpoint.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-        path: endpoint.path,
-        content_type: endpoint.method === "GET" ? "application/json" : "application/json",
-      },
-      input_schema: buildGenericInputSchema(endpoint),
-      output_schema: { type: "object", additionalProperties: true },
-      artifacts: [{ name: "response", type: "structured_data", source_field: "$", delivery: "card_json" }],
-      timeout_seconds: 30,
-    })),
+    capabilities: capabilityCandidatesForMap.map(candidateToCapability),
   };
 
   const interactionContract: InteractionContract = {
@@ -687,10 +664,10 @@ async function analyzeGenericHttpApi({ targetPath, baseUrl, outDir, name, struct
     service_name: name,
     supported_triggers: ["card_action", "http_request", "scheduled_poll", "manual_review"],
     supported_result_modes: ["interactive_card", "structured_result", "artifact", "state_update"],
-    interactions: capabilityMap.capabilities.filter((capability) => generatedCapabilityEndpoints.some((endpoint) => capability.id === capabilityIdForEndpoint(endpoint))).map((capability) => ({
-      id: `${capability.id}.card`,
-      capability_id: capability.id,
-      action_id: `${capability.id}.submit`,
+    interactions: supportedCapabilityCandidates.map((candidate) => ({
+      id: `${candidate.id}.card`,
+      capability_id: candidate.id,
+      action_id: `${candidate.id}.submit`,
       trigger: "card_action",
       input_mode: "form_action",
       result_mode: "interactive_card",
@@ -820,14 +797,101 @@ function isHealthEndpoint(endpoint: { method: string; path: string }): boolean {
   return endpoint.method === "GET" && /^\/(health|api\/health|status|api\/status)$/.test(endpoint.path);
 }
 
+function buildGenericCapabilityCandidates(endpoints: Array<{ method: string; path: string }>, facts: StructuralFacts): CapabilityCandidate[] {
+  return endpoints.flatMap((endpoint) => {
+    const method = normalizeHttpMethod(endpoint.method);
+    if (!method) return [];
+    const normalized = { method, path: endpoint.path };
+    const risk = inferGenericEndpointRisk(normalized);
+    const coverageStatus = genericEndpointStatus(normalized);
+    const evidence = facts.routes.filter((route) => route.method === method && route.path === endpoint.path);
+    return [{
+      id: capabilityIdForEndpoint(normalized),
+      name: `${method} ${endpoint.path}`,
+      method,
+      path: endpoint.path,
+      kind: method === "GET" ? "query" : "action",
+      risk,
+      source: {
+        type: "http",
+        method,
+        path: endpoint.path,
+        content_type: "application/json",
+      },
+      input_schema: buildGenericInputSchema(normalized),
+      output_schema: { type: "object", additionalProperties: true },
+      artifacts: [{ name: "response", type: "structured_data", source_field: "$", delivery: "card_json" }],
+      timeout_seconds: 30,
+      coverage_status: coverageStatus,
+      coverage_reason: genericCoverageReason(coverageStatus),
+      evidence,
+      confidence: genericCandidateConfidence(evidence),
+      questions: genericCandidateQuestions(coverageStatus),
+    }];
+  });
+}
+
+function normalizeHttpMethod(method: string): Capability["source"]["method"] | undefined {
+  const upper = method.toUpperCase();
+  if (upper === "GET" || upper === "POST" || upper === "PUT" || upper === "PATCH" || upper === "DELETE") return upper;
+  return undefined;
+}
+
+function genericEndpointStatus(endpoint: { method: string; path: string }): EndpointCoverageStatus {
+  if (isHealthEndpoint(endpoint)) return "supporting";
+  return inferGenericEndpointRisk(endpoint) === "destructive" ? "discovered_not_generated" : "supported";
+}
+
+function genericCoverageReason(status: EndpointCoverageStatus): string {
+  if (status === "supporting") return "Used as a generic target healthcheck.";
+  if (status === "supported") return "Generic HTTP API endpoint exposed as a card-action backed capability.";
+  return "Potentially destructive generic HTTP endpoint discovered for review but not generated as a direct card action.";
+}
+
+function genericCandidateConfidence(evidence: CapabilityCandidate["evidence"]): CapabilityCandidate["confidence"] {
+  if (evidence.some((item) => item.source === "codegraph" && item.file)) return "high";
+  if (evidence.length) return "medium";
+  return "low";
+}
+
+function genericCandidateQuestions(status: EndpointCoverageStatus): string[] {
+  if (status === "supporting") {
+    return ["Confirm this endpoint should remain a non-interactive support or healthcheck endpoint."];
+  }
+  if (status === "discovered_not_generated") {
+    return ["Confirm whether this destructive or privileged endpoint should ever be exposed in Lark, and require prepare/confirm if approved."];
+  }
+  return ["Confirm authentication, input schema, and response rendering before production Lark exposure."];
+}
+
+function buildGenericEndpointCoverage(candidates: CapabilityCandidate[]): NonNullable<ServiceManifest["source_scan"]["endpoint_coverage"]> {
+  return candidates.map((candidate) => ({
+    method: candidate.method,
+    path: candidate.path,
+    status: candidate.coverage_status,
+    ...(candidate.coverage_status === "supporting" ? {} : { capability_id: candidate.id }),
+    reason: candidate.coverage_reason,
+  }));
+}
+
+function candidateToCapability(candidate: CapabilityCandidate): Capability {
+  return {
+    id: candidate.id,
+    name: candidate.name,
+    kind: candidate.kind,
+    risk: candidate.risk,
+    source: candidate.source,
+    input_schema: candidate.input_schema,
+    output_schema: candidate.output_schema,
+    artifacts: candidate.artifacts,
+    timeout_seconds: candidate.timeout_seconds,
+  };
+}
+
 function inferGenericEndpointRisk(endpoint: { method: string; path: string }): "read_only" | "write" | "destructive" {
   if (endpoint.method === "GET") return "read_only";
   if (endpoint.method === "DELETE") return "destructive";
   return /(stop|delete|reset|shutdown|drop|destroy)/i.test(endpoint.path) ? "destructive" : "write";
-}
-
-function genericEndpointStatus(endpoint: { method: string; path: string }): "supported" | "discovered_not_generated" {
-  return inferGenericEndpointRisk(endpoint) === "destructive" ? "discovered_not_generated" : "supported";
 }
 
 function capabilityIdForEndpoint(endpoint: { method: string; path: string }): string {
