@@ -148,6 +148,9 @@ test("analyze --backend internal succeeds and records internal backend metadata"
     assert.equal(service.source_scan.structural_backend?.requested, "internal");
     assert.equal(service.source_scan.structural_backend?.used, "internal");
     assert.equal(service.source_scan.structural_backend?.status, "used");
+    assert.equal(service.source_scan.structural_graph?.confidence, "derived");
+    assert.ok(service.source_scan.structural_graph.nodes.some((node) => node.kind === "route" && node.name === "POST /api/internal-run"));
+    assert.ok(service.source_scan.structural_graph.edges.some((edge) => edge.kind === "references" && edge.from === "route:POST:/api/internal-run"));
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
@@ -170,6 +173,8 @@ test("analyze --backend auto falls back to internal when codegraph executable is
     assert.equal(service.source_scan.structural_backend?.used, "internal");
     assert.equal(service.source_scan.structural_backend?.status, "fallback");
     assert.match(service.source_scan.structural_backend?.reason || "", /codegraph.*(unavailable|not found|missing)/i);
+    assert.equal(service.source_scan.structural_graph?.confidence, "derived");
+    assert.ok(service.source_scan.structural_graph.nodes.some((node) => node.kind === "route" && node.source === "internal"));
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
@@ -361,6 +366,13 @@ test("analyze --backend codegraph invokes fake route query and normalizes result
       { method: "GET", path: "/api/codegraph-health", source: "codegraph", file: "server.js", line: 8 },
       { method: "POST", path: "/api/codegraph-route", source: "codegraph", file: "server.js", line: 2 },
     ]);
+    assert.deepEqual(
+      service.source_scan.structural_graph.nodes.filter((node) => node.kind === "route").map((node) => [node.id, node.name, node.source]),
+      [
+        ["route:GET:/api/codegraph-health", "GET /api/codegraph-health", "codegraph"],
+        ["route:POST:/api/codegraph-route", "POST /api/codegraph-route", "codegraph"],
+      ],
+    );
     const serializedService = JSON.stringify(service);
     assert.doesNotMatch(serializedService, /score/);
     assert.doesNotMatch(serializedService, /highlights/);
@@ -2703,6 +2715,7 @@ test("generic HTTP API target can analyze generate and verify", () => {
       "- GET /api/tickets/{ticket_id}",
       "- POST /api/items/{id}",
       "- POST /api/tickets",
+      "- DELETE /api/tickets/{ticket_id}",
     ].join("\n"),
     "utf8",
   );
@@ -2719,6 +2732,8 @@ test("generic HTTP API target can analyze generate and verify", () => {
       "async def update_item(id: str): pass",
       "@app.post(\"/api/tickets\")",
       "async def create_ticket(): pass",
+      "@app.delete(\"/api/tickets/{ticket_id}\")",
+      "async def delete_ticket(ticket_id: str): pass",
     ].join("\n"),
     "utf8",
   );
@@ -2732,12 +2747,51 @@ test("generic HTTP API target can analyze generate and verify", () => {
 
   assert.equal(serviceManifest.schema_version, "0.2");
   assert.equal(serviceManifest.source_scan.analysis_strategy, "generic_http_api");
+  const candidates = serviceManifest.source_scan.capability_candidates;
+  assert.ok(Array.isArray(candidates));
+  const healthCandidate = candidates.find((candidate) => candidate.id === "http.get.health");
+  const getTicketCandidate = candidates.find((candidate) => candidate.id === "http.get.api.tickets.ticket_id");
+  const createTicketCandidate = candidates.find((candidate) => candidate.id === "http.post.api.tickets");
+  const deleteTicketCandidate = candidates.find((candidate) => candidate.id === "http.delete.api.tickets.ticket_id");
+  assert.equal(healthCandidate.coverage_status, "supporting");
+  assert.equal(healthCandidate.risk, "read_only");
+  assert.ok(healthCandidate.questions.some((question) => /non-interactive|health/i.test(question)));
+  assert.equal(getTicketCandidate.coverage_status, "supported");
+  assert.equal(getTicketCandidate.kind, "query");
+  assert.equal(getTicketCandidate.risk, "read_only");
+  assert.ok(getTicketCandidate.evidence.some((item) => item.method === "GET" && item.path === "/api/tickets/{ticket_id}"));
+  assert.ok(["high", "medium"].includes(getTicketCandidate.confidence));
+  assert.ok(getTicketCandidate.questions.some((question) => /schema|authentication|rendering/i.test(question)));
+  assert.equal(createTicketCandidate.coverage_status, "supported");
+  assert.equal(createTicketCandidate.kind, "action");
+  assert.equal(createTicketCandidate.risk, "write");
+  assert.equal(deleteTicketCandidate.coverage_status, "discovered_not_generated");
+  assert.equal(deleteTicketCandidate.risk, "destructive");
+  assert.ok(deleteTicketCandidate.questions.some((question) => /destructive|confirm|exposed/i.test(question)));
+  for (const coverage of serviceManifest.source_scan.endpoint_coverage) {
+    const candidate = candidates.find((item) => item.method === coverage.method && item.path === coverage.path);
+    assert.ok(candidate, `missing candidate for ${coverage.method} ${coverage.path}`);
+    assert.equal(coverage.status, candidate.coverage_status);
+    assert.equal(coverage.reason, candidate.coverage_reason);
+    assert.equal(coverage.capability_id, candidate.coverage_status === "supporting" ? undefined : candidate.id);
+  }
   assert.equal(fs.existsSync(path.join(workspace, "manifest", "image_agent_meta.snapshot.json")), false);
   assert.equal(capabilityMap.schema_version, "0.2");
   assert.equal(capabilityMap.target_profile, "generic-http-api");
   assert.equal(capabilityMap.capabilities.some((capability) => capability.id.startsWith("image.")), false);
   assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.get.api.tickets.ticket_id" && capability.kind === "query"));
   assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.post.api.tickets" && capability.kind === "action"));
+  assert.ok(capabilityMap.capabilities.some((capability) => capability.id === "http.delete.api.tickets.ticket_id" && capability.risk === "destructive"));
+  assert.equal(interactionContract.interactions.some((interaction) => interaction.capability_id === "http.delete.api.tickets.ticket_id"), false);
+  for (const capability of capabilityMap.capabilities) {
+    const candidate = candidates.find((item) => item.id === capability.id);
+    assert.ok(candidate, `missing candidate for capability ${capability.id}`);
+    assert.notEqual(candidate.coverage_status, "supporting");
+  }
+  for (const interaction of interactionContract.interactions) {
+    const candidate = candidates.find((item) => item.id === interaction.capability_id);
+    assert.equal(candidate.coverage_status, "supported");
+  }
   assert.ok(capabilityMap.capabilities.some((capability) => capability.source.method === "GET"));
   assert.ok(capabilityMap.capabilities.some((capability) => capability.artifacts.some((artifact) => artifact.type === "structured_data" && artifact.delivery === "card_json")));
   assert.equal(interactionContract.schema_version, "0.2");
@@ -2853,7 +2907,7 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
   const target = path.join(temp, "calendar-stock-updater");
   const workspace = path.join(temp, "out");
   const generated = path.join(temp, "generated");
-  const secondTargetPlan = fs.readFileSync(path.join(root, "docs", "second-target-validation-plan.md"), "utf8");
+  const secondTargetPlan = fs.readFileSync(path.join(root, "docs", "archive", "second-target-validation-plan.md"), "utf8");
 
   assert.match(secondTargetPlan, /calendar-stock-updater/);
   assert.match(secondTargetPlan, /Mode A/);

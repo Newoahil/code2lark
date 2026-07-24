@@ -1,6 +1,43 @@
-# Code2Lark (Lark-deployer)
+# Code2Lark
 
-Code2Lark is a build-time generator. It analyzes an existing service and produces reviewable Feishu/Lark adapter packages. It builds and verifies integration artifacts; it does not own the target service lifecycle.
+Code2Lark is the official project name. Older package, CLI, folder, and document references may still say `lark-deployer` or `Lark-deployer`; treat those as legacy implementation names, not product positioning.
+
+Code2Lark is a build-time generator and future skill-first delivery tool. It analyzes an existing service and produces reviewable Feishu/Lark adapter packages. It builds and verifies integration artifacts; it does not own the target service lifecycle.
+
+## Product Direction
+
+The intended product shape is **skill-first experience, reusable core underneath**.
+
+- The skill is the future user-facing product entry. It should orchestrate project understanding, business clarification, Mode A/B selection, Lark workflow design, dry-run review, real Feishu demo guidance, and sanitized evidence packaging.
+- The existing CLI is not sacred as the product surface. Keep it only as a repeatable execution layer, CI harness, or temporary developer interface while it remains useful.
+- If the execution layer becomes easier to maintain as a library, MCP/tool, or direct skill capability, it may replace or subsume CLI commands.
+- Do not describe Code2Lark externally as CLI-first anymore. The current direction is skill-first with a verifiable core.
+
+External code-understanding skills should be reused and adapted instead of rebuilding generic project analysis from scratch. Code2Lark should focus on converting project capabilities into safe, operable, auditable Lark workflows.
+
+Recommended ownership split:
+
+```text
+codegraph / understand-anything / project-analysis skills
+  -> project facts: files, entrypoints, routes, commands, dependencies, env, side effects
+
+Code2Lark
+  -> business mapping, Lark card/workflow design, safety policy, Mode A/B delivery, install/verify/handoff evidence
+```
+
+When adapting an external analysis skill, require structured output suitable for generation: entrypoints, routes, commands, side-effect labels, required env, candidate operations, risk level, and clarification questions.
+
+## Naming And Workspace Migration
+
+The repository folder may still be `C:\works\Lark-deployer` during active sessions. A future local rename to `C:\works\code2lark` is acceptable, but do it deliberately:
+
+1. Preserve or commit important current changes first.
+2. Create a session handoff or record the session id before renaming, because project-path based session discovery may not automatically find old sessions from the new path.
+3. Rename the folder outside active commands.
+4. Update legacy references in `package.json`, README, docs, scripts, and generated examples as a separate verified change.
+5. Run `npm run build` and `npm test` after internal name changes.
+
+Do not mix directory/package renaming with feature work or artifact cleanup.
 
 ## Architecture
 
@@ -45,6 +82,8 @@ codegraph query route --kind route --path <repo> --json
 
 Code2Lark must never install codegraph or run codegraph `init`, `sync`, reindex, or index-rebuild operations. External results are normalized at the boundary; profile and downstream code must not depend on the external schema.
 
+Longer term, `analyze` should be treated as the most replaceable part of the old CLI. Prefer cherry-picking, forking, or wrapping proven open-source project-analysis skills when they can produce the structured facts Code2Lark needs. Keep Code2Lark-specific analysis only where it maps facts into Lark workflows, safety controls, and delivery contracts.
+
 ## Interaction Profiles
 
 Target-specific mapping lives in `src/profiles/`:
@@ -77,6 +116,16 @@ The current calendar correction contract is strict:
 
 The generated package remains the source of truth. Do not replace generated directories manually; use the `install` command.
 
+Current useful external replay for calendar demonstration and regression:
+
+```text
+C:\works\calendar-stock-updater-code2lark-replay-20260716-211227
+```
+
+This replay contains the current `integrations/lark` module, local private `.env`, and debug evidence. Do not delete or rewrite it without explicit approval.
+
+Older calendar replay copies such as `calendar-stock-updater-c2l-replay`, `calendar-stock-updater-mode-b-corrected-replay`, and `calendar-stock-updater-mode-b-replay` are cleanup candidates only after confirming they contain no unique `.env`, evidence, or comparison value.
+
 ```powershell
 node dist/index.js generate <analysis-workspace> --out <generated-package> --mode embedded-adapter --host-mode embedded-long-connection
 node dist/index.js verify <generated-package> --mode embedded-adapter --host-mode embedded-long-connection --strict
@@ -107,7 +156,7 @@ Card payloads use JSON 2.0 (`schema: "2.0"`, `body.elements`, callback behaviors
 - `docs/calendar-stock-updater-mode-b-correction-task-book.md`: current calendar Mode B correction contract.
 - `docs/capability-validation-matrix.md`: validation fact matrix.
 - `docs/project-status.md`: current project status and evidence summary.
-- `docs/calendar-stock-updater-mode-b-long-connection-task-book.md`: superseded historical plan; do not use it as the active contract.
+- `docs/archive/calendar-stock-updater-mode-b-long-connection-task-book.md`: superseded historical plan; do not use it as the active contract.
 
 When documents conflict, follow the two current correction taskbooks above.
 

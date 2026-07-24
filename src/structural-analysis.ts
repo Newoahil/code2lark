@@ -28,9 +28,37 @@ export interface StructuralRouteFact {
   line?: number;
 }
 
+export type StructuralGraphNodeKind = "route" | "source";
+export type StructuralGraphEdgeKind = "references";
+export type StructuralGraphConfidence = "derived";
+
+export interface StructuralGraphNode {
+  id: string;
+  kind: StructuralGraphNodeKind;
+  name: string;
+  source: StructuralRouteSource;
+  file?: string;
+  line?: number;
+}
+
+export interface StructuralGraphEdge {
+  from: string;
+  to: string;
+  kind: StructuralGraphEdgeKind;
+  source: StructuralRouteSource;
+}
+
+export interface StructuralGraphFacts {
+  nodes: StructuralGraphNode[];
+  edges: StructuralGraphEdge[];
+  confidence: StructuralGraphConfidence;
+  notes: string[];
+}
+
 export interface StructuralFacts {
   backend: StructuralBackendMetadata;
   routes: StructuralRouteFact[];
+  graph: StructuralGraphFacts;
 }
 
 export type StructuralCollectionResult = StructuralFacts;
@@ -97,6 +125,7 @@ export async function collectStructuralFacts(
       reason: external.reason,
     },
     routes: fallback.routes,
+    graph: buildStructuralGraph(fallback.routes),
   };
 }
 
@@ -106,6 +135,7 @@ async function collectInternalFacts(
   collectInternalEndpoints: CollectInternalEndpoints,
 ): Promise<StructuralCollectionResult> {
   const inputs = await collectInternalEndpoints();
+  const routes = dedupeRoutes(inputs.map((route) => normalizeRoute(route, "internal", undefined)).filter((route): route is StructuralRouteFact => route !== undefined));
   return {
     backend: {
       requested,
@@ -113,7 +143,8 @@ async function collectInternalFacts(
       status: "used",
       checked_at: checkedAt,
     },
-    routes: dedupeRoutes(inputs.map((route) => normalizeRoute(route, "internal", undefined)).filter((route): route is StructuralRouteFact => route !== undefined)),
+    routes,
+    graph: buildStructuralGraph(routes),
   };
 }
 
@@ -153,7 +184,65 @@ async function tryCollectCodegraphFacts(targetPath: string, requested: Structura
       index_path: status.indexPath,
     },
     routes,
+    graph: buildStructuralGraph(routes),
   };
+}
+
+function buildStructuralGraph(routes: StructuralRouteFact[]): StructuralGraphFacts {
+  const nodes: StructuralGraphNode[] = [];
+  const edges: StructuralGraphEdge[] = [];
+  const seenNodes = new Set<string>();
+  const seenEdges = new Set<string>();
+
+  for (const route of routes) {
+    const routeNode: StructuralGraphNode = {
+      id: routeNodeId(route),
+      kind: "route",
+      name: `${route.method} ${route.path}`,
+      source: route.source,
+      ...(route.file ? { file: route.file } : {}),
+      ...(route.line !== undefined ? { line: route.line } : {}),
+    };
+    pushNode(nodes, seenNodes, routeNode);
+
+    const sourceNode: StructuralGraphNode = {
+      id: `source:${route.source}`,
+      kind: "source",
+      name: route.source,
+      source: route.source,
+    };
+    pushNode(nodes, seenNodes, sourceNode);
+    pushEdge(edges, seenEdges, {
+      from: routeNode.id,
+      to: sourceNode.id,
+      kind: "references",
+      source: route.source,
+    });
+  }
+
+  return {
+    nodes,
+    edges,
+    confidence: "derived",
+    notes: ["Structural graph is derived from normalized route facts; it is evidence for review, not final business intent."],
+  };
+}
+
+function routeNodeId(route: StructuralRouteFact): string {
+  return `route:${route.method}:${route.path}`;
+}
+
+function pushNode(nodes: StructuralGraphNode[], seen: Set<string>, node: StructuralGraphNode): void {
+  if (seen.has(node.id)) return;
+  seen.add(node.id);
+  nodes.push(node);
+}
+
+function pushEdge(edges: StructuralGraphEdge[], seen: Set<string>, edge: StructuralGraphEdge): void {
+  const key = `${edge.from}\0${edge.to}\0${edge.kind}\0${edge.source}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  edges.push(edge);
 }
 
 function validateSupportedNodeMajor(): string {

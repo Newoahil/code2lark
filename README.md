@@ -117,15 +117,16 @@ node dist/index.js install generated\calendar-stock-updater-lark --target C:\pat
 
 #### calendar-stock-updater 当前状态
 
-当前 calendar Mode B 路线已经完成本地工程闭环：
+当前 calendar Mode B 路线已经完成本地工程闭环和真实飞书演示链路验证：
 
 - 原始 `calendar-stock-updater` 项目保持只读，没有修改根 `package.json`、启动脚本、Docker、业务代码或 Web UI；
 - 安装验证使用独立 replay，只通过 `install --apply` 写入 `integrations/lark/**`；
 - 目标调用仍严格限制为 `GET /api/state`、`POST /api/run` 和 `POST /api/stop`；
 - strict verify 为 32 PASS / 0 WARN / 0 FAIL；Code2Lark 完整测试 41/41、replay 根测试 49/49、安装模块测试 8/8；
-- 真实飞书长连接已成功建立并发送起始卡，真实 `card.action.trigger` 也已到达宿主；
-- 当前真实联调阻塞在 `ALLOWED_OPERATOR_OPEN_IDS`：配置值与回调中的当前应用维度 `operator.open_id` 不一致，因此安全门禁按预期拒绝了操作；
-- 真实 Level 2 尚未完成，仍需修正白名单后重新验证刷新、普通预演、停止流程，并补齐截图、message ID、脱敏日志和签字证据。
+- 真实飞书长连接已成功建立并发送起始卡，真实 `card.action.trigger` 已到达宿主；
+- `ALLOWED_OPERATOR_OPEN_IDS` 已在本地私密配置中按当前应用维度 open_id 修正；
+- 真实飞书点击已验证刷新、普通预演、停止准备和停止确认链路，宿主审计日志记录 `calendar.status.refresh`、`calendar.task.dry-run`、`calendar.task.stop.prepare`、`calendar.task.stop.confirm` received/succeeded，目标最终状态为 `stopped`；
+- 当前剩余项是整理可分享的脱敏截图、message ID 和签字证据；真实 `.env`、open_id、chat id 和日志原文不得提交。
 
 安装模块的本地配置位于目标 replay 的 `integrations/lark/.env`。不要把真实值提交到 Git：
 

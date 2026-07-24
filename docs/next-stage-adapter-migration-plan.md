@@ -234,7 +234,7 @@ lark-deployer verify <generated-package> \
 
 - `README.md`；
 - `docs/project-status.md`；
-- `docs/development-direction.md`；
+- `docs/archive/development-direction.md`；
 - `docs/mvp-1a-image-agent-web.md` 中与生成 runtime 相关的表述；
 - 交接文档中增加 embedded adapter 路径。
 

@@ -1,0 +1,828 @@
+﻿[
+    {
+        "title":  "消息卡片概述",
+        "url":  "https://open.feishu.cn/document/common-capabilities/message-card/introduction-of-message-cards.md",
+        "file":  "raw/common-capabilities__message-card__introduction-of-message-cards.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "自定义机器人使用指南",
+        "url":  "https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot.md",
+        "file":  "raw/client-docs__bot-v3__add-custom-bot.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "发送消息",
+        "url":  "https://open.feishu.cn/document/server-docs/im-v1/message/create.md",
+        "file":  "raw/server-docs__im-v1__message__create.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "发送消息内容结构",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/im-v1/message/create_json.md",
+        "file":  "raw/im-v1__message__create_json.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "飞书卡片概述",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-overview.md",
+        "file":  "raw/feishu-cards__feishu-card-overview.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "飞书卡片搭建工具概述",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/feishu-cardkit-overview.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__feishu-cardkit-overview.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "卡片 JSON 2.0 结构",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-structure.md",
+        "file":  "raw/feishu-cards__card-json-v2-structure.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "卡片 JSON 1.0 结构",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-structure.md",
+        "file":  "raw/feishu-cards__card-json-structure.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "卡片 JSON 2.0 版本组件概述",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/component-json-v2-overview.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__component-json-v2-overview.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "表格组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/table.md",
+        "file":  "raw/feishu-cards__card-components__content-components__table.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "表格组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/table.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__table.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "图表组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/chart.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__chart.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "富文本组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/rich-text.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__rich-text.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "折叠面板",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/containers/collapsible-panel.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__containers__collapsible-panel.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "流式更新卡片",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/streaming-updates-openapi-overview.md",
+        "file":  "raw/feishu-cards__streaming-updates-openapi-overview.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "发送卡片方式",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/send-feishu-card.md",
+        "file":  "raw/feishu-cards__send-feishu-card.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "更新卡片",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/update-feishu-card.md",
+        "file":  "raw/feishu-cards__update-feishu-card.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "卡片回传交互回调",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-callback-communication.md",
+        "file":  "raw/feishu-cards__card-callback-communication.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "处理卡片回调",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/handle-card-callbacks.md",
+        "file":  "raw/feishu-cards__handle-card-callbacks.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "卡片 JSON 中配置卡片交互",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/configuring-card-interactions.md",
+        "file":  "raw/feishu-cards__configuring-card-interactions.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "三分钟快速开发",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/uMzNwEjLzcDMx4yM3ATM/develop-a-card-interactive-bot/introduction.md",
+        "file":  "raw/develop-a-card-interactive-bot__introduction.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "飞书卡片资源概述",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/feishu-card-resource-overview.md",
+        "file":  "raw/cardkit-v1__feishu-card-resource-overview.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "创建卡片实体",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/create.md",
+        "file":  "raw/cardkit-v1__card__create.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "更新卡片配置",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/settings.md",
+        "file":  "raw/cardkit-v1__card__settings.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "流式更新文本",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/content.md",
+        "file":  "raw/cardkit-v1__card-element__content.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "颜色枚举值",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/enumerations-for-fields-related-to-color.md",
+        "file":  "raw/feishu-cards__enumerations-for-fields-related-to-color.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "图标库",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/enumerations-for-icons.md",
+        "file":  "raw/feishu-cards__enumerations-for-icons.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "上传图片",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/image/create.md",
+        "file":  "raw/reference__im-v1__image__create.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "上传文件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/file/create.md",
+        "file":  "raw/reference__im-v1__file__create.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "表情文案说明",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-reaction/emojis-introduce.md",
+        "file":  "raw/reference__im-v1__message-reaction__emojis-introduce.md",
+        "depth":  0,
+        "status":  "ok"
+    },
+    {
+        "title":  "飞书卡片更新说明",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-release-notes.md",
+        "file":  "raw/feishu-cards__feishu-card-release-notes.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "使用自定义机器人发送飞书卡片",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/quick-start/send-message-cards-with-custom-bot.md",
+        "file":  "raw/feishu-cards__quick-start__send-message-cards-with-custom-bot.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "撤回消息",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/delete.md",
+        "file":  "raw/reference__im-v1__message__delete.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "发送消息",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create.md",
+        "file":  "raw/reference__im-v1__message__create.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "预览与发布卡片",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/preview-and-publish-cards.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__preview-and-publish-cards.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "管理卡片权限",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/manage-card-template.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__manage-card-template.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "图表组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/chart.md",
+        "file":  "raw/feishu-cards__card-components__content-components__chart.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "卡片 JSON 2.0 版本更新说明",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-breaking-changes-release-notes.md",
+        "file":  "raw/feishu-cards__card-json-v2-breaking-changes-release-notes.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "回复消息",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply.md",
+        "file":  "raw/reference__im-v1__message__reply.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "编辑消息",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/update.md",
+        "file":  "raw/reference__im-v1__message__update.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "富文本组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/rich-text.md",
+        "file":  "raw/feishu-cards__card-components__content-components__rich-text.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "配置卡片变量",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/configure-card-variables.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__configure-card-variables.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "使用指定应用发送飞书卡片",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/quick-start/send-feishu-cards-with-app-bots.md",
+        "file":  "raw/feishu-cards__quick-start__send-feishu-cards-with-app-bots.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "链接预览开发指南",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/development-link-preview/link-preview-development-guide.md",
+        "file":  "raw/development-link-preview__link-preview-development-guide.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "按钮",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/button.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__components__button.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "搭建工具新版卡片说明",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/cardkit-upgraded-version-card-release-notes.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__cardkit-upgraded-version-card-release-notes.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "构建卡片内容",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/build-card-content.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__build-card-content.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "配置卡片多语言",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/configure-card-languages.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__configure-card-languages.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "富文本",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/markdown.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__components__markdown.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "添加自定义交互事件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/add-interactive-events.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__add-interactive-events.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "导入导出卡片",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/import-and-export-cards.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__import-and-export-cards.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "为卡片分组",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/group-cards.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__group-cards.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "配置卡片多语言",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/configure-multi-language-content.md",
+        "file":  "raw/feishu-cards__configure-multi-language-content.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "标题组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/title.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__title.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "普通文本组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/plain-text.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__plain-text.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "标题组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/title.md",
+        "file":  "raw/feishu-cards__card-components__content-components__title.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "卡片 JSON 1.0 版本组件概述",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/component-overview.md",
+        "file":  "raw/feishu-cards__card-components__component-overview.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "普通文本组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/plain-text.md",
+        "file":  "raw/feishu-cards__card-components__content-components__plain-text.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "分栏组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/containers/column-set.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__containers__column-set.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "循环容器",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/recycling-container.md",
+        "file":  "raw/feishu-cards__card-components__containers__recycling-container.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "表单容器",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/containers/form-container.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__containers__form-container.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "交互容器",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/containers/interactive-container.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__containers__interactive-container.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "图片组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/image.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__image.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "多图混排组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/multi-image-laylout.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__multi-image-laylout.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "人员组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/user-profile.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__user-profile.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "人员列表组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/user-list.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__user-list.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "分割线组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/divider.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__divider.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "输入框组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/input.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__input.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "按钮组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/button.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__button.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "折叠按钮组组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/overflow.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__overflow.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "下拉选择-单选组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/single-select-dropdown-menu.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__single-select-dropdown-menu.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "下拉选择-多选组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/multi-select-dropdown-menu.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__multi-select-dropdown-menu.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "人员选择-单选组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/single-select-user-picker.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__single-select-user-picker.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "人员选择-多选组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/multi-select-user-picker.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__multi-select-user-picker.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "日期选择器组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/date-picker.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__date-picker.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "时间选择器组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/time-selector.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__time-selector.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "日期时间选择器组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/date-time-picker.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__date-time-picker.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "多图选择组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/image-picker.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__image-picker.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "勾选器组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/checker.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__interactive-components__checker.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "新增组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/create.md",
+        "file":  "raw/cardkit-v1__card-element__create.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "音频",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/audio.md",
+        "file":  "raw/feishu-cards__card-json-v2-components__content-components__audio.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "折叠面板",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/collapsible-panel.md",
+        "file":  "raw/feishu-cards__card-components__containers__collapsible-panel.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "更新已发送的消息卡片",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/patch.md",
+        "file":  "raw/reference__im-v1__message__patch.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "全量更新卡片实体",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/update.md",
+        "file":  "raw/cardkit-v1__card__update.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "局部更新卡片实体",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/batch_update.md",
+        "file":  "raw/cardkit-v1__card__batch_update.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "更新组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/update.md",
+        "file":  "raw/cardkit-v1__card-element__update.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "更新组件属性",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/patch.md",
+        "file":  "raw/cardkit-v1__card-element__patch.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "删除组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/delete.md",
+        "file":  "raw/cardkit-v1__card-element__delete.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "示例代码解释",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/uMzNwEjLzcDMx4yM3ATM/develop-a-card-interactive-bot/explanation-of-example-code.md",
+        "file":  "raw/develop-a-card-interactive-bot__explanation-of-example-code.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "应用配置说明",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/uMzNwEjLzcDMx4yM3ATM/develop-a-card-interactive-bot/faqs.md",
+        "file":  "raw/develop-a-card-interactive-bot__faqs.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "卡片搭建说明",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/uMzNwEjLzcDMx4yM3ATM/develop-a-card-interactive-bot/card-building-steps.md",
+        "file":  "raw/develop-a-card-interactive-bot__card-building-steps.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "分栏组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/column-set.md",
+        "file":  "raw/feishu-cards__card-components__containers__column-set.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "交互容器",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/interactive-container.md",
+        "file":  "raw/feishu-cards__card-components__containers__interactive-container.md",
+        "depth":  1,
+        "status":  "ok"
+    },
+    {
+        "title":  "表单容器",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/form-container.md",
+        "file":  "raw/feishu-cards__card-components__containers__form-container.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "备注组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/note.md",
+        "file":  "raw/feishu-cards__card-components__content-components__note.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "表格",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/table.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__components__table.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "图表",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/chart.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__components__chart.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "日期选择器组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/date-picker.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__date-picker.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "时间选择器组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/time-selector.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__time-selector.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "日期时间选择器组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/date-time-picker.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__date-time-picker.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "折叠按钮组组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/overflow.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__overflow.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "人员选择-单选组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/single-select-user-picker.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__single-select-user-picker.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "人员选择-多选组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/multi-select-user-picker.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__multi-select-user-picker.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "下拉选择-单选组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/single-select-dropdown-menu.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__single-select-dropdown-menu.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "下拉选择-多选组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/multi-select-dropdown-menu.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__multi-select-dropdown-menu.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "多图混排组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/multi-image-laylout.md",
+        "file":  "raw/feishu-cards__card-components__content-components__multi-image-laylout.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "典型案例",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/development-link-preview/typical-case.md",
+        "file":  "raw/development-link-preview__typical-case.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "拉取链接预览数据",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/development-link-preview/pull-link-preview-data-callback-structure.md",
+        "file":  "raw/development-link-preview__pull-link-preview-data-callback-structure.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "快速入门",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/development-link-preview/quick-start.md",
+        "file":  "raw/development-link-preview__quick-start.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "图片组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/image.md",
+        "file":  "raw/feishu-cards__card-components__content-components__image.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "人员组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/user-profile.md",
+        "file":  "raw/feishu-cards__card-components__content-components__user-profile.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "人员列表组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/user-list.md",
+        "file":  "raw/feishu-cards__card-components__content-components__user-list.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "分割线组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/divider.md",
+        "file":  "raw/feishu-cards__card-components__content-components__divider.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "输入框组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/input.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__input.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "按钮组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/button.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__button.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "多图选择组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/image-picker.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__image-picker.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "勾选器组件",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/checker.md",
+        "file":  "raw/feishu-cards__card-components__interactive-components__checker.md",
+        "depth":  2,
+        "status":  "ok"
+    },
+    {
+        "title":  "图片",
+        "url":  "https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/image.md",
+        "file":  "raw/feishu-cards__feishu-card-cardkit__components__image.md",
+        "depth":  2,
+        "status":  "ok"
+    }
+]

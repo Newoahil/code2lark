@@ -1,8 +1,31 @@
-import type { StructuralBackendMetadata, StructuralRouteFact } from "./structural-analysis.js";
+import type { StructuralBackendMetadata, StructuralGraphFacts, StructuralRouteFact } from "./structural-analysis.js";
 
 export type JsonObject = Record<string, unknown>;
 
 export type ManifestSchemaVersion = "0.2";
+
+export type EndpointCoverageStatus = "supported" | "supporting" | "discovered_not_generated";
+
+export type CapabilityCandidateConfidence = "high" | "medium" | "low";
+
+export interface CapabilityCandidate {
+  id: string;
+  name: string;
+  method: Capability["source"]["method"];
+  path: string;
+  kind: Capability["kind"];
+  risk: Capability["risk"];
+  source: Capability["source"];
+  input_schema: JsonObject;
+  output_schema: JsonObject;
+  artifacts: Capability["artifacts"];
+  timeout_seconds: number;
+  coverage_status: EndpointCoverageStatus;
+  coverage_reason: string;
+  evidence: StructuralRouteFact[];
+  confidence: CapabilityCandidateConfidence;
+  questions: string[];
+}
 
 export interface ServiceManifest {
   schema_version: ManifestSchemaVersion;
@@ -29,13 +52,15 @@ export interface ServiceManifest {
     endpoints: Array<{ method: string; path: string }>;
     structural_backend?: StructuralBackendMetadata;
     route_provenance?: StructuralRouteFact[];
+    structural_graph?: StructuralGraphFacts;
     endpoint_coverage?: Array<{
       method: string;
       path: string;
-      status: "supported" | "supporting" | "discovered_not_generated";
+      status: EndpointCoverageStatus;
       capability_id?: string;
       reason: string;
     }>;
+    capability_candidates?: CapabilityCandidate[];
     notes: string[];
     secret_findings?: Array<{
       file: string;

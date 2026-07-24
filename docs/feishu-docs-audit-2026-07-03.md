@@ -148,7 +148,7 @@ Long-connection receiving is documented as a future option.
 放：
 
 - `docs/development-charter.md`
-- `docs/development-direction-v2-adapter-first.md`
+- `docs/archive/development-direction-v2-adapter-first.md`
 - `docs/next-stage-adapter-migration-plan.md`
 
 特点：

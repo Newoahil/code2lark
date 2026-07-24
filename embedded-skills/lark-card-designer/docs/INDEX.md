@@ -1,0 +1,248 @@
+# Feishu/Lark Card Documentation
+
+Generated at: 2026-06-30 14:14:06 +08:00
+
+Downloaded documents: 118
+
+These files are raw Markdown copies from Feishu Open Platform documentation. Use manifest.json for source URLs and fetch status.
+
+## Documents
+
+- [局部更新卡片实体](raw/cardkit-v1__card__batch_update.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/batch_update.md
+- [创建卡片实体](raw/cardkit-v1__card__create.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/create.md
+- [更新卡片配置](raw/cardkit-v1__card__settings.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/settings.md
+- [全量更新卡片实体](raw/cardkit-v1__card__update.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/update.md
+- [流式更新文本](raw/cardkit-v1__card-element__content.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/content.md
+- [新增组件](raw/cardkit-v1__card-element__create.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/create.md
+- [删除组件](raw/cardkit-v1__card-element__delete.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/delete.md
+- [更新组件属性](raw/cardkit-v1__card-element__patch.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/patch.md
+- [更新组件](raw/cardkit-v1__card-element__update.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/update.md
+- [飞书卡片资源概述](raw/cardkit-v1__feishu-card-resource-overview.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/feishu-card-resource-overview.md
+- [自定义机器人使用指南](raw/client-docs__bot-v3__add-custom-bot.md)
+  Source: https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot.md
+- [消息卡片概述](raw/common-capabilities__message-card__introduction-of-message-cards.md)
+  Source: https://open.feishu.cn/document/common-capabilities/message-card/introduction-of-message-cards.md
+- [卡片搭建说明](raw/develop-a-card-interactive-bot__card-building-steps.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/uMzNwEjLzcDMx4yM3ATM/develop-a-card-interactive-bot/card-building-steps.md
+- [示例代码解释](raw/develop-a-card-interactive-bot__explanation-of-example-code.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/uMzNwEjLzcDMx4yM3ATM/develop-a-card-interactive-bot/explanation-of-example-code.md
+- [应用配置说明](raw/develop-a-card-interactive-bot__faqs.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/uMzNwEjLzcDMx4yM3ATM/develop-a-card-interactive-bot/faqs.md
+- [三分钟快速开发](raw/develop-a-card-interactive-bot__introduction.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/uMzNwEjLzcDMx4yM3ATM/develop-a-card-interactive-bot/introduction.md
+- [链接预览开发指南](raw/development-link-preview__link-preview-development-guide.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/development-link-preview/link-preview-development-guide.md
+- [拉取链接预览数据](raw/development-link-preview__pull-link-preview-data-callback-structure.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/development-link-preview/pull-link-preview-data-callback-structure.md
+- [快速入门](raw/development-link-preview__quick-start.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/development-link-preview/quick-start.md
+- [典型案例](raw/development-link-preview__typical-case.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/development-link-preview/typical-case.md
+- [卡片回传交互回调](raw/feishu-cards__card-callback-communication.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-callback-communication.md
+- [卡片 JSON 1.0 版本组件概述](raw/feishu-cards__card-components__component-overview.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/component-overview.md
+- [折叠面板](raw/feishu-cards__card-components__containers__collapsible-panel.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/collapsible-panel.md
+- [分栏组件](raw/feishu-cards__card-components__containers__column-set.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/column-set.md
+- [表单容器](raw/feishu-cards__card-components__containers__form-container.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/form-container.md
+- [交互容器](raw/feishu-cards__card-components__containers__interactive-container.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/interactive-container.md
+- [循环容器](raw/feishu-cards__card-components__containers__recycling-container.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/containers/recycling-container.md
+- [图表组件](raw/feishu-cards__card-components__content-components__chart.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/chart.md
+- [分割线组件](raw/feishu-cards__card-components__content-components__divider.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/divider.md
+- [图片组件](raw/feishu-cards__card-components__content-components__image.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/image.md
+- [多图混排组件](raw/feishu-cards__card-components__content-components__multi-image-laylout.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/multi-image-laylout.md
+- [备注组件](raw/feishu-cards__card-components__content-components__note.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/note.md
+- [普通文本组件](raw/feishu-cards__card-components__content-components__plain-text.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/plain-text.md
+- [富文本组件](raw/feishu-cards__card-components__content-components__rich-text.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/rich-text.md
+- [表格组件](raw/feishu-cards__card-components__content-components__table.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/table.md
+- [标题组件](raw/feishu-cards__card-components__content-components__title.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/title.md
+- [人员列表组件](raw/feishu-cards__card-components__content-components__user-list.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/user-list.md
+- [人员组件](raw/feishu-cards__card-components__content-components__user-profile.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/user-profile.md
+- [按钮组件](raw/feishu-cards__card-components__interactive-components__button.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/button.md
+- [勾选器组件](raw/feishu-cards__card-components__interactive-components__checker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/checker.md
+- [日期选择器组件](raw/feishu-cards__card-components__interactive-components__date-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/date-picker.md
+- [日期时间选择器组件](raw/feishu-cards__card-components__interactive-components__date-time-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/date-time-picker.md
+- [多图选择组件](raw/feishu-cards__card-components__interactive-components__image-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/image-picker.md
+- [输入框组件](raw/feishu-cards__card-components__interactive-components__input.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/input.md
+- [下拉选择-多选组件](raw/feishu-cards__card-components__interactive-components__multi-select-dropdown-menu.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/multi-select-dropdown-menu.md
+- [人员选择-多选组件](raw/feishu-cards__card-components__interactive-components__multi-select-user-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/multi-select-user-picker.md
+- [折叠按钮组组件](raw/feishu-cards__card-components__interactive-components__overflow.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/overflow.md
+- [下拉选择-单选组件](raw/feishu-cards__card-components__interactive-components__single-select-dropdown-menu.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/single-select-dropdown-menu.md
+- [人员选择-单选组件](raw/feishu-cards__card-components__interactive-components__single-select-user-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/single-select-user-picker.md
+- [时间选择器组件](raw/feishu-cards__card-components__interactive-components__time-selector.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/time-selector.md
+- [卡片 JSON 1.0 结构](raw/feishu-cards__card-json-structure.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-structure.md
+- [卡片 JSON 2.0 版本更新说明](raw/feishu-cards__card-json-v2-breaking-changes-release-notes.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-breaking-changes-release-notes.md
+- [卡片 JSON 2.0 版本组件概述](raw/feishu-cards__card-json-v2-components__component-json-v2-overview.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/component-json-v2-overview.md
+- [折叠面板](raw/feishu-cards__card-json-v2-components__containers__collapsible-panel.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/containers/collapsible-panel.md
+- [分栏组件](raw/feishu-cards__card-json-v2-components__containers__column-set.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/containers/column-set.md
+- [表单容器](raw/feishu-cards__card-json-v2-components__containers__form-container.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/containers/form-container.md
+- [交互容器](raw/feishu-cards__card-json-v2-components__containers__interactive-container.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/containers/interactive-container.md
+- [音频](raw/feishu-cards__card-json-v2-components__content-components__audio.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/audio.md
+- [图表组件](raw/feishu-cards__card-json-v2-components__content-components__chart.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/chart.md
+- [分割线组件](raw/feishu-cards__card-json-v2-components__content-components__divider.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/divider.md
+- [图片组件](raw/feishu-cards__card-json-v2-components__content-components__image.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/image.md
+- [多图混排组件](raw/feishu-cards__card-json-v2-components__content-components__multi-image-laylout.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/multi-image-laylout.md
+- [普通文本组件](raw/feishu-cards__card-json-v2-components__content-components__plain-text.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/plain-text.md
+- [富文本组件](raw/feishu-cards__card-json-v2-components__content-components__rich-text.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/rich-text.md
+- [表格组件](raw/feishu-cards__card-json-v2-components__content-components__table.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/table.md
+- [标题组件](raw/feishu-cards__card-json-v2-components__content-components__title.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/title.md
+- [人员列表组件](raw/feishu-cards__card-json-v2-components__content-components__user-list.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/user-list.md
+- [人员组件](raw/feishu-cards__card-json-v2-components__content-components__user-profile.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/user-profile.md
+- [按钮组件](raw/feishu-cards__card-json-v2-components__interactive-components__button.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/button.md
+- [勾选器组件](raw/feishu-cards__card-json-v2-components__interactive-components__checker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/checker.md
+- [日期选择器组件](raw/feishu-cards__card-json-v2-components__interactive-components__date-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/date-picker.md
+- [日期时间选择器组件](raw/feishu-cards__card-json-v2-components__interactive-components__date-time-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/date-time-picker.md
+- [多图选择组件](raw/feishu-cards__card-json-v2-components__interactive-components__image-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/image-picker.md
+- [输入框组件](raw/feishu-cards__card-json-v2-components__interactive-components__input.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/input.md
+- [下拉选择-多选组件](raw/feishu-cards__card-json-v2-components__interactive-components__multi-select-dropdown-menu.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/multi-select-dropdown-menu.md
+- [人员选择-多选组件](raw/feishu-cards__card-json-v2-components__interactive-components__multi-select-user-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/multi-select-user-picker.md
+- [折叠按钮组组件](raw/feishu-cards__card-json-v2-components__interactive-components__overflow.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/overflow.md
+- [下拉选择-单选组件](raw/feishu-cards__card-json-v2-components__interactive-components__single-select-dropdown-menu.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/single-select-dropdown-menu.md
+- [人员选择-单选组件](raw/feishu-cards__card-json-v2-components__interactive-components__single-select-user-picker.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/single-select-user-picker.md
+- [时间选择器组件](raw/feishu-cards__card-json-v2-components__interactive-components__time-selector.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/interactive-components/time-selector.md
+- [卡片 JSON 2.0 结构](raw/feishu-cards__card-json-v2-structure.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-structure.md
+- [配置卡片多语言](raw/feishu-cards__configure-multi-language-content.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/configure-multi-language-content.md
+- [卡片 JSON 中配置卡片交互](raw/feishu-cards__configuring-card-interactions.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/configuring-card-interactions.md
+- [颜色枚举值](raw/feishu-cards__enumerations-for-fields-related-to-color.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/enumerations-for-fields-related-to-color.md
+- [图标库](raw/feishu-cards__enumerations-for-icons.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/enumerations-for-icons.md
+- [添加自定义交互事件](raw/feishu-cards__feishu-card-cardkit__add-interactive-events.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/add-interactive-events.md
+- [构建卡片内容](raw/feishu-cards__feishu-card-cardkit__build-card-content.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/build-card-content.md
+- [搭建工具新版卡片说明](raw/feishu-cards__feishu-card-cardkit__cardkit-upgraded-version-card-release-notes.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/cardkit-upgraded-version-card-release-notes.md
+- [按钮](raw/feishu-cards__feishu-card-cardkit__components__button.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/button.md
+- [图表](raw/feishu-cards__feishu-card-cardkit__components__chart.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/chart.md
+- [图片](raw/feishu-cards__feishu-card-cardkit__components__image.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/image.md
+- [富文本](raw/feishu-cards__feishu-card-cardkit__components__markdown.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/markdown.md
+- [表格](raw/feishu-cards__feishu-card-cardkit__components__table.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/table.md
+- [配置卡片多语言](raw/feishu-cards__feishu-card-cardkit__configure-card-languages.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/configure-card-languages.md
+- [配置卡片变量](raw/feishu-cards__feishu-card-cardkit__configure-card-variables.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/configure-card-variables.md
+- [飞书卡片搭建工具概述](raw/feishu-cards__feishu-card-cardkit__feishu-cardkit-overview.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/feishu-cardkit-overview.md
+- [为卡片分组](raw/feishu-cards__feishu-card-cardkit__group-cards.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/group-cards.md
+- [导入导出卡片](raw/feishu-cards__feishu-card-cardkit__import-and-export-cards.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/import-and-export-cards.md
+- [管理卡片权限](raw/feishu-cards__feishu-card-cardkit__manage-card-template.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/manage-card-template.md
+- [预览与发布卡片](raw/feishu-cards__feishu-card-cardkit__preview-and-publish-cards.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/preview-and-publish-cards.md
+- [飞书卡片概述](raw/feishu-cards__feishu-card-overview.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-overview.md
+- [飞书卡片更新说明](raw/feishu-cards__feishu-card-release-notes.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-release-notes.md
+- [处理卡片回调](raw/feishu-cards__handle-card-callbacks.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/handle-card-callbacks.md
+- [使用指定应用发送飞书卡片](raw/feishu-cards__quick-start__send-feishu-cards-with-app-bots.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/quick-start/send-feishu-cards-with-app-bots.md
+- [使用自定义机器人发送飞书卡片](raw/feishu-cards__quick-start__send-message-cards-with-custom-bot.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/quick-start/send-message-cards-with-custom-bot.md
+- [发送卡片方式](raw/feishu-cards__send-feishu-card.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/send-feishu-card.md
+- [流式更新卡片](raw/feishu-cards__streaming-updates-openapi-overview.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/streaming-updates-openapi-overview.md
+- [更新卡片](raw/feishu-cards__update-feishu-card.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/update-feishu-card.md
+- [发送消息内容结构](raw/im-v1__message__create_json.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/im-v1/message/create_json.md
+- [上传文件](raw/reference__im-v1__file__create.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/file/create.md
+- [上传图片](raw/reference__im-v1__image__create.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/image/create.md
+- [发送消息](raw/reference__im-v1__message__create.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create.md
+- [撤回消息](raw/reference__im-v1__message__delete.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/delete.md
+- [更新已发送的消息卡片](raw/reference__im-v1__message__patch.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/patch.md
+- [回复消息](raw/reference__im-v1__message__reply.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply.md
+- [编辑消息](raw/reference__im-v1__message__update.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/update.md
+- [表情文案说明](raw/reference__im-v1__message-reaction__emojis-introduce.md)
+  Source: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-reaction/emojis-introduce.md
+- [发送消息](raw/server-docs__im-v1__message__create.md)
+  Source: https://open.feishu.cn/document/server-docs/im-v1/message/create.md
+
+## Failed Or Missing
