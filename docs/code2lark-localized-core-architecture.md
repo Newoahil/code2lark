@@ -32,6 +32,25 @@ The user-facing product is the Code2Lark skill. The CLI remains because it is th
 | Generator/verifier/evidence | Lark integration package, validation, audit, handoff. | Generic code intelligence beyond C2L needs. |
 | Embedded lark-card-designer | Card information architecture and interaction-state design. | Sending cards, credentials, callbacks, or runtime implementation. |
 
+## 2.1 Co-Build Body Capability
+
+Co-Build needs a stronger skill body before it needs more code generation. Retrofit starts from discovered facts; Co-Build starts from a new business intent and must keep ownership clear while the target behavior is still being designed.
+
+The Co-Build body capability is:
+
+```text
+CoBuildDesignRecord
+  activation_reason          # why this is Co-Build, not Retrofit
+  ownership_split            # business owner vs Code2Lark
+  minimal_contract           # target status / dry-run / execute / cancel / audit
+  card_action_plan           # candidate / prepare-or-dry-run / confirm / running / success / failure
+  safety_questions           # unresolved risk, auth, side-effect, or host-surface questions
+  verification_plan          # business evidence + Lark integration evidence
+  handoff_plan               # local secrets, Level 2 evidence, cleanup
+```
+
+The first Co-Build implementation step should be documentation and planning discipline, not a demo-specific generator. A demo should come after the body capability is stable enough to guide another agent without relying on ad hoc conversation memory.
+
 ## 3. OSS Localization Policy
 
 Code2Lark should not ask users to manually operate a pile of external CLIs. OSS capabilities should be localized behind adapters where they materially improve C2L's product loop.
@@ -82,6 +101,8 @@ node dist/index.js verify <generated> --strict
 The desired evolution is not to remove the CLI, but to extract reusable core APIs so both the CLI and skill orchestration use the same implementation.
 
 ## 6. First Implementation Slice
+
+This section records the prior localized-core implementation slice that introduced normalized structural graph facts. It is not the Co-Build body capability slice; the Co-Build body is captured above as `CoBuildDesignRecord` and should be validated with a demo after the playbook is stable.
 
 This branch should implement only the smallest useful code step:
 

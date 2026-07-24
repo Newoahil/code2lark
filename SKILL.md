@@ -14,7 +14,7 @@ Code2Lark is the orchestrator and safety boundary. The existing Code2Lark CLI re
 ## Mandatory Routing
 
 1. If the target project already exists and the user wants Lark access added, read `references/retrofit-workflow.md`.
-2. If the user is building a new capability and wants Lark access as part of the work, read `references/cobuild-workflow.md`.
+2. If the user is building a new capability and wants Lark access as part of the work, read `references/cobuild-workflow.md` and then `references/cobuild-playbook.md`.
 3. Before relying on code analysis or external tools, read `references/analyzer-boundary.md`.
 4. Before asking, generating, installing, or enabling actions, read `references/confirmation-policy.md` and `references/safety-and-secrets.md`.
 5. Before card layout or interaction-state decisions, delegate or reference `embedded-skills/lark-card-designer/SKILL.md`; do not duplicate its design rules here.
@@ -26,10 +26,10 @@ The skill should hide command complexity from the user while reusing the existin
 
 | Layer | Responsibility | Examples |
 |---|---|---|
-| Code2Lark Skill | Decide mode, ask questions, control risk, orchestrate commands, summarize evidence. | Retrofit/Co-Build routing, confirmation gates, handoff. |
+| Code2Lark Skill | Decide mode, ask questions, control risk, orchestrate commands, summarize evidence. | Retrofit/Co-Build routing, ownership split, confirmation gates, handoff. |
 | Code2Lark CLI | Execute repeatable operations. | `analyze`, `plan`, `generate`, `install`, `verify`, `doctor`, `evidence`, `handoff`. |
 | External analyzers | Produce optional structural facts. | CodeGraph, dependency-cruiser, ast-grep, ts-morph. |
-| lark-card-designer | Design card structure and interaction states. | Candidate, dry-run, running, success, failure, dangerous-action cards. |
+| lark-card-designer | Design card structure and interaction states. | Candidate, dry-run, confirm, running, success, failure, dangerous-action cards. |
 
 ## Package Layout
 
@@ -66,6 +66,12 @@ what_was_discovered:
 
 recommended_lark_entrypoints:
 - action, risk, required confirmation
+
+ownership_split:
+- business owner vs Code2Lark responsibilities, especially in Co-Build
+
+cobuild_design_record:
+- activation reason, ownership split, minimal contract, card/action plan, verification and handoff plan
 
 cli_execution_plan:
 - commands to run or commands already run
