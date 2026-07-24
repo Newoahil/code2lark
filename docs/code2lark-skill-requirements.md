@@ -64,6 +64,10 @@ The analyzer layer should produce facts and uncertainty, not final product decis
 3. Code2Lark owns Lark cards, action contracts, adapter glue, validation, audit, and evidence.
 4. If required business API/state endpoints do not exist, propose a minimal contract and ask before modifying business code.
 5. Keep integration files isolated unless the user explicitly approves touching host project surfaces.
+6. Record an ownership split before proposing generated files or target writes.
+7. Prefer a target contract-first shape for risky work: `status`, `dry-run`, `execute`, optional `cancel/stop`, and audit fields.
+8. Treat `prepare/confirm` as the host-local Lark card pattern unless the business owner explicitly wants target-side prepare/confirm APIs.
+9. Treat Co-Build completion as two-part evidence: business contract behavior plus Lark integration behavior.
 
 ## 6. Confirmation and Card Principles
 
@@ -122,6 +126,7 @@ The MVP skill is acceptable when all of the following are true:
 6. Local verification passes before handoff.
 7. Evidence output is useful without containing real secrets.
 8. Failure modes are explicit: missing credentials, unreachable target, unauthorized operator, stale analysis, unsupported framework, and unsafe action.
+9. Co-Build can produce a reusable synchronized-design record: ownership split, minimal contract, card/action state plan, QA gates, and handoff evidence plan.
 
 ## 10. Product Claim Boundary
 
