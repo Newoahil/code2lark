@@ -42,7 +42,9 @@ card_design_dependency:
 
 verification_and_handoff:
 - local QA gates
-- real Feishu Level 2 evidence plan, if requested
+- `integrations/lark` embedded-long-connection delivery target
+- simulator role: QA-only, not delivery
+- Level 2 ready handoff: user supplies app id/secret and configures Feishu backend events/permissions before real testing
 ```
 
 ## 3. Ownership Contract
@@ -88,10 +90,17 @@ Minimal contract record:
     { "name": "target_id", "required": true, "source": "card_form" }
   ],
   "status": { "available": true, "endpoint_or_function": "GET /api/operation/status" },
-  "dry_run": { "available": true, "side_effects": false },
-  "execute": { "available": true, "requires_host_local_confirm": true },
+  "dry_run": { "available": true, "side_effects": false, "preview_ttl_seconds": 300 },
+  "execute": {
+    "available": true,
+    "requires_host_local_confirm": true,
+    "rejects_direct_execute_without_prepare": true,
+    "idempotency_key": "confirmation_id"
+  },
   "cancel": { "available": false, "reason": "target cannot safely cancel once started" },
-  "audit": ["operator_open_id", "chat_id", "action_id", "target", "trace_id", "result"]
+  "authorization": { "operator_allowlist_required": true },
+  "terminal_state_handling": "return already_processed or existing terminal result without re-executing",
+  "audit": ["operator_open_id", "chat_id", "action_id", "confirmation_id", "target", "trace_id", "result"]
 }
 ```
 
@@ -104,11 +113,12 @@ Before implementing or generating cards, route card design through `embedded-ski
 | State | First screen must show | Primary action | Safety rule |
 |---|---|---|---|
 | Candidate | Capability name, owner, source of intent, risk, missing contract questions. | Select or refine capability. | Do not imply the action is ready if contract is incomplete. |
-| Prepare / dry-run | Planned target, inputs, expected effects, warnings, and confidence. | Confirm or edit inputs. | Calls only the target dry-run path or equivalent no-side-effect logic. |
-| Confirm | Final action summary, operator, target, irreversible effects, audit note. | Execute. | Host-local state validates explicit operator confirmation before calling target execute. |
+| Prepare / dry-run | Planned target, inputs, expected effects, warnings, confidence, preview timestamp, and confirmation ID. | Confirm or edit inputs. | Calls only the target dry-run path or equivalent no-side-effect logic; preview must come from the target dry-run result and have a bounded freshness TTL. |
+| Confirm | Final action summary, operator, target, irreversible effects, audit note, confirmation ID. | Execute. | Host-local state validates explicit operator confirmation, operator allowlist, preview freshness, and confirmation ID before calling target execute; reject direct execute bypass and duplicate confirmations. |
 | Running | Operation ID or trace ID, status, started time, safe refresh. | Refresh or cancel if supported. | Cancel appears only if target contract supports safe cancellation. |
-| Success | Result summary, affected target, timestamp, operator, next safe action. | Refresh status or start another safe run. | Do not expose secrets or raw logs. |
+| Success | Result summary, affected target, timestamp, operator, next safe action. | Refresh status or start another safe run. | Do not expose secrets or raw logs; later actions for the same confirmation return the existing terminal result without re-executing. |
 | Failure | Human-readable error, safe retry path, where to inspect logs. | Retry prepare or refresh status. | Error text must be sanitized. |
+| Already completed | Existing terminal result, original operator, timestamp, and trace ID. | Refresh status or start a new safe run. | Terminal-state checks run before expiry checks so duplicate clicks remain idempotent even after the preview TTL passes. |
 
 ## 6. Question Rules
 
@@ -128,11 +138,19 @@ Proceed without asking for read-only inspection, draft contracts, reviewable pla
 
 Generated files must remain isolated and reviewable.
 
-- Prefer a generated package first.
-- For target-project install mode, default to `integrations/lark`.
+- Default Co-Build delivery is a target-project incremental module at `integrations/lark`.
+- The module must use an embedded-long-connection host as the MVP real Feishu/Lark test entrypoint.
+- Include cards/actions, adapter boundary, local simulator tests, embedded-long-connection startup docs, `.env.example`, and Level 2 runbook content.
+- Local simulator output is a QA aid only; simulator-only output is not Co-Build complete.
+- The long-connection module must have code that consumes `.env` values such as `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, target base URL, and operator allowlist; `.env.example` without a runtime consumer is incomplete.
+- The runtime must expose a real startup path and route Feishu/Lark `card.action.trigger` events to the generated action handler. A mock card preview, static card JSON, or local simulator is not enough.
+- `lark-card-designer` output is a design handoff, not production-sendable JSON. Convert it through a runtime adapter and validate with `feishu-runtime-gates.md`.
+- Runtime validation must distinguish OpenAPI send-message `content`, JSON 2.0 callback button `behaviors`, and `card.action.trigger` callback response `card: { type: "raw", data }`.
+- Legacy or internal generated-package steps may be used for dry-run review, but the skill-facing delivery target remains `integrations/lark`.
 - Use dry-run before `install --apply`.
 - Do not modify root `package.json`, deployment files, Docker files, business routes, migrations, or production config unless explicitly approved.
 - `.env.example` may be generated; real `.env` values must remain local and uncommitted.
+- Generated demos must include repository hygiene rules, typically a `.gitignore`, that exclude `.codex/`, runtime logs, raw callbacks, local evidence, real `.env` files, and temporary Codex/agent workspaces from commits.
 
 ## 8. QA and Evidence Gates
 
@@ -142,9 +160,13 @@ Co-Build completion requires both business and Lark-side evidence. A Lark card d
 |---|---|---|
 | Business contract test | Business owner / main agent | Target tests or manual proof that status/dry-run/execute/cancel behave as promised. |
 | Adapter validation | Code2Lark | Generated adapter tests, schema checks, and action validation. |
+| Runtime card validation | Code2Lark | `verify:card` or equivalent proves send-message payload, callback button behavior, callback response card shape, and absence of design-only fields. |
 | Local card simulation | Code2Lark | Simulated card action payloads, success/failure paths, and audit event checks. |
 | Safety check | Code2Lark + business owner | Destructive/privileged/external-send actions use prepare/confirm and allowlist. |
+| Lark action boundary | Code2Lark | Direct execute without prior host-local prepare is rejected. Client-controlled confirmation signals are not authorization: `confirm: true`, client-supplied previews, plain HTTP dry-run tokens, or equivalent request fields are not proof of Lark confirmation. Confirmation provenance must be server-held, host-local, or otherwise non-forgeably bound before target execution; forged or stale previews are rejected; unauthorized operators fail closed. |
+| Idempotency | Code2Lark | Duplicate confirmations with the same confirmation ID do not call target execute twice and return a visible already-processed or terminal-state card. |
 | Handoff | Code2Lark | Integration README, `.env.example`, verification report, cleanup notes, and Level 2 evidence template. |
+| Level 2 readiness | Code2Lark | `integrations/lark` embedded-long-connection host exists, can be started locally, documents `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, operator allowlist, Feishu backend bot capability, long connection, `card.action.trigger`, permissions, and test chat setup. |
 | Real Feishu Level 2 | User/operator, when requested | Sanitized proof of card sent, clicked, callback/action received, target invoked, result updated, and audit recorded. |
 
 Use `references/evidence-handoff.md` for the shared handoff checklist and `references/safety-and-secrets.md` for secret handling.
@@ -156,6 +178,9 @@ Use `references/evidence-handoff.md` for the shared handoff checklist and `refer
 - Do not expose destructive, privileged, payment, deployment, deletion, or external-send operations as one-click actions.
 - Do not treat card visibility as authorization.
 - Do not commit or print real app secrets, open IDs, chat IDs, message IDs, raw callbacks, access tokens, debug tokens, or `.env` values.
+- Do not present simulator-only output, mock card flows, static card JSON, or unused `.env.example` files as Co-Build completion.
+- Do not use `lark-card-designer` skeletons, root-level `elements`, `{ card: cardJson }` message content wrappers, legacy button `value` alone, or raw card JSON directly under callback `card` as production runtime output.
+- Do not switch to Retrofit or hand-write an ad-hoc Lark patch when Co-Build missed its delivery target; continue Co-Build completion against the approved contract.
 - Do not claim Co-Build is complete until both the business contract and the Lark integration path have evidence.
 
 ## 10. Completion Report
@@ -171,6 +196,7 @@ business_contract:
 
 lark_entrypoints:
 - cards/actions, risk, confirmation model
+- delivery target: `integrations/lark` embedded-long-connection module
 
 ownership:
 - what business owner owns
@@ -179,9 +205,13 @@ ownership:
 verification:
 - business tests or missing business evidence
 - adapter/card simulation/verify results
+- runtime card gates: send-message payload, JSON 2.0 callback button behavior, and `card.action.trigger` callback response shape
+- Lark QA boundary evidence: direct execute bypass, duplicate confirm, unauthorized operator, stale/forged preview, and terminal-state replay
 
 handoff:
 - generated files, local-only secrets/evidence, remaining real Feishu steps
+- remaining user inputs: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, operator allowlist, Feishu backend bot capability, long connection, `card.action.trigger`, permissions, and test chat configuration
+- cleanup and repository hygiene: files to keep, files to remove, and local-only artifacts that must not be committed
 ```
 
 This report is the conversational form of a `CoBuildDesignRecord`: activation reason, ownership split, minimal target contract, card/action plan, safety questions, verification plan, and handoff plan.

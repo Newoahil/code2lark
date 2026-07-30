@@ -23,6 +23,8 @@ Generated integrations must support an operator allowlist or equivalent authoriz
 
 Visibility is not authorization: a user who can see a card is not automatically allowed to execute its action.
 
+For Lark card actions, authorization must be checked before any state-changing target call, including locally simulated actions. A forged `confirm: true` payload or direct execute request from an unlisted operator must fail closed with a sanitized denial card and no target side effect.
+
 ## Isolation
 
 Target-project install should default to an isolated directory such as:
@@ -42,6 +44,7 @@ Each action should record:
 - target operation
 - timestamp
 - received/succeeded/failed state
+- confirmation ID or idempotency key for prepare/confirm actions
 - correlation ID or task ID when available
 - sanitized error summary
 
