@@ -9,7 +9,7 @@ import { adapterCardsJs, adapterCardsTs, adapterHandlersJs, adapterHandlersTs, a
 import { calendarAdapterCardsSource, calendarAdapterHandlersSource, calendarAdapterServiceClientSource, calendarAdapterValidationSource } from "../profiles/calendar-stock-updater.js";
 import { writeCalendarModeBModule } from "../profiles/calendar-stock-updater-mode-b.js";
 import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
-import { buildDeploymentChecklist } from "./plan.js";
+import { buildContextReadiness, buildDeploymentChecklist, buildPermissionReview } from "./plan.js";
 
 export async function generateCommand(args: string[], options: Record<string, string | boolean>): Promise<void> {
   const workspaceArg = args[0];
@@ -34,7 +34,7 @@ export async function generateCommand(args: string[], options: Record<string, st
   assertSafeOutputDirectory(outDir, hasOption(options, "force"));
   const integrationMode = normalizeIntegrationMode(getStringOption(options, "mode", getStringOption(options, "integration-mode", getStringOption(options, "integrationMode", "standalone-runtime"))));
   const hostReceiveMode = normalizeHostReceiveMode(getStringOption(options, "host-mode", getStringOption(options, "hostMode", "")), integrationMode);
-  const permissions = packageRequiredPermissions(analysisPermissions, integrationMode, hostReceiveMode, targetProfile);
+  const permissions = packageRequiredPermissions(analysisPermissions, integrationMode, hostReceiveMode);
   if (usesHttpAdapter(targetProfile) && integrationMode !== "embedded-adapter") {
     throw new Error(`${targetProfile} targets currently support --mode embedded-adapter only.`);
   }
@@ -76,7 +76,9 @@ export async function generateCommand(args: string[], options: Record<string, st
   writeText(path.join(outDir, "package.json"), generatedPackageJson(service.service.name));
   writeText(path.join(outDir, "START_HERE.md"), buildStartHere(service, integrationMode, hostReceiveMode, targetProfile));
   writeText(path.join(outDir, "README.md"), buildGeneratedReadme(service, permissions, integrationMode, hostReceiveMode, targetProfile, interactions));
+  writeText(path.join(outDir, "permission_review.md"), buildPermissionReview(service, capabilities, interactions, permissions));
   writeText(path.join(outDir, "deployment_checklist.md"), buildDeploymentChecklist(service, permissions, integrationMode, hostReceiveMode, targetProfile));
+  writeText(path.join(outDir, "context_readiness.md"), buildContextReadiness(permissions));
   writeText(path.join(docsDir, "integration_guide.md"), integrationMode === "self-hosted-runtime" ? buildSelfHostedIntegrationGuide(service) : buildEmbeddedIntegrationGuide(service, permissions, hostReceiveMode, targetProfile, interactions));
   writeLevel2VerificationRecord(path.join(outDir, "level2_verification_record.md"), buildLevel2VerificationRecord(service, permissions, integrationMode, hostReceiveMode, targetProfile, interactions));
   writeJson(path.join(outDir, "level2_manual_evidence.template.json"), buildLevel2ManualEvidenceTemplate(service, targetProfile, hostReceiveMode));
@@ -1150,9 +1152,8 @@ function packageRequiredPermissions(
   permissions: RequiredPermissions,
   integrationMode: IntegrationMode,
   hostReceiveMode: HostReceiveMode,
-  targetProfile: string,
 ): RequiredPermissions {
-  if (integrationMode !== "embedded-adapter" || hostReceiveMode !== "embedded-long-connection" || targetProfile !== "generic-http-api") {
+  if (integrationMode !== "embedded-adapter" || hostReceiveMode !== "embedded-long-connection") {
     return permissions;
   }
 
@@ -1169,7 +1170,7 @@ function packageRequiredPermissions(
         security: ["long_connection"],
       })),
     manual_steps: permissions.manual_steps.map((item) => (
-      /callback handling/i.test(item)
+      /callback handling|callback URL|<PUBLIC_CALLBACK_BASE_URL>\/webhook\/card/i.test(item)
         ? "Subscribe the existing Feishu SDK long-connection host to card.action.trigger."
         : item
     )),
@@ -2460,7 +2461,7 @@ After \`adapter/\` is mounted in your existing Feishu SDK host, validate the hos
 node $env:LARK_DEPLOYER_CLI verify . --mode embedded-adapter${hostModeOption} --host-runtime-url http://127.0.0.1:3978 --simulate
 \`\`\`
 
-This checks \`/health\`${hybrid ? ", `/webhook/card`, and host-owned `card.action.trigger` long-connection evidence" : longConnection ? " on the existing host and does not require a `/webhook/card` URL-verification endpoint for long-connection delivery" : " and `/webhook/card` on the existing host"}. If \`--simulate\` is provided and your host does not expose \`/debug/simulate-card-action\`, the report records a host-owned manual-check warning instead of assuming a generated debug API.
+This checks \`/health\`${hybrid ? ", `/webhook/card`, and host-owned `card.action.trigger` long-connection evidence" : longConnection ? " on the existing host plus host-owned `card.action.trigger` long-connection evidence" : " and `/webhook/card` on the existing host"}. If \`--simulate\` is provided and your host does not expose \`/debug/simulate-card-action\`, the report records a host-owned manual-check warning instead of assuming a generated debug API.
 
 ## Real Level 2
 

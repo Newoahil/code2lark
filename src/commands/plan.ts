@@ -1,6 +1,6 @@
 import path from "node:path";
 import { readJsonFile, writeText } from "../fs-utils.js";
-import { hostModeUsesLongConnection, type HostReceiveMode } from "../host-mode.js";
+import { hostModeUsesLongConnection, hostModeUsesWebhook, type HostReceiveMode } from "../host-mode.js";
 import type { CapabilityMap, InteractionContract, RequiredPermissions, ServiceManifest } from "../types.js";
 
 export async function planCommand(args: string[]): Promise<void> {
@@ -23,7 +23,7 @@ export async function planCommand(args: string[]): Promise<void> {
     service,
     permissions,
     calendarModeB ? "embedded-adapter" : "standalone-runtime",
-    calendarModeB ? "embedded-long-connection" : "embedded-webhook",
+    calendarModeB ? "embedded-long-connection" : "standalone-runtime",
     targetProfile,
   ));
   writeText(path.join(workspace, "card_plan.md"), buildCardPlan(service, targetProfile));
@@ -32,7 +32,7 @@ export async function planCommand(args: string[]): Promise<void> {
   console.log(`Plan documents written to ${workspace}`);
 }
 
-function buildPermissionReview(
+export function buildPermissionReview(
   service: ServiceManifest,
   capabilities: CapabilityMap,
   interactions: InteractionContract,
@@ -91,27 +91,43 @@ export function buildDeploymentChecklist(
   service: ServiceManifest,
   permissions: RequiredPermissions,
   integrationMode: "embedded-adapter" | "standalone-runtime" | "self-hosted-runtime" = "standalone-runtime",
-  hostReceiveMode: HostReceiveMode = "embedded-webhook",
+  hostReceiveMode: HostReceiveMode = "embedded-long-connection",
   targetProfile = "image-agent-web",
 ): string {
   if (targetProfile === "calendar-stock-updater") {
     return buildCalendarDeploymentChecklist(service, permissions);
   }
   if (integrationMode === "embedded-adapter") {
-    const longConnection = hostModeUsesLongConnection(hostReceiveMode);
+    const usesLongConnection = hostModeUsesLongConnection(hostReceiveMode);
+    const usesWebhook = hostModeUsesWebhook(hostReceiveMode);
     const hostModeOption = hostReceiveMode === "embedded-webhook" ? "" : ` --host-mode ${hostReceiveMode}`;
     const targetBaseUrlKey = targetProfile === "generic-http-api" ? "TARGET_BASE_URL" : "IMAGE_AGENT_BASE_URL";
     const adapterHandler = targetProfile === "generic-http-api" ? "handleGenericHttpCardAction()" : "the generated adapter handler";
     const targetMetaCheck = targetProfile === "generic-http-api" ? "Confirm the target health/read endpoint selected by analysis is reachable." : "Confirm GET /api/meta returns template metadata.";
-    const secretStep = longConnection
+    const secretStep = usesWebhook && usesLongConnection
+      ? `Store APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, ${targetBaseUrlKey}, and long-connection host ownership in the existing host service's secret/config system.`
+      : usesLongConnection
       ? `Store APP_ID, APP_SECRET, TEST_CHAT_ID, ${targetBaseUrlKey}, and long-connection host ownership in the existing host service's secret/config system.`
       : `Store APP_ID, APP_SECRET, VERIFICATION_TOKEN, TEST_CHAT_ID, PUBLIC_CALLBACK_BASE_URL, and ${targetBaseUrlKey} in the existing host service's secret/config system.`;
-    const debugStep = longConnection
+    const debugStep = usesWebhook
+      ? "Set DEBUG_ACCESS_TOKEN before any host-owned debug endpoints are exposed through a public callback URL."
+      : usesLongConnection
       ? "Set DEBUG_ACCESS_TOKEN before any host-owned debug endpoints are exposed outside the trusted local environment."
-      : "Set DEBUG_ACCESS_TOKEN before any host-owned debug endpoints are exposed through a public callback URL.";
-    const ingressStep = longConnection
+      : "Set DEBUG_ACCESS_TOKEN before any host-owned debug endpoints are exposed.";
+    const ingressStep = usesWebhook && usesLongConnection
+      ? `Configure callback URL to \`<PUBLIC_CALLBACK_BASE_URL>/webhook/card\` on the existing host, subscribe the Feishu SDK host to \`card.action.trigger\`, and route both ingress paths to ${adapterHandler}.`
+      : usesLongConnection
       ? `Subscribe the existing Feishu SDK host to \`card.action.trigger\` and route events to ${adapterHandler}.`
       : "Configure callback URL to `<PUBLIC_CALLBACK_BASE_URL>/webhook/card` on the existing host.";
+    const feishuSetupSteps = usesLongConnection && !usesWebhook
+      ? permissions.manual_steps.map((item) => (
+        item.includes("<PUBLIC_CALLBACK_BASE_URL>/webhook/card")
+          ? "Enable long connection in the Feishu developer console and subscribe to `card.action.trigger`."
+          : item
+      ))
+      : usesLongConnection
+        ? permissions.manual_steps.concat("Enable long connection in the Feishu developer console and subscribe to `card.action.trigger`.")
+        : permissions.manual_steps;
     const doneChecks = targetProfile === "generic-http-api"
       ? [
           "A real Feishu test chat receives the generated generic HTTP start card from the existing host.",
@@ -138,7 +154,7 @@ export function buildDeploymentChecklist(
 
 ## Feishu/Lark App
 
-${permissions.manual_steps.map((item) => `- [ ] ${item}`).join("\n")}
+${feishuSetupSteps.map((item) => `- [ ] ${item}`).join("\n")}
 
 ## Embedded Host Environment
 
@@ -358,7 +374,7 @@ Use a process/task operations card with separate status, parameter, action, and 
 `;
 }
 
-function buildContextReadiness(permissions: RequiredPermissions): string {
+export function buildContextReadiness(permissions: RequiredPermissions): string {
   return `# Context Readiness Check
 
 Before real Feishu verification, ask the operator whether these values can be provided:

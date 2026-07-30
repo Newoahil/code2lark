@@ -986,7 +986,8 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
     "--strict",
   ]);
   assert.match(embeddedHostVerifyOutput, /embedded:host:\/health/);
-  assert.match(embeddedHostVerifyOutput, /embedded:host:\/webhook\/card:challenge/);
+  assert.match(embeddedHostVerifyOutput, /embedded:host:card\.action\.trigger/);
+  assert.doesNotMatch(embeddedHostVerifyOutput, /embedded:host:\/webhook\/card:challenge/);
   const embeddedHostVerifyReport = JSON.parse(fs.readFileSync(path.join(missingGenerated, "verification_report.json"), "utf8"));
   const embeddedHostVerifyMarkdown = fs.readFileSync(path.join(missingGenerated, "verification_report.md"), "utf8");
   assert.equal(embeddedHostVerifyReport.status, "fail");
@@ -996,7 +997,8 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(embeddedHostVerifyMarkdown, /Runtime URL: http:\/\/127\.0\.0\.1:4999/);
   assert.equal(embeddedHostVerifyReport.context.simulate, true);
   assert.ok(embeddedHostVerifyReport.checks.some((item) => item.name === "embedded:host:/health" && item.status === "fail"));
-  assert.ok(embeddedHostVerifyReport.checks.some((item) => item.name === "embedded:host:/webhook/card:challenge" && item.status === "fail"));
+  assert.ok(embeddedHostVerifyReport.checks.some((item) => item.name === "embedded:host:card.action.trigger" && item.status === "warn"));
+  assert.equal(embeddedHostVerifyReport.checks.some((item) => item.name === "embedded:host:/webhook/card:challenge"), false);
   assert.ok(embeddedHostVerifyReport.checks.some((item) => item.name === "embedded:host:/debug/simulate-card-action" && item.status === "warn"));
   const generatedIntegrationGuide = fs.readFileSync(path.join(missingGenerated, "docs", "integration_guide.md"), "utf8");
   assert.match(generatedIntegrationGuide, /--host-runtime-url/);
@@ -1015,9 +1017,13 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "adapter", "handlers.ts")));
   assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "docs", "integration_guide.md")));
   assert.equal(fs.existsSync(path.join(embeddedOnlyGenerated, "bot-runtime")), false);
+  assert.ok(fs.existsSync(path.join(embeddedOnlyGenerated, "sidecar-long-connection", "README.md")));
+  const embeddedOnlySummary = JSON.parse(fs.readFileSync(path.join(embeddedOnlyGenerated, "generation_summary.json"), "utf8"));
+  assert.equal(embeddedOnlySummary.host_receive_mode, "embedded-long-connection");
   const embeddedOnlyCards = fs.readFileSync(path.join(embeddedOnlyGenerated, "adapter", "cards.ts"), "utf8");
-  assert.match(embeddedOnlyCards, /const useJson2Card = false;/);
-  assert.match(embeddedOnlyCards, /elements:\s*\[/);
+  assert.match(embeddedOnlyCards, /schema:\s*["']2\.0["']/);
+  assert.match(embeddedOnlyCards, /body:\s*\{\s*elements/);
+  assert.match(embeddedOnlyCards, /behaviors:\s*\[\{\s*type:\s*["']callback["'],\s*value:\s*\{\s*action:/);
   const embeddedOnlyStartHere = fs.readFileSync(path.join(embeddedOnlyGenerated, "START_HERE.md"), "utf8");
   const embeddedOnlyReadme = fs.readFileSync(path.join(embeddedOnlyGenerated, "README.md"), "utf8");
   assert.match(embeddedOnlyStartHere, /does not include `bot-runtime\/`/);
@@ -1026,13 +1032,18 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.doesNotMatch(embeddedOnlyStartHere, /npm start/);
   assert.match(embeddedOnlyReadme, /does not include a standalone `bot-runtime\/` host/);
   assert.match(embeddedOnlyReadme, /What The Embedded Adapter Does/);
+  assert.match(embeddedOnlyReadme, /Host receive mode: embedded-long-connection/);
+  assert.match(embeddedOnlyReadme, /card\.action\.trigger/);
+  assert.doesNotMatch(embeddedOnlyReadme, /PUBLIC_CALLBACK_BASE_URL.*required/i);
   assert.match(embeddedOnlyReadme, /--host-runtime-url/);
   assert.doesNotMatch(embeddedOnlyReadme, /## What This Runtime Does/);
   assert.doesNotMatch(embeddedOnlyReadme, /cd bot-runtime/);
   assert.doesNotMatch(embeddedOnlyReadme, /npm start/);
   const embeddedOnlyChecklist = fs.readFileSync(path.join(embeddedOnlyGenerated, "deployment_checklist.md"), "utf8");
+  const embeddedOnlyPermissionReview = fs.readFileSync(path.join(embeddedOnlyGenerated, "permission_review.md"), "utf8");
+  const embeddedOnlyContextReadiness = fs.readFileSync(path.join(embeddedOnlyGenerated, "context_readiness.md"), "utf8");
   assert.match(embeddedOnlyChecklist, /Embedded Host Environment/);
-  assert.match(embeddedOnlyChecklist, /--mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate/);
+  assert.match(embeddedOnlyChecklist, /--mode embedded-adapter --host-mode embedded-long-connection --host-runtime-url <host_runtime_url> --simulate/);
   assert.doesNotMatch(embeddedOnlyChecklist, /Run npm install in bot-runtime/);
   assert.doesNotMatch(embeddedOnlyChecklist, /Run npm start/);
   assert.doesNotMatch(embeddedOnlyChecklist, /--runtime-url <bot_runtime_url>/);
@@ -1042,29 +1053,60 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const embeddedOnlyReplyTemplate = JSON.parse(fs.readFileSync(path.join(embeddedOnlyGenerated, "feishu_context.reply.template.json"), "utf8"));
   const embeddedOnlyReplyMarkdown = fs.readFileSync(path.join(embeddedOnlyGenerated, "feishu_context.reply.template.md"), "utf8");
   const embeddedOnlyCommands = embeddedOnlyContext.handoff_request.command_sets.flatMap((set) => set.commands);
-  assert.ok(embeddedOnlyCommands.some((command) => command.includes("verify . --mode embedded-adapter --strict")));
-  assert.ok(embeddedOnlyCommands.some((command) => command.includes("verify . --mode embedded-adapter --host-runtime-url http://127.0.0.1:3978 --simulate")));
-  assert.ok(embeddedOnlyCommands.some((command) => command.includes("doctor . --mode embedded-adapter")));
+  assert.equal(embeddedOnlyContext.host_receive_mode, "embedded-long-connection");
+  assert.ok(embeddedOnlyCommands.some((command) => command.includes("verify . --mode embedded-adapter --host-mode embedded-long-connection --strict")));
+  assert.ok(embeddedOnlyCommands.some((command) => command.includes("verify . --mode embedded-adapter --host-mode embedded-long-connection --host-runtime-url http://127.0.0.1:3978 --simulate")));
+  assert.ok(embeddedOnlyCommands.some((command) => command.includes("doctor . --mode embedded-adapter --host-mode embedded-long-connection")));
   assert.equal(embeddedOnlyCommands.some((command) => command.includes("verify . --runtime-url")), false);
+  assert.match(embeddedOnlyContextMarkdown, /long connection/i);
+  assert.doesNotMatch(embeddedOnlyContextMarkdown, /\/webhook\/card/);
+  assert.doesNotMatch(embeddedOnlyContextMarkdown, /- VERIFICATION_TOKEN/);
+  assert.doesNotMatch(embeddedOnlyContextMarkdown, /- PUBLIC_CALLBACK_BASE_URL/);
   assert.doesNotMatch(embeddedOnlyContextMarkdown, /bot-runtime\.env/);
   assert.doesNotMatch(embeddedOnlyContextMarkdown, /verify --level2/);
+  assert.doesNotMatch(embeddedOnlyContextRequest, /\/webhook\/card/);
+  assert.doesNotMatch(embeddedOnlyContextRequest, /- VERIFICATION_TOKEN/);
+  assert.doesNotMatch(embeddedOnlyContextRequest, /- PUBLIC_CALLBACK_BASE_URL/);
   assert.doesNotMatch(embeddedOnlyContextRequest, /bot-runtime\.env/);
   assert.doesNotMatch(embeddedOnlyContextRequest, /verify --level2/);
+  for (const [name, content] of [
+    ["README.md", embeddedOnlyReadme],
+    ["permission_review.md", embeddedOnlyPermissionReview],
+    ["deployment_checklist.md", embeddedOnlyChecklist],
+    ["context_readiness.md", embeddedOnlyContextReadiness],
+    ["feishu_context.request.md", embeddedOnlyContextRequest],
+    ["feishu_context.reply.template.md", embeddedOnlyReplyMarkdown],
+  ]) {
+    assert.doesNotMatch(content, /PUBLIC_CALLBACK_BASE_URL|VERIFICATION_TOKEN|\/webhook\/card/, `${name} must not require webhook context for embedded-long-connection default`);
+  }
   assert.equal(embeddedOnlyReplyTemplate.next_local_steps.some((step) => step.includes("bot-runtime/.env") || step.includes("generated bot runtime") || step.includes("verify --level2")), false);
+  assert.ok(embeddedOnlyReplyTemplate.next_local_steps.some((step) => step.includes("--host-mode embedded-long-connection")));
+  assert.match(embeddedOnlyReplyMarkdown, /long-connection host service's secret\/config system|long-connection host service/i);
+  assert.doesNotMatch(embeddedOnlyReplyMarkdown, /PUBLIC_CALLBACK_BASE_URL/);
+  assert.doesNotMatch(embeddedOnlyReplyMarkdown, /VERIFICATION_TOKEN/);
+  assert.doesNotMatch(embeddedOnlyReplyMarkdown, /\/webhook\/card/);
   assert.doesNotMatch(embeddedOnlyReplyMarkdown, /bot-runtime\.env|generated bot runtime|verify --level2/);
   const embeddedOnlyReadinessOutput = run(["readiness", embeddedOnlyGenerated]);
-  assert.doesNotMatch(embeddedOnlyReadinessOutput, /Mode B embedded adapter path/);
+  assert.doesNotMatch(embeddedOnlyReadinessOutput, /Missing required values:.*PUBLIC_CALLBACK_BASE_URL/);
+  assert.doesNotMatch(embeddedOnlyReadinessOutput, /Missing required values:.*VERIFICATION_TOKEN/);
   assert.doesNotMatch(embeddedOnlyReadinessOutput, /verify \. --runtime-url/);
   const embeddedOnlyLevel2Record = fs.readFileSync(path.join(embeddedOnlyGenerated, "level2_verification_record.md"), "utf8");
+  assert.match(embeddedOnlyLevel2Record, /Host receive mode: embedded-long-connection/);
+  assert.match(embeddedOnlyLevel2Record, /card\.action\.trigger/);
   assert.match(embeddedOnlyLevel2Record, /Existing host service URL:/);
   assert.match(embeddedOnlyLevel2Record, /existing host service's secret\/config system/);
-  assert.match(embeddedOnlyLevel2Record, /--mode embedded-adapter --host-runtime-url <host_runtime_url> --simulate/);
+  assert.match(embeddedOnlyLevel2Record, /--mode embedded-adapter --host-mode embedded-long-connection --host-runtime-url <host_runtime_url> --simulate/);
+  assert.doesNotMatch(embeddedOnlyLevel2Record, /\/webhook\/card/);
   assert.doesNotMatch(embeddedOnlyLevel2Record, /Bot runtime URL:/);
   assert.doesNotMatch(embeddedOnlyLevel2Record, /bot-runtime\.env/);
   assert.doesNotMatch(embeddedOnlyLevel2Record, /<bot_runtime_url>/);
   assert.doesNotMatch(embeddedOnlyLevel2Record, /bot-runtime\/audit\.log/);
   const embeddedOnlyIntegrationGuide = fs.readFileSync(path.join(embeddedOnlyGenerated, "docs", "integration_guide.md"), "utf8");
   assert.match(embeddedOnlyIntegrationGuide, /does not include a generated `bot-runtime\/` directory/);
+  assert.match(embeddedOnlyIntegrationGuide, /Host receive mode: embedded-long-connection/);
+  assert.match(embeddedOnlyIntegrationGuide, /--host-mode embedded-long-connection/);
+  assert.match(embeddedOnlyIntegrationGuide, /card\.action\.trigger/);
+  assert.doesNotMatch(embeddedOnlyIntegrationGuide, /\/webhook\/card/);
   assert.match(embeddedOnlyIntegrationGuide, /--mode standalone-runtime/);
   assert.match(embeddedOnlyIntegrationGuide, /buildStartCard/);
   assert.match(embeddedOnlyIntegrationGuide, /param_template_id/);
@@ -1087,7 +1129,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const embeddedOnlyDoctorJson = JSON.parse(run(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--json"]));
   const embeddedOnlyDoctorOutput = run(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter"]);
   assert.match(embeddedOnlyDoctorOutput, /Mode A external host \/ sidecar path/);
-  assert.doesNotMatch(embeddedOnlyDoctorOutput, /Mode B embedded adapter path/);
+  assert.equal(embeddedOnlyDoctorJson.host_receive_mode, "embedded-long-connection");
   assert.equal(embeddedOnlyDoctorJson.integration_mode, "embedded-adapter");
   assert.equal(embeddedOnlyDoctorJson.package_validation.status, "pass");
   assert.equal(embeddedOnlyDoctorJson.gate_passed, false);
@@ -1095,6 +1137,7 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   assert.ok(embeddedOnlyDoctorJson.package_validation.checks.some((item) => item.name === "adapter:action:image.iterate.submit" && item.status === "pass"));
   assert.ok(embeddedOnlyDoctorJson.package_validation.checks.some((item) => item.name === "adapter:action:image.batch.submit" && item.status === "pass"));
   assert.ok(embeddedOnlyDoctorJson.package_validation.checks.some((item) => item.name === "adapter:action:image.batch.refresh" && item.status === "pass"));
+  assert.equal(embeddedOnlyDoctorJson.blockers.some((item) => item.includes("/webhook/card")), false);
   assert.equal(embeddedOnlyDoctorJson.blockers.some((item) => item.includes("bot-runtime/.env")), false);
   assert.match(runExpectFailure(["doctor", embeddedOnlyGenerated, "--mode", "embedded-adapter", "--gate"]), /Embedded adapter gate failed/);
   const embeddedLongGenerated = path.join(temp, "generated-embedded-long");
@@ -1185,6 +1228,11 @@ test("CLI can analyze, plan, generate, and verify an image-agent-web-like target
   const embeddedHybridReadme = fs.readFileSync(path.join(embeddedHybridGenerated, "README.md"), "utf8");
   assert.match(embeddedHybridReadme, /webhook callback path/);
   assert.match(embeddedHybridReadme, /card\.action\.trigger/);
+  const embeddedHybridChecklist = fs.readFileSync(path.join(embeddedHybridGenerated, "deployment_checklist.md"), "utf8");
+  assert.match(embeddedHybridChecklist, /PUBLIC_CALLBACK_BASE_URL/);
+  assert.match(embeddedHybridChecklist, /VERIFICATION_TOKEN/);
+  assert.match(embeddedHybridChecklist, /<PUBLIC_CALLBACK_BASE_URL>\/webhook\/card/);
+  assert.match(embeddedHybridChecklist, /card\.action\.trigger/);
   const embeddedHybridReplyTemplate = JSON.parse(fs.readFileSync(path.join(embeddedHybridGenerated, "feishu_context.reply.template.json"), "utf8"));
   assert.ok(embeddedHybridReplyTemplate.next_local_steps.some((step) => step.includes("--host-mode hybrid")));
   const embeddedHybridLevel2Record = fs.readFileSync(path.join(embeddedHybridGenerated, "level2_verification_record.md"), "utf8");
@@ -2980,8 +3028,8 @@ test("calendar-stock-updater Node target can analyze generate and verify", () =>
   assert.doesNotMatch(generatedAdapter, /image\.generate|image_url|session_id/);
   assert.doesNotMatch(generatedAdapterCards, /image\.batch\.submit/);
   assert.doesNotMatch(generatedReadme, /image\.generate/);
-  assert.match(generatedReadme, /doctor \. --mode embedded-adapter --probe-target --gate/);
-  assert.match(generatedStartHere, /doctor \. --mode embedded-adapter --probe-target --gate/);
+  assert.match(generatedReadme, /doctor \. --mode embedded-adapter --host-mode embedded-long-connection --probe-target --gate/);
+  assert.match(generatedStartHere, /doctor \. --mode embedded-adapter --host-mode embedded-long-connection --probe-target --gate/);
   const verifyOutput = run(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
   assert.match(verifyOutput, /adapter:action:http\.get\.api\.state\.submit/);
   assert.match(verifyOutput, /adapter:action:http\.post\.api\.run\.submit/);

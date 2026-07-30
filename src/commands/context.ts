@@ -416,13 +416,11 @@ export function buildContextTemplate(
           required_for_level_2: true,
           note: "Application secret. Share through a secure channel; do not paste it into chat history.",
         },
-        ...(longConnection && targetBaseUrlKey === "TARGET_BASE_URL" ? [] : [{
+        ...(longConnection ? [] : [{
           key: "VERIFICATION_TOKEN",
           owner: "Feishu app owner",
-          required_for_level_2: hostReceiveMode !== "embedded-long-connection",
-          note: hostReceiveMode === "embedded-long-connection"
-            ? "Optional for long-connection hosts; needed only for webhook or hybrid callback verification."
-            : "Callback verification token configured for the app.",
+          required_for_level_2: true,
+          note: "Callback verification token configured for the app.",
         }]),
         {
           key: "ENCRYPT_KEY",
@@ -436,13 +434,11 @@ export function buildContextTemplate(
           required_for_level_2: true,
           note: "Chat receive id where the bot has been added and can send messages.",
         },
-        ...(longConnection && targetBaseUrlKey === "TARGET_BASE_URL" ? [] : [{
+        ...(longConnection ? [] : [{
           key: "PUBLIC_CALLBACK_BASE_URL",
           owner: "FDE or infrastructure owner",
-          required_for_level_2: hostReceiveMode !== "embedded-long-connection",
-          note: hostReceiveMode === "embedded-long-connection"
-            ? "Optional for long-connection hosts; needed only for webhook or hybrid callback verification."
-            : "Public HTTPS base URL that routes to the generated bot runtime or embedded webhook host.",
+          required_for_level_2: true,
+          note: "Public HTTPS base URL that routes to the generated bot runtime or embedded webhook host.",
         }]),
         {
           key: targetBaseUrlKey,
