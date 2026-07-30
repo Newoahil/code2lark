@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { analyzeCommand } from "../dist/commands/analyze.js";
 import { readEnvFileIfExists } from "../dist/env-utils.js";
+import { hostModeUsesLongConnection, hostModeUsesWebhook, normalizeHostReceiveMode } from "../dist/host-mode.js";
 import { configuredValue, isPlaceholderValue } from "../dist/placeholder-utils.js";
 import { assessPublicCallbackBaseUrl, normalizeUrlBase, requireHttpBaseUrl } from "../dist/url-validation.js";
 
@@ -82,6 +83,14 @@ test("placeholder utilities distinguish filled values from template placeholders
   assert.equal(configuredValue(" <APP_ID> "), "");
   assert.equal(configuredValue(" cli_real_app_id "), "cli_real_app_id");
   assert.equal(configuredValue(123), "");
+});
+
+test("embedded adapter defaults to long-connection host receive mode", () => {
+  const hostReceiveMode = normalizeHostReceiveMode("", "embedded-adapter");
+
+  assert.equal(hostReceiveMode, "embedded-long-connection");
+  assert.equal(hostModeUsesWebhook(hostReceiveMode), false);
+  assert.equal(hostModeUsesLongConnection(hostReceiveMode), true);
 });
 
 test("analyze emits card-action permissions required by the MVP contract", async () => {

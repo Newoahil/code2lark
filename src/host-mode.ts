@@ -4,7 +4,7 @@ export type HostReceiveMode = "embedded-webhook" | "embedded-long-connection" | 
 export function normalizeHostReceiveMode(value: string, integrationMode: IntegrationMode): HostReceiveMode {
   const normalized = value.trim();
   if (!normalized) {
-    if (integrationMode === "embedded-adapter") return "embedded-webhook";
+    if (integrationMode === "embedded-adapter") return "embedded-long-connection";
     if (integrationMode === "self-hosted-runtime") return "embedded-long-connection";
     return "standalone-runtime";
   }
