@@ -1,3 +1,8 @@
+---
+name: code2lark
+description: Add reviewed Feishu/Lark entrypoints to existing projects or Co-Build new business capabilities with Lark access.
+---
+
 # Code2Lark Skill
 
 Code2Lark is a skill-first workflow for adding reviewed Feishu/Lark entrypoints to software projects. It supports two modes:
@@ -11,6 +16,10 @@ Use this skill when the user asks to connect a project, feature, API, job, workf
 
 Code2Lark is the orchestrator and safety boundary. The existing Code2Lark CLI remains the execution layer; external analysis tools are optional enrichment; `lark-card-designer` owns card information architecture and interaction design.
 
+For the MVP skill experience, both Retrofit and Co-Build default to a target-project incremental module at `integrations/lark` using an embedded-long-connection host. The intended finished state is Level 2 ready: the generated module is ready to connect to Feishu/Lark once the user supplies `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, an operator allowlist, and configures the required Feishu backend events and permissions such as `card.action.trigger`.
+
+Simulator support is QA-only. A local simulator can test card action logic and safety boundaries, but simulator-only output is a failed delivery. A Co-Build or Retrofit handoff is incomplete unless `integrations/lark` contains a real embedded-long-connection runtime path that reads its `.env` values and routes Feishu/Lark `card.action.trigger` events into the action handler.
+
 ## Mandatory Routing
 
 1. If the target project already exists and the user wants Lark access added, read `references/retrofit-workflow.md`.
@@ -18,7 +27,8 @@ Code2Lark is the orchestrator and safety boundary. The existing Code2Lark CLI re
 3. Before relying on code analysis or external tools, read `references/analyzer-boundary.md`.
 4. Before asking, generating, installing, or enabling actions, read `references/confirmation-policy.md` and `references/safety-and-secrets.md`.
 5. Before card layout or interaction-state decisions, delegate or reference `embedded-skills/lark-card-designer/SKILL.md`; do not duplicate its design rules here.
-6. Before reporting completion, read `references/evidence-handoff.md`.
+6. Before converting card designs into runtime payloads, sending cards, handling `card.action.trigger`, or reporting Level-2-ready completion, read `references/feishu-runtime-gates.md`.
+7. Before reporting completion, read `references/evidence-handoff.md`.
 
 ## CLI Reuse Model
 
@@ -52,6 +62,9 @@ code2lark/
 - Do not expose destructive or privileged actions without dry-run or prepare/confirm separation.
 - Do not assume static analysis knows business intent; turn uncertainty into questions or disabled candidates.
 - Do not let Code2Lark take over business code in Co-Build mode.
+- Do not claim completion when only a simulator, mock card flow, static JSON, or `.env.example` exists without a real `integrations/lark` embedded-long-connection runtime.
+- Do not switch a Co-Build task to Retrofit just because the Lark delivery target was missed; continue Co-Build completion and fill the missing `integrations/lark` delivery.
+- Do not treat `lark-card-designer` JSON 2.0-like skeletons as production-sendable JSON; convert through a runtime adapter and pass the Feishu runtime gates first.
 
 ## Default Output
 
@@ -66,6 +79,10 @@ what_was_discovered:
 
 recommended_lark_entrypoints:
 - action, risk, required confirmation
+
+delivery_target:
+- `integrations/lark` embedded-long-connection module; remaining user inputs are `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, operator allowlist, and Feishu backend event/permission configuration
+- simulator role: QA-only, never the delivery target
 
 ownership_split:
 - business owner vs Code2Lark responsibilities, especially in Co-Build

@@ -4,7 +4,7 @@ Retrofit mode is used when a project already exists and the user wants to add Fe
 
 ## Goal
 
-Discover candidate capabilities, classify risk, ask for confirmation, generate an isolated integration, verify locally, and produce handoff evidence.
+Discover candidate capabilities, classify risk, ask for confirmation, generate an isolated `integrations/lark` embedded-long-connection module, verify locally, and produce handoff evidence. MVP completion means the only remaining user inputs are `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, operator allowlist values, and Feishu backend event/permission configuration.
 
 ## Workflow
 
@@ -35,16 +35,24 @@ Discover candidate capabilities, classify risk, ask for confirmation, generate a
    - Confirm selected capabilities, host mode, install location, permission/allowlist model, and whether writes are allowed.
 
 6. **Generate and install**
-   - Generate into a reviewable output directory first.
-   - For target-project installs, default to `integrations/lark` and dry-run before `--apply`.
+   - Default to a target-project incremental module at `integrations/lark`.
+   - The module should include an embedded-long-connection host, cards/actions, adapter boundary, tests, docs, and `.env.example`.
+   - Apply `feishu-runtime-gates.md` before treating generated cards, callback handlers, or outbound send behavior as real Feishu/Lark runtime output.
+   - If the existing CLI still needs a reviewable output directory internally, treat it as a dry-run or legacy execution detail; the skill-facing target remains `integrations/lark`.
+   - Dry-run before any target-project write or `--apply`.
 
 7. **Verify and hand off**
    - Run relevant verify/doctor/evidence commands.
-   - Report what was verified, what remains manual, and where secrets/evidence must stay local.
+   - Run `verify:card` or equivalent runtime payload checks when cards or callbacks are generated.
+   - Report whether the embedded-long-connection host is Level 2 ready.
+   - The handoff must state that the user only needs to provide `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, operator allowlist values, and configure Feishu backend bot capability, long connection, `card.action.trigger`, permissions, and test chat membership before real testing.
 
 ## Acceptance Signals
 
 - User can see why each Lark entrypoint was proposed.
 - Dangerous actions are not directly executable.
 - Generated files are isolated and reviewable.
+- Default delivery target is `integrations/lark` with an embedded-long-connection host.
+- Handoff is Level 2 ready: app id/secret and Feishu backend event/permission configuration are the remaining user inputs.
 - Local verification passes before handoff.
+- Runtime card gates pass: message send content, JSON 2.0 callback buttons, and `card.action.trigger` callback responses are validated.
