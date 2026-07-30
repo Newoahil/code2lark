@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:code2lark:cobuild-demo-response",
+  "title": "Safe Co-Build demo response",
+  "description": "A schema-like contract for deterministic black-box validation. It describes a design response and is not production-sendable Feishu JSON.",
+  "mode": "cobuild",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "business_capability",
+    "ownership_split",
+    "minimal_contract",
+    "delivery_target",
+    "card_confirmation",
+    "card_design_dependency",
+    "safety_boundary",
+    "lark_qa_gates",
+    "verification_and_handoff",
+    "external_agent_validation"
+  ],
+  "properties": {
+    "mode": {
+      "const": "cobuild",
+      "description": "The response represents Co-Build mode. The prompt displays this as mode: - cobuild."
+    },
+    "business_capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fictional", "risk"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "fictional": { "const": true },
+        "risk": { "enum": ["state_changing", "long_running"] }
+      }
+    },
+    "ownership_split": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["business_owner", "code2lark", "boundary"],
+      "properties": {
+        "business_owner": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "code2lark": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "boundary": { "type": "string", "description": "States that Code2Lark does not own business behavior or target writes." }
+      }
+    },
+    "minimal_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "dry_run", "execute", "cancel", "audit", "terminal_state_handling"],
+      "properties": {
+        "status": { "$ref": "#/$defs/contractOperation" },
+        "dry_run": { "$ref": "#/$defs/contractOperation" },
+        "execute": { "$ref": "#/$defs/contractOperation" },
+        "cancel": { "$ref": "#/$defs/contractOperation" },
+        "audit": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "terminal_state_handling": { "type": "string", "minLength": 1 }
+      }
+    },
+    "card_confirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "pattern", "host_local", "target_prepare_endpoint_required", "target_confirm_endpoint_required"],
+      "properties": {
+        "required": { "const": true },
+        "pattern": { "const": "prepare/confirm" },
+        "host_local": { "const": true },
+        "target_prepare_endpoint_required": { "const": false },
+        "target_confirm_endpoint_required": { "const": false }
+      }
+    },
+    "delivery_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "module_type", "level2_ready", "local_simulator_only", "simulator_role", "runtime_startup", "env_consumed_by_runtime", "card_action_trigger_routed", "required_env", "feishu_backend_config"],
+      "properties": {
+        "path": { "const": "integrations/lark" },
+        "module_type": { "const": "embedded-long-connection" },
+        "level2_ready": { "const": true },
+        "local_simulator_only": { "const": false },
+        "simulator_role": { "const": "QA-only" },
+        "runtime_startup": { "type": "string", "minLength": 1 },
+        "env_consumed_by_runtime": { "const": true },
+        "card_action_trigger_routed": { "const": true },
+        "required_env": {
+          "type": "array",
+          "items": { "type": "string" },
+          "contains": { "enum": ["FEISHU_APP_ID", "FEISHU_APP_SECRET", "ALLOWED_OPERATOR_OPEN_IDS"] },
+          "minItems": 3
+        },
+        "feishu_backend_config": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Must include bot capability, long connection, card.action.trigger, permissions, and test chat setup."
+        }
+      }
+    },
+    "card_design_dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "code2lark_supplies", "designer_chooses"],
+      "properties": {
+        "owner": { "enum": ["lark-card-designer", "card designer"] },
+        "code2lark_supplies": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "designer_chooses": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    },
+    "safety_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["no_target_writes", "no_secrets", "external_calls_allowed", "production_sendable_feishu_json", "operator_allowlist_required"],
+      "properties": {
+        "no_target_writes": { "const": true },
+        "no_secrets": { "const": true },
+        "external_calls_allowed": { "const": false },
+        "production_sendable_feishu_json": { "const": false },
+        "operator_allowlist_required": { "const": true }
+      }
+    },
+    "lark_qa_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direct_execute_bypass",
+        "duplicate_confirmation",
+        "unauthorized_operator",
+        "stale_or_forged_preview",
+        "terminal_state_replay"
+      ],
+      "properties": {
+        "direct_execute_bypass": { "$ref": "#/$defs/qaGate" },
+        "duplicate_confirmation": { "$ref": "#/$defs/qaGate" },
+        "unauthorized_operator": { "$ref": "#/$defs/qaGate" },
+        "stale_or_forged_preview": { "$ref": "#/$defs/qaGate" },
+        "terminal_state_replay": { "$ref": "#/$defs/qaGate" }
+      }
+    },
+    "verification_and_handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verification", "runtime_card_gates", "handoff", "cleanup", "live_feishu_level_2"],
+      "properties": {
+        "verification": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "runtime_card_gates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["send_message_payload", "json2_callback_buttons", "card_action_trigger_response", "no_design_only_payload"],
+          "properties": {
+            "send_message_payload": { "const": true },
+            "json2_callback_buttons": { "const": true },
+            "card_action_trigger_response": { "const": true },
+            "no_design_only_payload": { "const": true }
+          }
+        },
+        "handoff": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "cleanup": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "live_feishu_level_2": { "const": "not_claimed" }
+      }
+    },
+    "external_agent_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "external_services_called", "files_modified", "codex_install_or_configure"],
+      "properties": {
+        "method": { "type": "string" },
+        "external_services_called": { "const": false },
+        "files_modified": { "const": false },
+        "codex_install_or_configure": { "const": false }
+      }
+    }
+  },
+  "$defs": {
+    "contractOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "side_effects", "description"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "side_effects": { "type": "boolean" },
+        "description": { "type": "string", "minLength": 1 },
+        "preview_ttl_seconds": { "type": "integer", "minimum": 1 },
+        "requires_host_local_confirm": { "type": "boolean" },
+        "idempotency_key": { "type": "string", "minLength": 1 }
+      }
+    },
+    "qaGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "expected_result", "evidence"],
+      "properties": {
+        "required": { "const": true },
+        "expected_result": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    }
+  }
+}
