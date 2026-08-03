@@ -26,7 +26,8 @@ export function writeCalendarModeBModule(packageDir: string, service: ServiceMan
     type: "module",
     scripts: {
       start: "node app.js",
-      test: "node --test *.test.mjs generated/sidecar-long-connection/local-contract-test.mjs",
+      "verify:card": "node verify-card.mjs",
+      test: "node --test *.test.mjs generated/sidecar-long-connection/local-contract-test.mjs && npm run verify:card",
     },
     dependencies: {
       "@larksuiteoapi/node-sdk": "1.71.1",
@@ -38,6 +39,7 @@ export function writeCalendarModeBModule(packageDir: string, service: ServiceMan
   writeText(path.join(moduleDir, "config.test.mjs"), calendarModeBConfigTestSource());
   writeText(path.join(moduleDir, "host.test.mjs"), calendarModeBHostTestSource());
   writeText(path.join(moduleDir, "host-local-confirmation.test.mjs"), calendarModeBConfirmationTestSource());
+  writeText(path.join(moduleDir, "verify-card.mjs"), calendarModeBVerifyCardSource());
 
   copyDirectory(path.join(packageDir, "adapter"), path.join(generatedDir, "adapter"));
   copyDirectory(path.join(packageDir, "manifest"), path.join(generatedDir, "manifest"));
@@ -59,6 +61,298 @@ export function writeCalendarModeBModule(packageDir: string, service: ServiceMan
     },
     files: listManagedFiles(moduleDir),
   });
+}
+
+function calendarModeBVerifyCardSource(): string {
+  return `import fs from "node:fs";
+import http from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { buildOperationsCard, buildRunConfirmationCard, buildStopConfirmationCard } from "./generated/adapter/cards.js";
+import { createLarkHost } from "./host.js";
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const sensitivePattern = /(?:app[_-]?secret|appSecret|authorization|bearer|cookie|\\bauth\\b|\\bsecret\\b|\\btoken\\b|password|credentials?|api[_-]?key|apiKey|access[_-]?key|accessKey|accessToken|private[_-]?key|privateKey|operator[_-]?open[_-]?id|operatorOpenId|open[_-]?chat[_-]?id|openChatId|test[_-]?chat[_-]?id|testChatId|message[_-]?id|messageId|open[_-]?message[_-]?id|openMessageId|raw[_-]?callback|rawCallback|\\b(?:ou|oc|om)_[A-Za-z0-9_-]+\\b|\\b(?:cli|msg)_[A-Za-z0-9_-]{8,}\\b|\\bsk-[A-Za-z0-9_-]{8,}\\b)/i;
+const designOnlyFields = new Set(["note", "json_2_0_like", "elements", "sketch", "metadata", "design_notes"]);
+const unsupportedRuntimeTags = new Map([
+  ["action", "JSON 2.0 no longer supports tag action; place buttons directly in body.elements or inside column_set/column."],
+  ["note", "JSON 2.0 runtime payloads must not use tag note; map design notes/footers to markdown or div."],
+]);
+const supportedTags = new Set(["markdown", "div", "column_set", "column", "table", "form", "input", "button", "hr", "img", "plain_text", "lark_md", "fallback_text", "standard_icon", "custom_icon"]);
+const knownActions = new Set(["calendar.status.refresh", "calendar.task.dry-run", "calendar.task.run.prepare", "calendar.task.run.confirm", "calendar.task.run.cancel", "calendar.task.stop.prepare", "calendar.task.stop.confirm", "calendar.task.stop.cancel"]);
+
+const startCard = buildOperationsCard({ defaults: { targetDate: "2026-01-01", stock: "100", stepDelayMs: "500", datePickerDelayMs: "500" }, task: { status: "idle" }, logs: ["ready"] });
+const runConfirmationCard = buildRunConfirmationCard({ confirmationId: "confirmation-local", input: { targetDate: "2026-01-01", stock: "100", stepDelayMs: "500", datePickerDelayMs: "500" } });
+const stopConfirmationCard = buildStopConfirmationCard({ confirmationId: "stop-local", task: { currentMessage: "running" } });
+const samples = [
+  { name: "start_card_send_message", kind: "send-message", payload: { msg_type: "interactive", content: JSON.stringify(startCard) } },
+  { name: "run_confirmation_callback", kind: "callback-response", payload: { card: { type: "raw", data: runConfirmationCard } } },
+  { name: "stop_confirmation_callback", kind: "callback-response", payload: { card: { type: "raw", data: stopConfirmationCard } } },
+];
+
+const checks = samples.flatMap((sample) => verifySample(sample));
+checks.push(...await verifyHostRuntimeRouting());
+const pass = checks.filter((check) => check.status === "pass").length;
+const fail = checks.filter((check) => check.status === "fail").length;
+const report = { schema_version: "0.1", generated_at: new Date().toISOString(), status: fail === 0 ? "pass" : "fail", summary: { pass, fail }, checks };
+fs.writeFileSync(path.join(moduleDir, "card_verification_report.json"), JSON.stringify(report, null, 2) + "\\n", "utf8");
+fs.writeFileSync(path.join(moduleDir, "card_verification_report.md"), renderMarkdownReport(report), "utf8");
+for (const check of checks) console.log(check.status.toUpperCase() + " " + check.name + " - " + check.detail);
+console.log("Card verification " + report.status.toUpperCase() + ": " + pass + " PASS / " + fail + " FAIL");
+if (fail > 0) process.exitCode = 1;
+
+function verifySample(sample) {
+  if (sample.kind === "send-message") return verifySendMessage(sample.name, sample.payload);
+  if (sample.kind === "callback-response") return verifyCallbackResponse(sample.name, sample.payload);
+  return verifyCard(sample.name, sample.payload);
+}
+
+async function verifyHostRuntimeRouting() {
+  const checks = [];
+  const target = await startMockTarget();
+  const subscriptions = new Map();
+  const sentCards = [];
+  const auditLines = [];
+  const runtime = {
+    subscribe(name, handler) { subscriptions.set(name, handler); },
+    async connect() {},
+    async disconnect() {},
+    async sendInteractiveCard(chatId, card) { sentCards.push({ chatId, card }); return { messageId: "redacted" }; },
+  };
+  const config = {
+    targetBaseUrl: target.baseUrl,
+    targetTimeoutMs: 3000,
+    targetWaitMs: 3000,
+    testChatId: "test-chat",
+    allowedOperatorOpenIds: ["operator-verified"],
+  };
+  const host = createLarkHost({ config, runtime, logger: { log(line) { auditLines.push(String(line)); } } });
+  try {
+    await host.start({ waitForTarget: true });
+    checks.push(check("host:subscription:card-action-trigger", subscriptions.has("card.action.trigger"), "host must subscribe to card.action.trigger"));
+    checks.push(check("host:start-card:sent", sentCards.length === 1, "host must send an initial interactive card through runtime"));
+    if (sentCards[0]) checks.push(...verifySendMessage("host:start-card", { msg_type: "interactive", content: JSON.stringify(sentCards[0].card) }));
+    const callback = subscriptions.get("card.action.trigger");
+    checks.push(check("host:callback:handler-present", typeof callback === "function", "card.action.trigger callback handler must be registered"));
+    if (typeof callback === "function") {
+      const stateCallsBefore = target.stateCalls();
+      const validResponse = await callback({
+        header: { event_id: "event-refresh" },
+        event: {
+          action: { value: { action: "calendar.status.refresh" } },
+          operator: { operator_id: { open_id: "operator-verified" } },
+          context: { open_message_id: "message-redacted", open_chat_id: "chat-redacted" },
+        },
+      });
+      checks.push(check("host:callback:routes-valid-action", target.stateCalls() > stateCallsBefore, "valid card.action.trigger payload must route to handler"));
+      checks.push(...verifyCallbackResponse("host:callback:valid-response", validResponse));
+      const runCallsBefore = target.runCalls();
+      const unauthorizedResponse = await callback({
+        header: { event_id: "event-unauthorized" },
+        event: {
+          action: { value: { action: "calendar.task.run.prepare" }, form_value: { targetDate: "2026-01-01", stock: "100", stepDelayMs: "500", datePickerDelayMs: "500" } },
+          operator: { operator_id: { open_id: "operator-denied" } },
+        },
+      });
+      checks.push(check("host:callback:unauthorized-no-target-mutation", target.runCalls() === runCallsBefore, "unauthorized action must not mutate target state"));
+      checks.push(...verifyCallbackResponse("host:callback:unauthorized-response", unauthorizedResponse));
+    }
+    checks.push(check("host:logs:sanitized", !/operator-verified|operator-denied|test-chat|message-redacted|chat-redacted/.test(auditLines.join("\\n")), "host logs must not expose operators, chats, or message ids"));
+  } catch (error) {
+    checks.push(check("host:runtime-routing", false, error instanceof Error ? error.message : String(error)));
+  } finally {
+    await host.stop();
+    await target.close();
+  }
+  return checks;
+}
+
+function verifySendMessage(name, payload) {
+  const checks = [];
+  const record = asRecord(payload);
+  checks.push(check(name + ":send:object", Boolean(record), "send-message payload must be an object"));
+  if (!record) return checks;
+  checks.push(check(name + ":send:msg_type", record.msg_type === "interactive", "msg_type must be interactive"));
+  checks.push(check(name + ":send:no-card-wrapper", !hasKey(record, "card"), "message send payload must not wrap content as card"));
+  checks.push(check(name + ":send:content-string", typeof record.content === "string", "content must be a JSON string"));
+  const card = typeof record.content === "string" ? parseJson(record.content) : undefined;
+  checks.push(check(name + ":send:content-json", card !== undefined, "content must parse as JSON card data"));
+  if (card !== undefined) checks.push(...verifyCard(name + ":send:content", card));
+  checks.push(...verifySanitized(name + ":send", payload));
+  return checks;
+}
+
+function verifyCallbackResponse(name, payload) {
+  const checks = [];
+  const record = asRecord(payload);
+  checks.push(check(name + ":callback:object", Boolean(record), "callback response must be an object"));
+  if (!record) return checks;
+  const wrapper = asRecord(record.card);
+  checks.push(check(name + ":callback:raw-wrapper", Boolean(wrapper) && wrapper.type === "raw", "card response must use card.type raw"));
+  checks.push(check(name + ":callback:data-present", Boolean(wrapper) && hasKey(wrapper, "data"), "card response must include card.data"));
+  if (wrapper && hasKey(wrapper, "data")) checks.push(...verifyCard(name + ":callback:data", wrapper.data));
+  checks.push(...verifySanitized(name + ":callback", payload));
+  return checks;
+}
+
+function verifyCard(name, payload) {
+  const checks = [];
+  const card = asRecord(payload);
+  checks.push(check(name + ":card:object", Boolean(card), "card must be an object"));
+  if (!card) return checks;
+  checks.push(check(name + ":card:schema", card.schema === "2.0", "card.schema must be 2.0"));
+  const header = asRecord(card.header);
+  checks.push(check(name + ":card:header-title", Boolean(header && hasKey(header, "title")), "card.header.title must exist"));
+  const body = asRecord(card.body);
+  checks.push(check(name + ":card:body-elements", Boolean(body && Array.isArray(body.elements)), "card.body.elements must exist"));
+  const designFieldChecks = verifyNoDesignFields(name, card, "$", true);
+  checks.push(...designFieldChecks.length ? designFieldChecks : [check(name + ":design-fields", true, "production payload has no design-only fields")]);
+  checks.push(...verifyRuntimeTags(name, card));
+  checks.push(...verifyButtonBehaviors(name, card));
+  checks.push(...verifySanitized(name + ":card", card));
+  return checks;
+}
+
+function verifyRuntimeTags(name, card) {
+  const taggedNodes = collectTaggedNodes(card);
+  const failures = [];
+  for (const node of taggedNodes) {
+    const unsupportedDetail = unsupportedRuntimeTags.get(node.tag);
+    if (unsupportedDetail) failures.push(check(name + ":tag:" + node.location + ":unsupported-runtime-tag", false, unsupportedDetail));
+    else if (!supportedTags.has(node.tag)) failures.push(check(name + ":tag:" + node.location + ":supported", false, "unsupported Card JSON 2.0 runtime tag: " + node.tag));
+  }
+  return failures.length ? failures : [check(name + ":tags:supported-subset", true, "card uses the local Card JSON 2.0 runtime supported tag subset")];
+}
+
+function verifyButtonBehaviors(name, card) {
+  const buttons = collectButtons(card);
+  if (!buttons.length) return [check(name + ":buttons:present", true, "no callback buttons found; card can still be informational")];
+  return buttons.flatMap((button, index) => {
+    const behaviors = Array.isArray(button.behaviors) ? button.behaviors : [];
+    const callbackActions = behaviors.flatMap((behavior) => {
+      const behaviorRecord = asRecord(behavior);
+      const value = behaviorRecord ? asRecord(behaviorRecord.value) : undefined;
+      return behaviorRecord && behaviorRecord.type === "callback" && value && typeof value.action === "string" && value.action.trim()
+        ? [value.action.trim()]
+        : [];
+    });
+    const hasCallbackAction = callbackActions.length > 0;
+    const unknownActions = callbackActions.filter((action) => !knownActions.has(action));
+    return [
+      check(name + ":button:" + index + ":callback-behavior", hasCallbackAction, "button must use behaviors callback with value.action"),
+      check(name + ":button:" + index + ":no-legacy-value-only", !(hasKey(button, "value") && !hasCallbackAction), "button must not rely on legacy top-level value alone"),
+      check(name + ":button:" + index + ":known-action", unknownActions.length === 0, unknownActions.length ? "button action must map to a known handler: " + unknownActions.join(", ") : "button action maps to a known handler"),
+    ];
+  });
+}
+
+function verifyNoDesignFields(name, value, location, root) {
+  const record = asRecord(value);
+  if (!record) return [];
+  const checks = [];
+  for (const [key, child] of Object.entries(record)) {
+    const designOnly = designOnlyFields.has(key) && (root || key !== "elements");
+    if (designOnly) checks.push(check(name + ":design-field:" + location + "." + key, false, "production payload must not include design-only field " + location + "." + key));
+    if (Array.isArray(child)) child.forEach((item, index) => checks.push(...verifyNoDesignFields(name, item, location + "." + key + "[" + index + "]", false)));
+    else if (asRecord(child)) checks.push(...verifyNoDesignFields(name, child, location + "." + key, false));
+  }
+  return checks;
+}
+
+function verifySanitized(name, value) {
+  return [check(name + ":sanitized", !sensitivePattern.test(JSON.stringify(value)), "payload/report sample must not contain secrets, IDs, tokens, or raw callbacks")];
+}
+
+function collectButtons(value) {
+  if (Array.isArray(value)) return value.flatMap((item) => collectButtons(item));
+  const record = asRecord(value);
+  if (!record) return [];
+  const current = record.tag === "button" ? [record] : [];
+  return current.concat(Object.values(record).flatMap((child) => collectButtons(child)));
+}
+
+function collectTaggedNodes(value, location = "$") {
+  if (Array.isArray(value)) return value.flatMap((item, index) => collectTaggedNodes(item, location + "[" + index + "]"));
+  const record = asRecord(value);
+  if (!record) return [];
+  const current = typeof record.tag === "string" ? [{ tag: record.tag, location }] : [];
+  return current.concat(Object.entries(record).flatMap(([key, child]) => collectTaggedNodes(child, location + "." + key)));
+}
+
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
+}
+
+function hasKey(record, key) {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function parseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    if (error instanceof Error && error.message) return undefined;
+    return undefined;
+  }
+}
+
+function check(name, passed, detail) {
+  return { name, status: passed ? "pass" : "fail", detail };
+}
+
+function renderMarkdownReport(report) {
+  return [
+    "# Card Verification Report",
+    "",
+    "Status: " + report.status.toUpperCase(),
+    "Summary: " + report.summary.pass + " PASS / " + report.summary.fail + " FAIL",
+    "",
+    "| Check | Status | Detail |",
+    "|---|---|---|",
+    ...report.checks.map((item) => "| " + escapeMarkdown(item.name) + " | " + item.status.toUpperCase() + " | " + escapeMarkdown(item.detail) + " |"),
+    "",
+  ].join("\\n");
+}
+
+function escapeMarkdown(value) {
+  return String(value).replace(/\\|/g, "\\\\|");
+}
+
+async function startMockTarget() {
+  let stateCalls = 0;
+  let runCalls = 0;
+  const server = http.createServer((req, res) => {
+    if (req.method === "GET" && req.url === "/api/state") {
+      stateCalls += 1;
+      return json(res, 200, { defaults: { targetDate: "2026-01-01", stock: "100", stepDelayMs: "500", datePickerDelayMs: "500" }, task: { status: "idle" }, logs: ["ready"] });
+    }
+    if (req.method === "POST" && req.url === "/api/run") {
+      runCalls += 1;
+      return read(req, (body) => json(res, 202, { ok: true, task: { status: "running" }, received: body }));
+    }
+    if (req.method === "POST" && req.url === "/api/stop") return read(req, () => json(res, 202, { ok: true, task: { status: "stopped" } }));
+    json(res, 404, { error: "not found" });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    baseUrl: "http://127.0.0.1:" + server.address().port,
+    stateCalls: () => stateCalls,
+    runCalls: () => runCalls,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+function read(req, done) {
+  let raw = "";
+  req.on("data", (chunk) => { raw += chunk; });
+  req.on("end", () => done(raw ? JSON.parse(raw) : {}));
+}
+
+function json(res, status, body) {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+}
+`;
 }
 
 function copyDirectory(source: string, target: string): void {

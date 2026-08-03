@@ -38,6 +38,22 @@ test("calendar Mode B offline generation is isolated and emits the approved Lark
   assert.match(moduleApp, /clearInterval\(keepAlive\)/, "long-connection host app must clear keepalive during shutdown");
   assert.ok(fs.existsSync(path.join(moduleRoot, ".env.example")));
   assert.equal(modulePackage.dependencies["@larksuiteoapi/node-sdk"], "1.71.1");
+  assert.equal(modulePackage.scripts["verify:card"], "node verify-card.mjs");
+  assert.match(modulePackage.scripts.test, /verify:card/);
+  assert.ok(fs.existsSync(path.join(moduleRoot, "verify-card.mjs")), "generated integrations/lark must include a local card verifier");
+  const verifyCardOutput = await runNode([path.join(moduleRoot, "verify-card.mjs")], {}, { cwd: moduleRoot });
+  assert.match(verifyCardOutput, /Card verification PASS/);
+  assert.match(verifyCardOutput, /host:subscription:card-action-trigger/);
+  assert.match(verifyCardOutput, /host:callback:routes-valid-action/);
+  assert.match(verifyCardOutput, /host:callback:unauthorized-no-target-mutation/);
+  assert.equal(readJson(path.join(moduleRoot, "card_verification_report.json")).status, "pass");
+  const blockedCliVerifyCardOutput = await runCliExpectFailure(["verify:card", generated]);
+  assert.match(blockedCliVerifyCardOutput, /--run-local-verifier/);
+  const cliVerifyCardOutput = await runCli(["verify:card", generated, "--run-local-verifier"]);
+  assert.match(cliVerifyCardOutput, /Card verification PASS/);
+  assert.match(cliVerifyCardOutput, /host:subscription:card-action-trigger/);
+  const packageVerifyOutput = await runCli(["verify", generated, "--mode", "embedded-adapter", "--strict"]);
+  assert.match(packageVerifyOutput, /adapter:card-runtime-verifier/);
 
   const capabilityMap = readJson(path.join(generated, "manifest", "capability_map.json"));
   assert.deepEqual(capabilityPaths(capabilityMap), ["/api/run", "/api/state", "/api/stop"]);
