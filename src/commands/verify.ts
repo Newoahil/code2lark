@@ -656,6 +656,7 @@ function buildEmbeddedAdapterChecks(packagePath: string, interactions: Interacti
   checks.push(checkAdapterStartCardBuilder(packagePath));
   checks.push(checkAdapterTypeScriptCompile(packagePath));
   checks.push(...executeEmbeddedAdapterSmoke(packagePath));
+  checks.push(...executeEmbeddedCardVerifier(packagePath));
   return checks;
 }
 
@@ -924,6 +925,46 @@ function executeEmbeddedAdapterSmoke(packagePath: string): CheckResult[] {
       { name: "adapter:handler-execution", status: "fail", detail: detail || "Generated adapter JS handler execution failed." },
     ];
   }
+}
+
+function executeEmbeddedCardVerifier(packagePath: string): CheckResult[] {
+  const verifierPath = path.join(packagePath, "integrations", "lark", "verify-card.mjs");
+  if (!fs.existsSync(verifierPath)) return [];
+  try {
+    const output = execFileSync(process.execPath, [verifierPath], { cwd: path.dirname(verifierPath), encoding: "utf8", stdio: "pipe", timeout: 60_000 });
+    const passed = /Card verification PASS/.test(output);
+    return [{
+      name: "adapter:card-runtime-verifier",
+      status: passed ? "pass" : "fail",
+      detail: passed ? "Generated integrations/lark verify-card.mjs passed offline runtime card gates." : "verify-card.mjs completed without a PASS summary.",
+    }];
+  } catch (error) {
+    const detail = embeddedVerifierErrorDetail(error);
+    return [{
+      name: "adapter:card-runtime-verifier",
+      status: "fail",
+      detail: detail || "Generated integrations/lark verify-card.mjs failed.",
+    }];
+  }
+}
+
+function embeddedVerifierErrorDetail(error: unknown): string {
+  if (error && typeof error === "object") {
+    const processError = error as { stdout?: Buffer | string; stderr?: Buffer | string; message?: string };
+    const output = [processError.stdout, processError.stderr]
+      .map((value) => typeof value === "string" ? value : value ? value.toString("utf8") : "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    if (output) return sanitizeVerifierOutput(output);
+    if (processError.message) return sanitizeVerifierOutput(processError.message);
+  }
+  return sanitizeVerifierOutput(error instanceof Error ? error.message : String(error));
+}
+
+function sanitizeVerifierOutput(output: string): string {
+  const sensitive = /(?:app[_-]?secret|appSecret|authorization|bearer|cookie|\bauth\b|\bsecret\b|\btoken\b|password|credentials?|api[_-]?key|apiKey|access[_-]?key|accessKey|accessToken|private[_-]?key|privateKey|operator[_-]?open[_-]?id|operatorOpenId|open[_-]?chat[_-]?id|openChatId|test[_-]?chat[_-]?id|testChatId|message[_-]?id|messageId|open[_-]?message[_-]?id|openMessageId|raw[_-]?callback|rawCallback|\b(?:ou|oc|om)_[A-Za-z0-9_-]+\b|\b(?:cli|msg)_[A-Za-z0-9_-]{8,}\b|\bsk-[A-Za-z0-9_-]{8,}\b)/i;
+  return output.split(/(\r?\n)/).map((part) => sensitive.test(part) ? "[redacted sensitive verifier output]" : part).join("");
 }
 
 function checkRequiredPermissionsMatchInteractions(interactions: InteractionContract | undefined, permissions: RequiredPermissions | undefined): CheckResult {

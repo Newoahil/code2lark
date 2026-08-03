@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { analyzeCommand } from "../dist/commands/analyze.js";
+import { verifyCardPayloads } from "../dist/commands/verify-card.js";
 import { readEnvFileIfExists } from "../dist/env-utils.js";
 import { hostModeUsesLongConnection, hostModeUsesWebhook, normalizeHostReceiveMode } from "../dist/host-mode.js";
 import { configuredValue, isPlaceholderValue } from "../dist/placeholder-utils.js";
@@ -133,4 +134,123 @@ test("analyze emits card-action permissions required by the MVP contract", async
   assert.deepEqual(permissions.events, []);
   assert.ok(permissions.callbacks.some((item) => item.callback === "card.action.trigger"));
   assert.ok(permissions.manual_steps.some((item) => item.includes("<PUBLIC_CALLBACK_BASE_URL>/webhook/card")));
+});
+
+test("card runtime verifier accepts JSON 2.0 send and callback shapes", () => {
+  const card = {
+    schema: "2.0",
+    header: { title: { tag: "plain_text", content: "Runtime Card" } },
+    body: {
+      elements: [
+        {
+          tag: "column_set",
+          columns: [{
+            tag: "column",
+            elements: [{
+              tag: "button",
+              text: { tag: "plain_text", content: "Run" },
+              behaviors: [{ type: "callback", value: { action: "runtime.run" } }],
+            }],
+          }],
+        },
+      ],
+    },
+  };
+
+  const report = verifyCardPayloads([
+    { name: "send", kind: "send-message", payload: { msg_type: "interactive", content: JSON.stringify(card) } },
+    { name: "callback", kind: "callback-response", payload: { card: { type: "raw", data: card } } },
+  ], { knownActions: ["runtime.run"] });
+
+  assert.equal(report.status, "pass");
+  assert.equal(report.summary.fail, 0);
+  assert.ok(report.checks.some((check) => check.name.includes("button:0:callback-behavior") && check.status === "pass"));
+  assert.ok(report.checks.some((check) => check.name.includes("button:0:known-action") && check.status === "pass"));
+});
+
+test("card runtime verifier rejects JSON 2.0 unsupported legacy component tags", () => {
+  const legacyCard = {
+    schema: "2.0",
+    header: { title: { tag: "plain_text", content: "Legacy Runtime Card" } },
+    body: {
+      elements: [
+        {
+          tag: "action",
+          actions: [{
+            tag: "button",
+            text: { tag: "plain_text", content: "Run" },
+            behaviors: [{ type: "callback", value: { action: "runtime.run" } }],
+          }],
+        },
+        { tag: "note", elements: [{ tag: "plain_text", content: "source" }] },
+      ],
+    },
+  };
+
+  const report = verifyCardPayloads([
+    { name: "legacy_card", kind: "card", payload: legacyCard },
+  ], { knownActions: ["runtime.run"] });
+
+  assert.equal(report.status, "fail");
+  assert.ok(report.checks.some((check) => check.name.includes("unsupported-runtime-tag") && check.detail.includes("tag action") && check.status === "fail"));
+  assert.ok(report.checks.some((check) => check.name.includes("unsupported-runtime-tag") && check.detail.includes("tag note") && check.status === "fail"));
+});
+
+test("card runtime verifier rejects design-only, legacy callback, wrapper, and sensitive payloads", () => {
+  const badCard = {
+    schema: "2.0",
+    note: "design handoff only",
+    header: { title: { tag: "plain_text", content: "Bad Card" } },
+    body: {
+      elements: [
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "Run" },
+          value: { action: "legacy.only" },
+        },
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "Unknown" },
+          behaviors: [{ type: "callback", value: { action: "runtime.unknown" } }],
+        },
+      ],
+    },
+  };
+
+  const report = verifyCardPayloads([
+    { name: "bad_send", kind: "send-message", payload: { msg_type: "interactive", card: badCard, content: JSON.stringify(badCard) } },
+    { name: "bad_callback", kind: "callback-response", payload: { card: badCard } },
+    { name: "sensitive", kind: "card", payload: { ...badCard, body: { elements: [{ tag: "markdown", content: "app_secret=redacted" }] } } },
+  ], { knownActions: ["runtime.run"] });
+
+  assert.equal(report.status, "fail");
+  assert.ok(report.checks.some((check) => check.name.includes("no-card-wrapper") && check.status === "fail"));
+  assert.ok(report.checks.some((check) => check.name.includes("raw-wrapper") && check.status === "fail"));
+  assert.ok(report.checks.some((check) => check.name.includes("design-field:$.note") && check.status === "fail"));
+  assert.ok(report.checks.some((check) => check.name.includes("callback-behavior") && check.status === "fail"));
+  assert.ok(report.checks.some((check) => check.name.includes("known-action") && check.status === "fail"));
+  assert.ok(report.checks.some((check) => check.name.includes("sanitized") && check.status === "fail"));
+});
+
+test("card runtime verifier requires action catalog and catches JSON-style sensitive keys", () => {
+  const card = {
+    schema: "2.0",
+    header: { title: { tag: "plain_text", content: "Needs Catalog" } },
+    body: {
+      elements: [{
+        tag: "button",
+        text: { tag: "plain_text", content: "Run" },
+        behaviors: [{ type: "callback", value: { action: "runtime.unknown" } }],
+      }],
+    },
+  };
+
+  const report = verifyCardPayloads([
+    { name: "missing_catalog", kind: "card", payload: card },
+    { name: "camel_secret", kind: "card", payload: { ...card, body: { elements: [{ tag: "markdown", content: JSON.stringify({ accessToken: "redacted" }) }] } } },
+  ]);
+
+  assert.equal(report.status, "fail");
+  assert.ok(report.checks.some((check) => check.name.includes("known-action-catalog") && check.status === "fail"));
+  assert.ok(report.checks.some((check) => check.name.includes("sanitized") && check.status === "fail"));
 });

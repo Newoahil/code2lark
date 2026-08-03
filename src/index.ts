@@ -12,6 +12,7 @@ import { installCommand } from "./commands/install.js";
 import { planCommand } from "./commands/plan.js";
 import { readinessCommand } from "./commands/readiness.js";
 import { statusCommand } from "./commands/status.js";
+import { verifyCardCommand } from "./commands/verify-card.js";
 import { verifyCommand } from "./commands/verify.js";
 
 async function main(): Promise<void> {
@@ -63,6 +64,9 @@ async function main(): Promise<void> {
     case "verify":
       await verifyCommand(parsed.positionals, parsed.options);
       return;
+    case "verify:card":
+      await verifyCardCommand(parsed.positionals, parsed.options);
+      return;
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -91,6 +95,7 @@ Usage:
   lark-deployer init-local <generated-package> [--context] [--reply] [--manual-evidence] [--all] [--force]
   lark-deployer install <generated-package> --target <target-project> [--target-base-url <url>] [--apply]
   lark-deployer verify <generated-package> [--env <file>] [--mode embedded-adapter|standalone-runtime|self-hosted-runtime] [--host-mode embedded-webhook|embedded-long-connection|hybrid|standalone-runtime] [--runtime-url <url>] [--host-runtime-url <url>] [--simulate] [--send-start-card] [--level2] [--strict] [--allow-local-callback]
+  lark-deployer verify:card <card-json-file-or-directory> [--report-dir <dir>]
 
 Validated targets:
   image-agent-web /api/generate, /api/iterate, and /api/batch progress integration.

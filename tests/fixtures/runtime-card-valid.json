@@ -1,0 +1,35 @@
+{
+  "known_actions": ["runtime.run", "runtime.refresh"],
+  "payloads": [
+    {
+      "name": "fixture_send",
+      "kind": "send-message",
+      "payload": {
+        "msg_type": "interactive",
+        "content": "{\"schema\":\"2.0\",\"header\":{\"title\":{\"tag\":\"plain_text\",\"content\":\"Runtime Card\"}},\"body\":{\"elements\":[{\"tag\":\"button\",\"text\":{\"tag\":\"plain_text\",\"content\":\"Run\"},\"behaviors\":[{\"type\":\"callback\",\"value\":{\"action\":\"runtime.run\"}}]}]}}"
+      }
+    },
+    {
+      "name": "fixture_callback",
+      "kind": "callback-response",
+      "payload": {
+        "card": {
+          "type": "raw",
+          "data": {
+            "schema": "2.0",
+            "header": { "title": { "tag": "plain_text", "content": "Runtime Card" } },
+            "body": {
+              "elements": [
+                {
+                  "tag": "button",
+                  "text": { "tag": "plain_text", "content": "Refresh" },
+                  "behaviors": [{ "type": "callback", "value": { "action": "runtime.refresh" } }]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
