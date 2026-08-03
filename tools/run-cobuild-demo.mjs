@@ -175,8 +175,11 @@ function prepareCodexWorkspace(tempDir) {
     path.join("references", "cobuild-playbook.md"),
     path.join("references", "confirmation-policy.md"),
     path.join("references", "safety-and-secrets.md"),
+    path.join("references", "feishu-card-json-2-runtime-spec.md"),
+    path.join("references", "feishu-runtime-gates.md"),
     path.join("references", "evidence-handoff.md"),
     path.join("embedded-skills", "lark-card-designer", "SKILL.md"),
+    path.join("embedded-skills", "lark-card-designer", "references", "json-2.0-compatibility-rules.md"),
   ];
 
   for (const relativePath of files) {

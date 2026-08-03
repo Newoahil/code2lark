@@ -6,8 +6,8 @@ You are validating a safe, deterministic Co-Build design response. This is a fic
 
 1. Inspect `SKILL.md` before answering.
 2. Follow the Co-Build routing in `SKILL.md` by reading `references/cobuild-workflow.md` and then `references/cobuild-playbook.md`.
-3. Apply the ownership and safety boundaries in those files. Preserve the boundary that Code2Lark supplies action semantics, risk, required inputs, audit metadata, and side-effect boundaries, while `lark-card-designer` or the card designer owns information architecture and component choices.
-4. Apply `references/feishu-runtime-gates.md`: card-design skeletons are not production-sendable JSON, and Level-2-ready delivery requires runtime payload verification.
+3. Apply the ownership and safety boundaries in those files. Preserve the boundary that Code2Lark supplies action semantics, risk, required inputs, audit metadata, and side-effect boundaries, while Lark Card Designer owns information architecture and component choices.
+4. Apply `references/feishu-card-json-2-runtime-spec.md` and `references/feishu-runtime-gates.md`: Lark Card Designer skeletons are not production-sendable JSON, and Level-2-ready Co-Build delivery requires runtime payload verification.
 
 ## Fictional capability
 
@@ -28,7 +28,7 @@ Return JSON only, matching `tests/fixtures/cobuild-demo-response.schema.json`. T
 - `mode: - cobuild` as the represented Co-Build mode value.
 - An explicit `ownership_split` between the business owner or main agent and Code2Lark.
 - A `minimal_contract` containing `status`, `dry_run`, `execute`, and `cancel`, plus the host-local confirmation boundary.
-- `card_confirmation` and `card_design_dependency`, including the lark-card-designer/card designer ownership boundary.
+- `card_confirmation` and `card_design_dependency`, including the Lark Card Designer ownership boundary.
 - `delivery_target` with `path: integrations/lark`, `module_type: embedded-long-connection`, `level2_ready: true`, `local_simulator_only: false`, `simulator_role: QA-only`, a runtime startup path, env values consumed by code, `card.action.trigger` routing, required env keys, and Feishu backend configuration steps.
 - `verification_and_handoff` or equivalent evidence that includes runtime gates for OpenAPI send-message content, JSON 2.0 callback button behavior, and `card.action.trigger` callback response shape.
 - `safety_boundary` with no target writes, no secrets, and both target prepare and confirm endpoints disabled.
