@@ -27,6 +27,37 @@ npm run build
 npm test
 ```
 
+## Co-Build Skill Delivery Updates
+
+当前分支同时维护 Code2Lark CLI 和外部 agent 可加载的 skill 包。Co-Build 模式的默认交付目标是目标项目内的隔离模块：
+
+```text
+integrations/lark
+```
+
+该模块应包含真实 Feishu/Lark runtime 边界，而不是只输出卡片草图或本地 mock：
+
+- Lark Card Designer 负责卡片信息架构、交互状态和 JSON 2.0 设计兼容性；内嵌 skill 已包含 `references/json-2.0-compatibility-rules.md`。
+- Code2Lark 负责把设计 handoff 转换成 production runtime payload，并通过 `verify:card` 校验 send-message payload、button `behaviors` callback、`card.action.trigger` callback response、设计草图字段和 unsupported runtime tags。
+- `references/feishu-card-json-2-runtime-spec.md` 收束 Lark Card Designer sketch 到 Feishu/Lark JSON 2.0 runtime payload 的转换边界。
+- `references/feishu-runtime-gates.md` 收束 long-connection host、env、sender、callback、verifier 和 Level-2-ready handoff gate。
+- Co-Build demo runner 会把 runtime spec、runtime gates 和 Lark Card Designer JSON 2.0 compatibility gate 一起放进外部 agent 临时 workspace。
+
+依赖和传输路径必须分开处理：
+
+- 发送起始卡可以使用 Feishu/Lark OpenAPI over HTTPS 和 Node 内置 `fetch`，这只是 outbound sender，不算接收路径降级。
+- 当选择 embedded-long-connection 交付时，`card.action.trigger` 接收路径不能因为 `@larksuiteoapi/node-sdk` 未安装或权限策略阻止安装而静默切换到 HTTP callback。
+- 如果 SDK 依赖安装被阻止，handoff 必须明确标记 `dependency_pending` 或 `long_connection_blocked`，并让开发者选择授权安装、暂缓启动，或显式切换到 HTTP callback fallback。
+
+本地 Co-Build skill 合同验证：
+
+```powershell
+npm run demo:cobuild
+node tools/run-cobuild-demo.mjs --static-only
+```
+
+这些检查证明 skill 规则和静态交付合同可被外部 agent 读取；真实飞书 Level 2 仍要求操作者配置应用凭据、测试群、长连接、`card.action.trigger` 订阅和权限，并提供脱敏证据。
+
 ## 常用命令
 
 ```powershell

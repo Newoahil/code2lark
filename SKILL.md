@@ -27,7 +27,7 @@ Simulator support is QA-only. A local simulator can test card action logic and s
 3. Before relying on code analysis or external tools, read `references/analyzer-boundary.md`.
 4. Before asking, generating, installing, or enabling actions, read `references/confirmation-policy.md` and `references/safety-and-secrets.md`.
 5. Before card layout or interaction-state decisions, delegate or reference `embedded-skills/lark-card-designer/SKILL.md`; do not duplicate its design rules here.
-6. Before converting card designs into runtime payloads, sending cards, handling `card.action.trigger`, or reporting Level-2-ready completion, read `references/feishu-runtime-gates.md`.
+6. Before converting card designs into runtime payloads, sending cards, handling `card.action.trigger`, or reporting Level-2-ready completion, especially for Co-Build `integrations/lark` delivery, read `references/feishu-card-json-2-runtime-spec.md` and `references/feishu-runtime-gates.md`.
 7. Before reporting completion, read `references/evidence-handoff.md`.
 
 ## CLI Reuse Model
@@ -65,6 +65,7 @@ code2lark/
 - Do not claim completion when only a simulator, mock card flow, static JSON, or `.env.example` exists without a real `integrations/lark` embedded-long-connection runtime.
 - Do not switch a Co-Build task to Retrofit just because the Lark delivery target was missed; continue Co-Build completion and fill the missing `integrations/lark` delivery.
 - Do not treat `lark-card-designer` JSON 2.0-like skeletons as production-sendable JSON; convert through a runtime adapter and pass the Feishu runtime gates first.
+- Do not duplicate Lark Card Designer rules in runtime references; preserve Lark Card Designer intent through the runtime adapter and enforce `references/feishu-card-json-2-runtime-spec.md` for Co-Build production payloads.
 
 ## Default Output
 

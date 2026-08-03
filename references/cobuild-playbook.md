@@ -144,8 +144,11 @@ Generated files must remain isolated and reviewable.
 - Local simulator output is a QA aid only; simulator-only output is not Co-Build complete.
 - The long-connection module must have code that consumes `.env` values such as `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, target base URL, and operator allowlist; `.env.example` without a runtime consumer is incomplete.
 - The runtime must expose a real startup path and route Feishu/Lark `card.action.trigger` events to the generated action handler. A mock card preview, static card JSON, or local simulator is not enough.
-- `lark-card-designer` output is a design handoff, not production-sendable JSON. Convert it through a runtime adapter and validate with `feishu-runtime-gates.md`.
+- `lark-card-designer` output is a design handoff, not production-sendable JSON. Convert it through a runtime adapter using `feishu-card-json-2-runtime-spec.md`, then validate with `feishu-runtime-gates.md`.
 - Runtime validation must distinguish OpenAPI send-message `content`, JSON 2.0 callback button `behaviors`, and `card.action.trigger` callback response `card: { type: "raw", data }`.
+- Runtime validation must recursively reject unsupported JSON 2.0 tags and design sketch fields. In particular, do not ship `tag: "action"`, `tag: "note"`, root-level `elements`, root-level `note`, or `schema: "json_2_0_like"`; map design notes to `markdown`/`div` and multi-button areas to `column_set`/`column`/`button`.
+- Sender and receive runtime are separate: using Feishu OpenAPI over HTTPS with Node built-in `fetch` is acceptable for sending the start card, but it must not be presented as the long-connection `card.action.trigger` receive path.
+- If SDK dependency installation is blocked by the agent permission policy, keep the long-connection code generated, mark the receive path as `dependency_pending` or `long_connection_blocked`, and ask the developer whether to approve/install the SDK, defer runtime start, or explicitly switch to HTTP callback fallback. Do not silently downgrade `start:lark` to HTTP callback mode.
 - Legacy or internal generated-package steps may be used for dry-run review, but the skill-facing delivery target remains `integrations/lark`.
 - Use dry-run before `install --apply`.
 - Do not modify root `package.json`, deployment files, Docker files, business routes, migrations, or production config unless explicitly approved.
@@ -161,6 +164,8 @@ Co-Build completion requires both business and Lark-side evidence. A Lark card d
 | Business contract test | Business owner / main agent | Target tests or manual proof that status/dry-run/execute/cancel behave as promised. |
 | Adapter validation | Code2Lark | Generated adapter tests, schema checks, and action validation. |
 | Runtime card validation | Code2Lark | `verify:card` or equivalent proves send-message payload, callback button behavior, callback response card shape, and absence of design-only fields. |
+| JSON 2.0 component compatibility | Code2Lark | Recursive verifier rejects legacy/unsupported runtime tags such as `action` and `note`, rejects designer sketches, and proves buttons use `behaviors[].value.action`. |
+| Dependency/transport preflight | Code2Lark + developer | SDK dependency status is explicit; HTTPS sender readiness is separate from long-connection receive readiness; HTTP callback fallback requires explicit developer confirmation. |
 | Local card simulation | Code2Lark | Simulated card action payloads, success/failure paths, and audit event checks. |
 | Safety check | Code2Lark + business owner | Destructive/privileged/external-send actions use prepare/confirm and allowlist. |
 | Lark action boundary | Code2Lark | Direct execute without prior host-local prepare is rejected. Client-controlled confirmation signals are not authorization: `confirm: true`, client-supplied previews, plain HTTP dry-run tokens, or equivalent request fields are not proof of Lark confirmation. Confirmation provenance must be server-held, host-local, or otherwise non-forgeably bound before target execution; forged or stale previews are rejected; unauthorized operators fail closed. |
@@ -180,6 +185,8 @@ Use `references/evidence-handoff.md` for the shared handoff checklist and `refer
 - Do not commit or print real app secrets, open IDs, chat IDs, message IDs, raw callbacks, access tokens, debug tokens, or `.env` values.
 - Do not present simulator-only output, mock card flows, static card JSON, or unused `.env.example` files as Co-Build completion.
 - Do not use `lark-card-designer` skeletons, root-level `elements`, `{ card: cardJson }` message content wrappers, legacy button `value` alone, or raw card JSON directly under callback `card` as production runtime output.
+- Do not copy design sketch component names into runtime payloads when Feishu JSON 2.0 does not support them; `tag: "action"` and `tag: "note"` are blocked runtime tags.
+- Do not silently switch the selected embedded-long-connection receive path to HTTP callback mode when SDK install is blocked. Ask the developer to approve install, defer start, or explicitly choose callback fallback.
 - Do not switch to Retrofit or hand-write an ad-hoc Lark patch when Co-Build missed its delivery target; continue Co-Build completion against the approved contract.
 - Do not claim Co-Build is complete until both the business contract and the Lark integration path have evidence.
 
@@ -197,6 +204,7 @@ business_contract:
 lark_entrypoints:
 - cards/actions, risk, confirmation model
 - delivery target: `integrations/lark` embedded-long-connection module
+- transport status: `generated`, `dependency_pending`, `long_connection_blocked`, `sender_ready`, or `level2_ready`
 
 ownership:
 - what business owner owns
@@ -206,6 +214,7 @@ verification:
 - business tests or missing business evidence
 - adapter/card simulation/verify results
 - runtime card gates: send-message payload, JSON 2.0 callback button behavior, and `card.action.trigger` callback response shape
+- dependency/transport preflight: SDK declared/installed state, `start:lark` receive mode, sender readiness, and any developer decision required
 - Lark QA boundary evidence: direct execute bypass, duplicate confirm, unauthorized operator, stale/forged preview, and terminal-state replay
 
 handoff:
