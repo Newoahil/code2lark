@@ -1,4 +1,4 @@
-# 创建卡片实体
+﻿# 创建卡片实体
 
 基于卡片 JSON 代码或卡片搭建工具搭建的卡片，创建卡片实体。用于后续通过卡片实体 ID（card_id）发送卡片、更新卡片等。
 
@@ -80,3 +80,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 200220 | Failed to generate card content | 生成卡片内容失败。请检查卡片 JSON 格式是否有误。
 400 | 300305 | The number of card components exceeds 200 | 超出卡片组件限制。卡片 JSON 2.0 结构中，一张卡片最多支持 200 个元素（如 tag 为 plain_text 的文本元素）或组件。请将组件和元素的数量之和控制在 200 个以内。
 400 | 300307 | The card DSL is empty | 卡片 JSON 数据为空。请检查并修改。
+
+

@@ -1,4 +1,4 @@
-# 下拉选择-多选组件
+﻿# 下拉选择-多选组件
 
 下拉选择-多选组件支持自定义多选菜单的选项文本、图标等，是一种交互组件，需嵌入在表单容器中使用。
 **注意事项**：本文档介绍下拉选择-多选组件的 JSON 2.0 结构，要查看历史 JSON 1.0 结构，参考[下拉选择-多选](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/multi-select-dropdown-menu)。

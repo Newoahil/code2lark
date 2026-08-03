@@ -1,4 +1,4 @@
-# 为卡片分组
+﻿# 为卡片分组
 
 在飞书卡片搭建工具中，你可以创建自定义分组并将卡片添加至分组中，方便快速浏览与定位所需卡片。本文档介绍如何为卡片分组。
 
@@ -59,3 +59,5 @@
 ![](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/29474f74506e8c6fe2c8e0e1a03994cb_3CauALWcrD.png?height=763&lazyload=true&maxWidth=600&width=1436)
 
 删除分组后，该分组内的卡片将变为未分组状态，你可以在 **全部** 或 **未分组** 筛选项下查看这些卡片。
+
+

@@ -1,4 +1,4 @@
-# 表情文案说明
+﻿# 表情文案说明
 
 本文列举用于表情回复的表情与相应的 emoji_type。
 
@@ -67,3 +67,5 @@
 ![FullMoonFace](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/81e0b36d0fb3a9fcd9dec713e9750c1b_ciYC93YonW.png?height=96&lazyload=true&width=96) | FullMoonFace | ![Partying](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/9cfb7be26a970caae6d774498474988f_sQ3pgWOu31.png?height=96&lazyload=true&width=96) | Partying | ![GoGoGo](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/0a6df90764cd0d3f01d85bca6c814fb7_tvwAnSsTJS.png?height=96&lazyload=true&width=96) | GoGoGo
 ![ThanksFace](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/a912450d9e0f85ad9455b3197634ee14_k46oc6Ok7K.png?height=96&lazyload=true&width=96) | ThanksFace | ![SaluteFace](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/c16a76d4e345b0d098bbf39eb1a1eb59_QA6zdwvDqi.png?height=96&lazyload=true&width=96) | SaluteFace | ![Shrug](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/756651e468c367877deb996502e14408_QkZKDz5o5T.png?height=96&lazyload=true&width=96) | Shrug
 ![ClownFace](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/860a4e71696cdcde0e218565ef5bf3b1_lOjQS7FSKS.png?height=96&lazyload=true&width=96) | ClownFace | ![HappyDragon](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/e8f7bab6f3609283a80c8f15d83f5580_gL6Cwjsqnu.png?height=96&lazyload=true&width=96) | HappyDragon | &nbsp; | &nbsp;
+
+

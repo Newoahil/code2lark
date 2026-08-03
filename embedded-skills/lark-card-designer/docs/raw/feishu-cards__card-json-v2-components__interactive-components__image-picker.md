@@ -1,4 +1,4 @@
-# 多图选择组件
+﻿# 多图选择组件
 
 多图选择组件是用于提供图片选项的交互组件，支持单选、多选图片。多图选择组件适用于以图片为主要选项的场景，如在卡片中展示商品图、模板图、AI生成的图片等供用户选择。
 **注意事项**：本文档介绍多图选择组件的 JSON 2.0 结构，要查看历史 JSON 1.0 结构，参考[多图选择](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/image-picker)。

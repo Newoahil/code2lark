@@ -1,4 +1,4 @@
-# 配置卡片多语言
+﻿# 配置卡片多语言
 
 飞书卡片支持多语言设置。设置多语言后，卡片将根据用户的飞书客户端语言，自动展示对应语言的卡片内容，满足国际化业务需求。本文档介绍如何使用卡片 JSON 代码配置多语言。
 
@@ -47,8 +47,8 @@ file_key | i18n_file_key_key | - 音频组件中的 file_key 属性 | 文件资�
 {
   "tag": "markdown",
   "content": "*斜体*\n**粗体**\n~~删除线~~\n文字链接\n差异化跳转\n",
-  "i18n_content": {
-    "en_us": "*Italic*\n**Bold**\n~~Strikethrough~~\n[Text Link](URL)\n[Differentiated Jump](URL)",   // 英文
+  "i18n_content": {  
+    "en_us": "*Italic*\n**Bold**\n~~Strikethrough~~\n[Text Link](URL)\n[Differentiated Jump](URL)",   // 英文 
     "zh_cn": "",  // 简体中文
     "zh_hk": "",  // 繁体中文（香港）
     "zh_tw": "",  // 繁体中文（台湾）
@@ -63,7 +63,7 @@ file_key | i18n_file_key_key | - 音频组件中的 file_key 属性 | 文件资�
     "fr_fr": "",  // 法语
     "it_it": "",  // 意大利语
     "ru_ru": "",  // 俄语
-    "ms_my": "",  // 马来语
+    "ms_my": "",  // 马来语    
   }
 }
 ```
@@ -368,3 +368,4 @@ file_key | i18n_file_key_key | - 音频组件中的 file_key 属性 | 文件资�
   }
 }
 ```
+

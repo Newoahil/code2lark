@@ -1,4 +1,4 @@
-# 快速入门
+﻿# 快速入门
 
 本文提供完整的链接预览配置流程，供你参考并上手体验链接预览功能。
 
@@ -113,7 +113,7 @@
 **注意：**<br>
 - 如果本机有公网地址，可跳过本步骤。
 - 如果本机没有公网地址，本教程为了方便实现，使用了反向代理工具（[ngrok](https://ngrok.com/download)）完成内网穿透，暴露本地服务的公网访问入口。**该工具仅适用于开发测试阶段，不可用于生产环境，使用前请确认是否符合所在公司网络安全政策。**
-- **测试完成后，如需正式发布应用，你需要修改为真实有效的公网地址。**
+- **测试完成后，如需正式发布应用，你需要修改为真实有效的公网地址。**   
 
 1. 注册并安装 [ngrok](https://ngrok.com/download)，按照官方指引完成安装。
 2. 在个人的 [dashboard 页面](https://dashboard.ngrok.com/get-started/your-authtoken) 中，获取 Authtoken。
@@ -192,3 +192,5 @@
 单独发送 `https://example.com/path` | ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/10a85b69dd41eea0e48766ab951801b4_xO9s5mVFGj.png?height=776&lazyload=true&width=958)
 富文本消息包含 `https://example.com/path` | ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/cfc41a0432fb907fc0661ed172cb9ea9_LwgJQnGUxz.png?height=782&lazyload=true&width=956)
 群置顶消息 `https://example.com/path` | ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/7b3c8d54aa57bc750c0dc20152141474_9xf0Y2vQ62.png?height=185&lazyload=true&width=1280)
+
+

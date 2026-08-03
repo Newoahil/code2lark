@@ -119,9 +119,9 @@ Examples:
 
 ## Component Guidance
 
-- Use a short judgment paragraph or note for the overall conclusion.
-- Use KPI columns only for 3 to 5 decisive metrics; do not create a wall of flat KPI blocks.
-- Use charts for trends, baselines, and changes when they alter the decision.
+- Use a short `markdown` paragraph or neutral `div` for the overall conclusion.
+- Use a conceptual KPI group only for 3 to 5 decisive metrics; map it to verified `column_set`/nested `column`/`div` or to a vertical text stack.
+- Use `chart` for trends, baselines, and changes only when they alter the decision and the implementation owner can validate `chart_spec`; otherwise use a bounded table or explicit text comparison.
 - Use a bounded table for prioritized objects, usually 5 to 10 rows.
 - Fold full detail tables, raw data, source gaps, long evidence, and debug-like fields.
 - Use tags for risk, confidence, freshness, new/recovered state, or action priority.

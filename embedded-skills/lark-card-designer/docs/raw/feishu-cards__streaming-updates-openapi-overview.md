@@ -1,4 +1,4 @@
-# 流式更新卡片
+﻿# 流式更新卡片
 
 飞书卡片的流式更新能力是指飞书卡片的内容以实时或准实时的方式连续不断地更新，实现卡片逐步渲染的效果。本文档介绍如何上手卡片的流式更新能力。
 
@@ -46,7 +46,7 @@
 
 #### **方式一：创建卡片时，直接开启流式更新模式**
 
-1. 在卡片 JSON 中，将 `streaming_mode` 字段设置为 `true`。同时，你可使用 `streaming_config` 指定流式更新的频率、步长和更新策略。字段说明与 JSON 示例如下所示。
+1. 在卡片 JSON 中，将 `streaming_mode` 字段设置为 `true`。同时，你可使用 `streaming_config` 指定流式更新的频率、步长和更新策略。字段说明与 JSON 示例如下所示。 
 
 字段名称 | 类型 | 必填 | 描述
 ---|---|---|---
@@ -217,7 +217,7 @@ print_strategy | enum | 否 | 单个文本元素（tag 为 plain_text）或富�
 
 ### 步骤三：持续更新卡片
 
-当文本流式输出完毕后，若你需要在卡片中更新部分内容，如在文本组件下方追加下拉选项组件，提供对 AI 回答的评价入口，用户完成反馈后更新组件等操作，你可调用[卡片和组件接口](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/feishu-card-resource-overview#791c8e74)，继续持续多次更新卡片，包括全量更新卡片、对卡片中组件进行增、删、改、修改卡片配置等操作。
+当文本流式输出完毕后，若你需要在卡片中更新部分内容，如在文本组件下方追加下拉选项组件，提供对 AI 回答的评价入口，用户完成反馈后更新组件等操作，你可调用[卡片和组件接口](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/feishu-card-resource-overview#791c8e74)，继续持续多次更新卡片，包括全量更新卡片、对卡片中组件进行增、删、改、修改卡片配置等操作。  
 无论是否开启流式更新模式，除[流式更新文本](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/content)外，你均可调用[卡片和组件接口](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/feishu-card-resource-overview#791c8e74)对卡片内的组件进行精细化操作。
 
 如下图示例，调用[新增组件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/create)接口，你可在富文本组件后插入一个按钮组件。
@@ -267,7 +267,7 @@ print_strategy | enum | 否 | 单个文本元素（tag 为 plain_text）或富�
 
 ### Q: 流式卡片生成的卡片无法转发，如何解决？
 
-开启了流式更新模式的卡片无法被转发。你需调用[更新卡片配置](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/settings)接口将 `streaming_mode` 字段值设置为 `false` 关闭流式更新模式。
+开启了流式更新模式的卡片无法被转发。你需调用[更新卡片配置](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/settings)接口将 `streaming_mode` 字段值设置为 `false` 关闭流式更新模式。 
 
 ### Q: 流式卡片是否支持以交互更新的方式更新卡片？
 
@@ -275,3 +275,5 @@ print_strategy | enum | 否 | 单个文本元素（tag 为 plain_text）或富�
 
 1. 在卡片文本流式更新结束后，调用[更新卡片配置](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card/settings)接口，将 `streaming_mode` 字段值设置为 `false`，以终止卡片的流式更新模式。
 2. 参考[处理卡片回调](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/handle-card-callbacks)，正常处理回调请求。更新卡片时，你可继续调用卡片和组件级接口，局部更新卡片。
+
+

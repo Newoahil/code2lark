@@ -1,4 +1,4 @@
-# 图片
+﻿# 图片
 
 卡片搭建工具中的图片组件支持展示一张图片。你可通过上传图片的方式，获取图片的 key 并传入图片组件中，使卡片内容更丰富。本文档介绍如何在搭建工具中使用新版卡片的图片组件。
 
@@ -58,3 +58,4 @@
 **为变量赋值**
 
 添加好变量后，在发送卡片时，即可通过请求体的 `template_variable` 字段为变量赋值。`template_variable` 字段是卡片绑定的变量列表，格式为 `{key:value}`。详情参考[为卡片变量赋值](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/configure-card-variables#a6abb723)。
+

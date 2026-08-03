@@ -1,4 +1,4 @@
-# 图片组件
+﻿# 图片组件
 
 飞书卡片支持图片组件。你可调用[上传图片](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/image/create)接口或在搭建工具的图片组件中上传图片，获取图片的 key 传入图片组件中，使卡片内容更丰富。
 

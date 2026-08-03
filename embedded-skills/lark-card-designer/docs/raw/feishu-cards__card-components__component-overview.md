@@ -1,4 +1,4 @@
-# 卡片 JSON 1.0 版本组件概述
+﻿# 卡片 JSON 1.0 版本组件概述
 
 飞书卡片中的组件可分为容器类、展示类和交互类组件。除循环容器外，所有组件均支持通过卡片 JSON 代码构建。除折叠面板、多图选择和勾选器外，所有组件均支持通过卡片搭建工具搭建使用。在 JSON 结构中，组件通过定义 `tag` 字段声明：
 
@@ -55,3 +55,5 @@
 [日期时间选择器（picker_datetime）](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/date-time-picker) | ✓ | / | 日期时间选择器组件支持提供时间和日期选项。
 [多图选择（select_img）](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/image-picker) | × | 飞书 V7.6 及以上 | 多图选择组件支持提供图片选项，支持单选、多选图片。
 [勾选器（checker）](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/checker) | × | 飞书 V7.9 及以上 | 勾选器支持配置回调响应，主要用于任务勾选的场景。
+
+

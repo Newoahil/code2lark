@@ -1,5 +1,5 @@
-# 示例代码解释
-本教程提供了卡片交互机器人 Demo 的多语言示例代码， 通过本文你可以了解各语言的业务代码逻辑。点击[此链接](https://github.com/larksuite/lark-samples/tree/main/card_interaction_bot)前往 GitHub 查看源码。
+﻿# 示例代码解释
+本教程提供了卡片交互机器人 Demo 的多语言示例代码， 通过本文你可以了解各语言的业务代码逻辑。点击[此链接](https://github.com/larksuite/lark-samples/tree/main/card_interaction_bot)前往 GitHub 查看源码。 
 **注意事项**：要获取其他接口的调用示例代码，可在 API 调试台调用接口成功后，复制调试台自动生成的示例代码，详情参考[在调试台发起 API 调用](https://open.feishu.cn/document/uAjLw4CM/uMzNwEjLzcDMx4yM3ATM/how-to-call-a-server-side-api/introduction#42c7c09a)。
 ### Java 示例代码
 
@@ -66,10 +66,10 @@ private static final String APP_ID = System.getenv("APP_ID");
     private static final Client client = new Client.Builder(APP_ID, APP_SECRET).build();
 
 /*
-     *
+     * 
      * 发送欢迎卡片
      * Send welcome card
-     *
+     * 
      */
 
 private static void sendWelcomeCard(String openID) throws Exception {
@@ -245,7 +245,7 @@ private static void sendWelcomeCard(String openID) throws Exception {
                      * 通过 action 区分不同按钮点击，你可以在卡片搭建工具配置按钮的action。此处处理用户点击了欢迎卡片中的发起告警按钮
                      * Use action to distinguish different buttons. You can configure the action of the button in the card building tool.
                      * Here, handle the situation where the user clicks the "Initiate Alarm" button on the welcome card.
-                     *
+                     * 
                      */
                     if (event.getEvent().getAction().getValue().get("action").equals("send_alarm")) {
 
@@ -264,7 +264,7 @@ private static void sendWelcomeCard(String openID) throws Exception {
                      * Here, handle the scenario where the user clicks the "Mark as resolved" button on the alarm card.
                      */
 
-if (event.getEvent().getAction().getValue().get("action").equals("complete_alarm")) {
+if (event.getEvent().getAction().getValue().get("action").equals("complete_alarm")) {                       
                         /**
                          * 读取告警卡片中用户填写的备注文本信息
                          * Read the note text information filled in by the user in the alarm card.
@@ -700,7 +700,7 @@ func main() {
 	 */
 	eventHandler := dispatcher.NewEventDispatcher("", "").
 		/**
-			* 处理用户进入机器人单聊事件
+		 	* 处理用户进入机器人单聊事件
 			* handle user enter bot single chat event
 			* https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/chat-access_event/events/bot_p2p_chat_entered
 		*/
@@ -763,7 +763,7 @@ fmt.Printf("[ OnP2ChatAccessEventBotP2pChatEnteredV1 access ], data: %s\n", lark
 			}
 			/**
 					* 通过 action 区分不同按钮， 你可以在卡片搭建工具配置按钮的action。此处处理用户点击了告警卡片中的已处理按钮
-				* Use action to distinguish different buttons. You can configure the action of the button in the card building tool.
+			    	* Use action to distinguish different buttons. You can configure the action of the button in the card building tool.
 					 * Here, handle the scenario where the user clicks the "Mark as resolved" button on the alarm card.
 			*/
 			if event.Event.Action.Value["action"] == "complete_alarm" {
@@ -1085,3 +1085,5 @@ wsClient.start({ eventDispatcher });
 
 console.log('Starting bot...');
 ```
+
+

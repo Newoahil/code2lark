@@ -6,8 +6,8 @@ Use this file to adapt one data set into different card styles. The audience cha
 
 - Goal: decide whether the business is healthy, risky, or needs intervention.
 - First screen: one-sentence conclusion, 3 to 5 KPI, top risk, decision point.
-- Density: low to medium. Hide raw details behind collapsible panels or links.
-- Components: header, short markdown, KPI columns, small trend/chart, risk note, optional action button.
+- Density: low to medium. Hide raw details behind conditional `collapsible_panel` or links.
+- Components: top-level header, short `markdown`, conceptual KPI group mapped to `column_set` + nested `column` + `div`/`markdown`, conditional `chart`, neutral risk/caveat `div`, optional `button`.
 - Must include: period, scope, unit, source/update time when metrics are used.
 - Avoid: long tables, implementation logs, full row-level evidence on the first screen.
 
@@ -16,7 +16,7 @@ Use this file to adapt one data set into different card styles. The audience cha
 - Goal: understand performance, anomalies, owners, and next actions.
 - First screen: KPI health, trend/change, anomaly list, owner/action.
 - Density: medium. More rows are acceptable if bounded.
-- Components: KPI columns, chart, Top-N table, native table, collapsible detail, refresh/detail button.
+- Components: conceptual KPI group mapped to verified text/column components, conditional `chart`, Top-N `table`, conditional `collapsible_panel` detail, verified refresh/detail `button`.
 - Must include: owner, due date or follow-up path for operational issues.
 - Avoid: management-only abstraction that hides the object needing work.
 
@@ -25,7 +25,7 @@ Use this file to adapt one data set into different card styles. The audience cha
 - Goal: know what to do now and avoid mistakes.
 - First screen: object, action, deadline, risk, enabled primary button.
 - Density: low. Make the action area visually and structurally obvious.
-- Components: action/approval layout, button, select/input/form, status note, audit footer.
+- Components: conceptual action/approval layout mapped to individual `button` components, verified select/input inside `form` when needed, status `div`, audit metadata.
 - Must include: object identity, requester/owner, deadline, current state, consequences.
 - Avoid: burying the action after long analysis; asking the user to copy text instead of using controls.
 
@@ -34,7 +34,7 @@ Use this file to adapt one data set into different card styles. The audience cha
 - Goal: explain what happened, why, impact, and what changes next.
 - First screen: conclusion, evidence baseline, impact summary, next action.
 - Density: medium to high, but evidence should be staged.
-- Components: markdown conclusion, comparison chart, evidence table, collapsible raw data, action table.
+- Components: `markdown` conclusion, conditional comparison `chart`, evidence `table`, conditional `collapsible_panel` raw data, action `table`.
 - Must include: baseline, period, data source, confidence or limitation when relevant.
 - Avoid: decorative charts without a question; conclusions without evidence.
 
@@ -43,7 +43,7 @@ Use this file to adapt one data set into different card styles. The audience cha
 - Goal: decide what to read, keep, forward, or ignore.
 - First screen: topic, priority, must-read items, why it matters.
 - Density: medium. Each item should be short and source-backed.
-- Components: categorized list, rich text/markdown, tags, link buttons, optional image, feedback buttons.
+- Components: categorized list using `markdown` or repeated `div`, compact labels, verified link/feedback `button`, optional `img`.
 - Must include: title, source, publish time or collection time, summary, priority.
 - Avoid: pasting full article bodies or losing source attribution.
 

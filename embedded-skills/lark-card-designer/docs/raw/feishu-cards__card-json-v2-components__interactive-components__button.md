@@ -1,4 +1,4 @@
-# 按钮组件
+﻿# 按钮组件
 
 按钮组件是一种交互组件，支持多种样式和尺寸，并支持添加图标作为前缀图标。
 **注意事项**：本文档介绍按钮组件的 JSON 2.0 结构，要查看历史 JSON 1.0 结构，参考[按钮](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/button)。

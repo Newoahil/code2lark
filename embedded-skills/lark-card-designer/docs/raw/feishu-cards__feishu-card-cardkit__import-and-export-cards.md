@@ -1,4 +1,4 @@
-# 导入导出卡片
+﻿# 导入导出卡片
 
 飞书卡片搭建工具支持导入卡片的 `.card` 文件和旧版[消息卡片搭建工具](https://open.feishu.cn/tool/cardbuilder?from=open_docs)导出的 `.json` 文件，并支持导出卡片的 `.card` 文件，从而实现跨企业、跨工具同步卡片数据。`.card` 源文件文件包含卡片变量和卡片样式内容。本文档介绍如何在搭建工具中导入与导出卡片。
 
@@ -16,7 +16,7 @@
 
 飞书卡片搭建工具支持导入 `*.card` 文件和旧版[消息卡片搭建工具](https://open.feishu.cn/tool/cardbuilder?from=open_docs)导出的 `*.json` 文件。
 
-### 注意事项
+### 注意事项 
 
 - 从旧版[消息卡片搭建工具](https://open.feishu.cn/tool/cardbuilder?from=open_docs)中导出 `*.json` 文件时，你必须点击 **导出卡片** 获取 JSON 文件（仅卡片所有者有权限导出）。直接复制卡片 JSON 的方式将导致卡片导入失败。
 
@@ -41,3 +41,5 @@
 3. 新导入的卡片与旧版搭建工具中的卡片 ID 不同。要使用新导入的卡片，你需在新版卡片搭建工具中重新获取卡片模板 ID。
 
 ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/b42c3b02a5a08f70946c28579c738691_ulBs1WiXVr.png?height=360&lazyload=true&maxWidth=500&width=1611)
+
+

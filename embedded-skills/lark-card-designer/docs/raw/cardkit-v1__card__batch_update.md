@@ -1,4 +1,4 @@
-# 局部更新卡片实体
+﻿# 局部更新卡片实体
 
 更新卡片实体局部内容，包括配置和组件。支持同时对多个组件进行增删改等不同操作。
 
@@ -91,3 +91,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 300317 | The sequence number for operating on the card did not increment consecutively | 操作卡片的序号（sequence）未按顺序递增。请确保在通过卡片 OpenAPI 操作同一张卡片时，sequence 的值相较于上一次操作严格递增。
 400 | 300121 | Failed to replace element | 替换组件失败。请根据接口返回的错误信息检查输入参数。
 400 | 300122 | Failed to update card configuration | 更新卡片配置失败。请根据接口返回的错误信息检查输入参数。
+
+

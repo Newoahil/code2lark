@@ -1,4 +1,4 @@
-# 更新卡片配置
+﻿# 更新卡片配置
 
 更新指定卡片实体的配置，支持卡片配置 `config` 字段和卡片跳转链接 `card_link` 字段。
 
@@ -82,3 +82,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 300311 | The current application does not have permission to update/use this card | 当前应用没有更新或使用该卡片的权限。仅支持创建卡片实体的应用调用相关 OpenAPI 发送、操作卡片。
 400 | 300317 | The sequence number for operating on the card did not increment consecutively | 操作卡片的序号（sequence）未按顺序递增。请确保在通过卡片 OpenAPI 操作同一张卡片时，sequence 的值相较于上一次操作严格递增。
 400 | 300122 | Failed to update card configuration | 更新卡片配置失败。请根据接口返回的错误信息检查输入参数。
+
+

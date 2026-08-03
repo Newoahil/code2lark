@@ -1,4 +1,4 @@
-# 分栏组件
+﻿# 分栏组件
 分栏组件提供卡片内布局的能力，并提供对齐方式、容器宽度、交互方式等属性。你可以使用分栏组件横向排布多个列容器，在列容器内自由组合图文内容，搭建出如数据表、商品或文章列表、差旅信息等图文并茂、交互友好的卡片。
 
 本文档介绍分栏组件的 JSON 1.0 结构，要查看新版 JSON 2.0 结构，参考[分栏](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/containers/column-set)。

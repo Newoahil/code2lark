@@ -1,4 +1,4 @@
-# Feishu/Lark Card Documentation
+﻿# Feishu/Lark Card Documentation
 
 Generated at: 2026-06-30 14:14:06 +08:00
 
@@ -246,3 +246,4 @@ These files are raw Markdown copies from Feishu Open Platform documentation. Use
   Source: https://open.feishu.cn/document/server-docs/im-v1/message/create.md
 
 ## Failed Or Missing
+

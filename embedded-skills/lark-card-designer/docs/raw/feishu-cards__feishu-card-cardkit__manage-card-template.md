@@ -1,4 +1,4 @@
-# 管理卡片权限
+﻿# 管理卡片权限
 
 本文档介绍如何为搭建工具中的卡片添加协作者、转移所有权、绑定应用或自定义机器人。
 **注意事项**：仅卡片的所有者可以为卡片添加协作者、转移卡片所有权、绑定应用或自定义机器人。
@@ -31,7 +31,7 @@
 
 若卡片的所有者离职：
 - 对于[新版卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/cardkit-upgraded-version-card-release-notes)，卡片所有权将默认转移给该成员的上级，无需手动转移
-- 对于[旧版卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/cardkit-upgraded-version-card-release-notes)，其将跟随应用资源一并转移。即卡片有者创建的应用如被转移至他人名下，相应的卡片也将一并转移至该接收人名下
+- 对于[旧版卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/cardkit-upgraded-version-card-release-notes)，其将跟随应用资源一并转移。即卡片有者创建的应用如被转移至他人名下，相应的卡片也将一并转移至该接收人名下  
 ## 为卡片添加应用或自定义机器人
 
 为卡片添加应用或自定义机器人后，该应用或自定义机器人将拥有发送卡片消息的权限，方便卡片的发布与消费。添加应用和自定义机器人的区别如下：

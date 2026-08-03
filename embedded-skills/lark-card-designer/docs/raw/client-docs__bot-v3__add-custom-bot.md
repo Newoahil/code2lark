@@ -1,4 +1,4 @@
-# 自定义机器人使用指南
+﻿# 自定义机器人使用指南
 
 自定义机器人是一种只能在当前群聊中使用的机器人。该类机器人无需经过租户管理员审核，即可在当前群聊中通过调用 webhook 地址的方式完成消息推送。本文主要介绍自定义机器人的使用方式。
 
@@ -53,7 +53,7 @@
 
 ```
     https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxxxxxxxxx
-    ```warning
+    ```warning    
 **请妥善保存好此 webhook 地址**，不要公布在 Gitlab、博客等可公开查阅的网站上，避免地址泄露后被恶意调用发送垃圾消息。
 
 ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/39d1233fc3276c71f6fce9707abf05c9_YdZveIV7gm.png?height=1134&lazyload=true&maxWidth=600&width=1654)
@@ -645,7 +645,7 @@ return sign
       <at user_id="ou_xxx1">Name1</at><at user_id="ou_xxx2">Name2</at> //取值须使用 open_id 或 user_id 来 @ 指定人
 
 // @ 所有人
-      <at user_id="all">所有人</at>
+      <at user_id="all">所有人</at> 
       ```
 
 - 请求体示意
@@ -688,7 +688,7 @@ return sign
               "tag": "at",
               "user_id": "all", //取值使用"all"来at所有人
               "user_name": "所有人"
-      }
+      } 
       ```
 
 - 请求体示意
@@ -736,7 +736,7 @@ return sign
       // at 指定用户
       <at id=ou_xxx></at> //取值须使用 open_id 或 user_id 来 @ 指定人
       // at 所有人
-      <at id=all></at>
+      <at id=all></at> 
       ```
 
 - 请求体中的 `card` 内容示意：
@@ -760,7 +760,7 @@ return sign
 
 自定义机器人不需要租户管理员审核即可向所在的群（包括外部群）发送消息。这一开发上的灵活性也限制自定义机器人不具有任何数据访问权限，否则会在管理员不知情的条件下，泄露租户的隐私信息.
 
-基于这个前提，自定义机器人本身不能调用接口获取用户的 open_id，或直接通过用户的邮箱、手机号来 @ 人（恶意开发者可能用这种方式扫出群成员的头像、姓名等隐私信息）。因此，你可以开发一个机器人应用，使用以下受管控的方案获得用户的`open_id`，然后参考 [怎么实现机器人 @ 人](https://open.feishu.cn/document/ugTN1YjL4UTN24CO1UjN/uUzN1YjL1cTN24SN3UjN#acc98e1b)，在自定义机器人推送的消息中 @ 人。
+基于这个前提，自定义机器人本身不能调用接口获取用户的 open_id，或直接通过用户的邮箱、手机号来 @ 人（恶意开发者可能用这种方式扫出群成员的头像、姓名等隐私信息）。因此，你可以开发一个机器人应用，使用以下受管控的方案获得用户的`open_id`，然后参考 [怎么实现机器人 @ 人](https://open.feishu.cn/document/ugTN1YjL4UTN24CO1UjN/uUzN1YjL1cTN24SN3UjN#acc98e1b)，在自定义机器人推送的消息中 @ 人。 
 
 **方案一：通过邮箱或手机号反查用户的**`open_id`
 
@@ -799,3 +799,5 @@ return sign
 ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/e685a9fff074339291a64c04758866cc_dgAwKA3Pr3.png?height=836&lazyload=true&maxWidth=600&width=1812)
 
 - 方式二：调用[撤回消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/delete)接口，以群聊的群主或管理员身份调用该接口撤回消息。
+
+

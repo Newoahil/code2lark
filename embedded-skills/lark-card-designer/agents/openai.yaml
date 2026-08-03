@@ -1,4 +1,4 @@
 interface:
   display_name: "Lark Card Designer"
-  short_description: "Feishu/Lark card design and review"
-  default_prompt: "Use $lark-card-designer to design or review a Feishu/Lark card for this data or rendered preview, including key data selection, readability, card pattern, operational analytics, streaming and real-client preview rules when relevant, components, design constraints, accepted/processing/final action states, duplicate-action feedback, visual status, and a non-production structure sketch."
+  short_description: "Feishu/Lark card design and JSON 2.0 review"
+  default_prompt: "Use $lark-card-designer to design or review a Feishu/Lark card for this data or rendered preview. Run the JSON 2.0 feasibility gate, classify official, conditional, conceptual-only, and unsupported or unverified capabilities, give conservative fallbacks, then cover key data, readability, card pattern, design constraints, accepted/processing/final action states, visual status, and a non-production component map."

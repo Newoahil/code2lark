@@ -1,4 +1,4 @@
-# 人员选择-多选组件
+﻿# 人员选择-多选组件
 
 人员选择-多选组件支持添加指定人员作为多选选项。多选组件是一种交互组件，需嵌入在表单容器中使用。
 **注意事项**：本文档介绍人员选择-多选组件的 JSON 2.0 结构，要查看历史 JSON 1.0 结构，参考[人员选择-多选](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/multi-select-user-picker)。
@@ -70,7 +70,7 @@
             }
           },
           {  // 以下为表单容器中内嵌的分栏、按钮等组件属性，详情参考表单容器文档。
-            "tag": "column_set",
+            "tag": "column_set", 
             "columns": [
               {
                 "tag": "column",

@@ -1,4 +1,4 @@
-# 更新已发送的消息卡片
+﻿# 更新已发送的消息卡片
 
 通过消息 ID（message_id）更新已发送的消息卡片的内容。
 
@@ -128,3 +128,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 200914 | table rows is invalid | 表格行无效。可能原因与排查方案：<br>- 表格的 rows 部分不是一个合法的 JSON，示例参考[表格 JSON 结构](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/table#51c332ce)。<br>- 单元格数据类型解析错误。例如，某列的单元格类型是富文本，但该列该行的数据按富文本解析失败。该场景下可根据返回的单元格行列索引（从 0 开始计数），定位问题单元格，然后参考[表格](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/table)中的 **data_type 字段说明**，检查是否配置有误。
 
 其他未列出的错误码请参见[服务端通用错误码](https://open.feishu.cn/document/ukTMukTMukTM/ugjM14COyUjL4ITN)。
+
+

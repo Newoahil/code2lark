@@ -20,7 +20,7 @@ Avoid streaming when the result is fast, static, approval-only, or when intermed
 
 | Update mode | Design use | Suitable content |
 | --- | --- | --- |
-| `text_streaming` | Progressive AI or long-text output | One primary plain-text or rich-text region |
+| `text_streaming` | Progressive AI or long-text output | One primary verified `markdown` or `div` region, subject to authoring-path support |
 | `component_partial_update` | State changes without rebuilding the whole layout | Step status, tool-result summary, chart, feedback state |
 | `full_replace` | Major information-architecture transition | Running process to final report or completed result |
 | `hybrid` | Text first, then component updates and final replacement | Multi-step agent tasks and AI-assisted workflows |
@@ -78,8 +78,8 @@ Streaming controls the generation process, not the final information architectur
 
 Mention these only as compatibility constraints for the implementation owner:
 
-- text streaming is suited to one plain-text or rich-text content region
-- builder-based cards may restrict text streaming to the rich-text component; implementation owners should confirm the selected authoring path
+- text streaming is suited to one verified `markdown` or `div` content region
+- builder-based cards may restrict text streaming to the `markdown` component; implementation owners should confirm the selected authoring path and exact CardKit capability
 - component-level partial updates can continue for state, chart, action, or feedback changes
 - updates must preserve ordering and should not compete with an active user interaction
 - delayed updates begin only after the interaction acknowledgement; the implementation owner must satisfy the platform response deadline without blocking on long work

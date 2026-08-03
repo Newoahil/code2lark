@@ -44,7 +44,7 @@ The goal is not to show less data. The goal is to put the decisive data first, k
 | Article/blog/news digest | title, source, publish/collect time, summary, priority, link | must-read items, why it matters | full article body, long excerpts | categorized list with tags and links |
 | Approval/process object | object, applicant, state, amount/scope, reason, deadline, risk | decision object, current state, consequence, primary action | full history, raw policy text | facts block + action area + audit footer |
 | Alert/status | severity, impacted object, cause, time, mitigation | current status, impact, required action | full logs, secondary context | status header + short mitigation path |
-| Long-running progress | current step, state, blocker, next update, latest result | current state and next expected event | long tool output, old steps | step list + collapsible logs |
+| Long-running progress | current step, state, blocker, next update, latest result | current state and next expected event | long tool output, old steps | conceptual step summary mapped to `markdown`/`div`; conditional `collapsible_panel` logs or detail link |
 | Agent/permission | requester/agent, permission scope, resource, risk, expiry, audit | identity, scope, impact, approve/reject decision | raw permission JSON, full policy docs | technical facts table; no decorative language |
 
 ## Intent-Specific Key Data

@@ -1,4 +1,4 @@
-# 典型案例
+﻿# 典型案例
 
 本文提供部分卡片案例供你参考，你可以根据案例构建符合自己业务需求的卡片内容。
 构建所需的卡片内容，需要使用飞书卡片搭建工具。详情参考[飞书卡片搭建工具概述](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/feishu-cardkit-overview)。
@@ -20,3 +20,5 @@
 飞书项目 | 支持为企业项目管理平台配置链接预览。例如，为飞书项目链接配置文本预览以及卡片，在卡片内展示当前项目的关键信息。 | ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/1927b7f4affc21b77353d3882197739e_hfKduqes8o.png?height=940&lazyload=true&width=1124) | ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/576e30dc4a4360ae9d639f0ceaf91a0e_s7mxFmKmX3.png?height=840&lazyload=true&width=1076)
 飞书 OKR | 发送飞书 OKR 时，可以为链接配置卡片预览，在卡片内展示 OKR 的核心内容。 | ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/1051bfb6649060fc02dc17608c52c374_v6z3UoriMt.png?height=876&lazyload=true&width=1124) | ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/dce77c025564dbbdb658c62a330d7105_8C7mYKjRJ3.png?height=776&lazyload=true&width=1076)
 飞书会议 | 企业内组织的会议，可以将会连接配置预览效果。例如，为飞书会议配置链接预览，在卡片内展示会议名称、人员、状态等信息，并通过配置交互逻辑，支持一键加入会议。 | ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/cdaed2ead50cb50fa0bf55fb36d4465c_Qz6cZrCeBt.png?height=604&lazyload=true&width=1124) | ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/2009081a8c52dd6207de1c0f09cf8aad_bz1H07KOgU.png?height=504&lazyload=true&width=1076)
+
+

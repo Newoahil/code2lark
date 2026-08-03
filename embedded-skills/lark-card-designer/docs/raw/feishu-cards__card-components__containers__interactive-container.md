@@ -1,4 +1,4 @@
-# 交互容器
+﻿# 交互容器
 
 你可基于业务需求在交互容器中内嵌组件，并灵活组合多个交互容器，并统一定义多个交互容器的样式、交互能力等，实现多种组合效果和丰富的卡片交互。
 
@@ -95,7 +95,7 @@ elements | 是 | Array&lt;element&gt; | [] | 交互容器内嵌的组件。仅�
 为组件成功配置交互后，用户基于组件进行交互时，你在开发者后台配置的请求地址将会收到回调数据。
 - 如果你添加的是新版卡片回传交互回调(`card.action.trigger`)，可参考[卡片回传交互](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-callback-communication)了解回调结构。
 - 如果你添加的是旧版卡片回传交互回调(`card.action.trigger_v1`)，可参考[消息卡片回传交互（旧）](https://open.feishu.cn/document/ukTMukTMukTM/uYzM3QjL2MzN04iNzcDN/configuring-card-callbacks/card-callback-structure)了解回调结构。
--
+- 
 ## 示例代码
 
 以下的 JSON 示例代码可实现如下图所示的卡片效果：

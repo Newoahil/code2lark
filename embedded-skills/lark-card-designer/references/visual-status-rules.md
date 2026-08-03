@@ -62,14 +62,14 @@ Use only one dominant status color per card header. Use tags for secondary statu
 ### 1. Agent & Tech Approvals (De-personalized)
 - **Identify the Identity**: Avatars are allowed for identity verification (e.g., Requesting User/Agent).
 - **Strictly No Emojis**: Keep the visual language professional and technical. Do not use emojis for status or decoration.
-- **Visuals**: Use `Tag` for permissions (e.g., `read_only`, `admin`). Use `Note` for technical logs/audit trails.
+- **Visuals**: Use compact permission labels rendered through a verified text/tag path (for example `read_only`, `admin`). Put technical logs and audit trails in a notation-sized `div`, conditional `collapsible_panel`, or detail link.
 
 ### 2. High-Density Reports (The Order Principle)
 - **Complexity is OK**: For weekly/monthly reports, users expect data. Do not cut data; organize it.
 - **Mobile Pivot Strategy**: When data exceeds 3 columns, **do not delete context**. Instead, pivot the layout:
     - **Vertical Stacking**: Convert secondary columns into a list or `Markdown` description below the primary data.
-    - **Note Component**: Move audit-level strings (IDs, timestamps) to a `Note` area to keep main columns readable.
-- **Visual Anchors**: Use `Divider` to separate modules. Use `ColumnSet` for side-by-side KPI comparison.
+    - **Metadata Note Concept**: Move audit-level strings (IDs, timestamps) to a notation-sized neutral `div` or concise `markdown` area.
+- **Visual Anchors**: Use `hr` to separate modules. Use verified `column_set` with nested `column` items for side-by-side KPI comparison, with a vertical-stack fallback.
 
 ## Density Rules
 

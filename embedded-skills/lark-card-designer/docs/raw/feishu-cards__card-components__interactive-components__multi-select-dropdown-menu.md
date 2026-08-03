@@ -1,4 +1,4 @@
-# 下拉选择-多选组件
+﻿# 下拉选择-多选组件
 
 下拉选择-多选组件支持自定义多选菜单的选项文本、图标和回传参数，是一种交互组件，需嵌入在表单容器中使用。本文档介绍下拉选择-多选组件的 JSON 结构和相关属性。
 
@@ -88,7 +88,7 @@ options | 否 | Array of objects | / | 选项值配置。按选项数组的顺�
 ```json
   {
       "schema": "2.0",
-      "header": {
+      "header": { 
           "event_id": "f7984f25108f8137722bb63cee927e66",
           "token": "066zT6pS4QCbgj5Do145GfDbbagCHGgF",
           "create_time": "1603977298000000",
@@ -98,9 +98,9 @@ options | 否 | Array of objects | / | 选项值配置。按选项数组的顺�
       },
       "event":{
           "operator": {
-              "tenant_key": "xxxxxxx",
-              "user_id": "xxxxxxx",
-              "open_id": "ou_xxx"
+              "tenant_key": "xxxxxxx", 
+              "user_id": "xxxxxxx",    
+              "open_id": "ou_xxx"     
           },
           "token": "c-xxxx",
           "action": { // 表单容器“提交”按钮本身配置的回传交互的值
@@ -112,15 +112,15 @@ options | 否 | Array of objects | / | 选项值配置。按选项数组的顺�
               "form_value":  { // 表单容器中各组件的返回值
               "multi_select_departments":[ // 表单容器中下拉选择-多选组件的自定义标识
                      "selectDemo1", // options.value 的值，用于判断用户选择的是哪个选项
-                     "selectDemo2"
-                 ]
+                     "selectDemo2"               
+                 ] 
               }
           },
-          "host": "im_message",
+          "host": "im_message", 
           "context": {
               "open_message_id":"om_xxx",
-              "open_chat_id":"oc_xxx"
-          }
+              "open_chat_id":"oc_xxx"           
+          }  
       }
   }
   ```
@@ -128,12 +128,12 @@ options | 否 | Array of objects | / | 选项值配置。按选项数组的顺�
 
 ```json
   {
-      "open_id": "ou_sdfimx9948345",
-      "user_id": "eu_sd923r0sdf5",
+      "open_id": "ou_sdfimx9948345", 
+      "user_id": "eu_sd923r0sdf5", 
       "open_message_id": "om_abcdefg1234567890",
       "tenant_key": "d32004232",
       "token": "c-xxxxx",
-      "action":
+      "action": 
           {
               "value":{
                  "key":"value"
@@ -143,8 +143,8 @@ options | 否 | Array of objects | / | 选项值配置。按选项数组的顺�
               "form_value":  {
                  "multi_select_departments":[
                      "selectDemo1", // options.value 的值，用于判断用户选择的是哪个选项
-                     "selectDemo2"
-                 ]
+                     "selectDemo2"               
+                 ] 
               }
           }
   }

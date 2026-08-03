@@ -1,4 +1,4 @@
-# 飞书卡片概述
+﻿# 飞书卡片概述
 
 本文档介绍飞书卡片的基本概念、功能特性与应用场景，帮助你快速上手飞书卡片。
 
@@ -113,3 +113,5 @@ AI 机器人场景是指当用户与 AI 机器人聊天交互时，AI 机器人�
 阶段二：搭建卡片 | - **方式一（推荐）**：使用[飞书卡片搭建工具](https://open.feishu.cn/cardkit?from=open_docs_tool_overview)，通过拖拉拽的方式快速构建卡片。相关文档和示例如下：<br>- [搭建工具使用指南](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/feishu-cardkit-overview)<br>- [组件文档](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/components/button)<br>- [参考案例](https://open.larkoffice.com/cardkit?catalogId=10015&templateId=)<br>- **方式二**：通过编写[卡片 JSON 代码](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-structure)搭建卡片。相关文档：<br>- [组件 JSON 文档](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/component-json-v2-overview)<br>- [卡片 JSON 2.0 版本更新说明](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-breaking-changes-release-notes)
 阶段三：发送卡片 | 参考[发送卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/send-feishu-card)，通过调用发送消息等服务端 API 发送卡片。飞书卡片支持[流式更新](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/streaming-updates-openapi-overview)。
 阶段四：（可选）更新已发送的卡片 | 参考[更新卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/update-feishu-card)，了解如何调用更新应用发送的消息卡片 API 更新飞书卡片。
+
+

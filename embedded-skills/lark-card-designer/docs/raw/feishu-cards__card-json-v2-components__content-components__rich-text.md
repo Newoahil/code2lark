@@ -1,4 +1,4 @@
-# 富文本组件
+﻿# 富文本组件
 
 JSON 2.0 结构卡片的富文本（Markdown）组件支持渲染标题、表情、表格、图片、代码块、分割线等元素。
 **注意事项**：本文档介绍富文本组件的 JSON 2.0 结构，要查看历史 JSON 1.0 结构，参考[富文本（Markdown）](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/rich-text)。
@@ -86,7 +86,7 @@ content | 是 | String | / | Markdown 文本内容。了解支持的语法，参
       {
         "tag": "markdown",
         "content": "# 一级标题",
-        "margin": "0px 0px 0px 0px",
+        "margin": "0px 0px 0px 0px", 
         "text_align": "left",
         "text_size": "normal"
       },
@@ -216,74 +216,74 @@ content | 是 | String | / | Markdown 文本内容。了解支持的语法，参
 {"This is": "JSON demo"}
 ```
 `````
-- plain_text
-- abap
-- ada
-- apache
-- apex
-- assembly
-- bash
-- c_sharp
-- cpp
-- c
+- plain_text 
+- abap 
+- ada 
+- apache 
+- apex 
+- assembly 
+- bash 
+- c_sharp 
+- cpp 
+- c 
 - cmake
-- cobol
-- css
-- coffee_script
-- d
-- dart
-- delphi
-- diff
-- django
-- docker_file
+- cobol 
+- css 
+- coffee_script 
+- d 
+- dart 
+- delphi 
+- diff 
+- django 
+- docker_file 
 - erlang
-- fortran
-- gherkin
-- go
-- graphql
-- groovy
-- html
-- htmlbars
-- http
-- haskell
-- json
+- fortran 
+- gherkin 
+- go 
+- graphql 
+- groovy 
+- html 
+- htmlbars 
+- http 
+- haskell 
+- json 
 - java
-- javascript
-- julia
-- kotlin
-- latex
-- lisp
-- lua
-- matlab
-- makefile
-- markdown
-- nginx
+- javascript 
+- julia 
+- kotlin 
+- latex 
+- lisp 
+- lua 
+- matlab 
+- makefile 
+- markdown 
+- nginx 
 - objective_c
-- opengl_shading_language
-- php
-- perl
-- powershell
-- prolog
-- properties
-- protobuf
-- python
-- r
+- opengl_shading_language 
+- php 
+- perl 
+- powershell 
+- prolog 
+- properties 
+- protobuf 
+- python 
+- r 
 - ruby
-- rust
-- sas
-- scss
-- sql
-- scala
-- scheme
-- shell
-- solidity
-- swift
-- toml
-- thrift
+- rust 
+- sas 
+- scss 
+- sql 
+- scala 
+- scheme 
+- shell 
+- solidity 
+- swift 
+- toml 
+- thrift 
 - typescript
-- vbscript
-- visual_basic
-- xml
+- vbscript 
+- visual_basic 
+- xml 
 - yaml
 ## 为移动端和桌面端定义不同的字号
 
@@ -479,4 +479,6 @@ text_size | 否 | Object | / | 文本大小。你可在此自定义移动端和�
     "padding": "12px 12px 12px 12px"
   }
 }
-```
+```  
+
+

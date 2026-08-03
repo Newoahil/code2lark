@@ -1,4 +1,4 @@
-# 新增组件
+﻿# 新增组件
 
 为指定卡片实体新增组件，以扩展卡片内容，如在卡片中添加一个点击按钮。
 
@@ -90,3 +90,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 300315 | Failed to add element | 添加组件失败。请根据接口返回的错误信息检查输入参数。
 400 | 300317 | The sequence number for operating on the card did not increment consecutively | 操作卡片的序号（sequence）未按顺序递增。请确保在通过卡片 OpenAPI 操作同一张卡片时，sequence 的值相较于上一次操作严格递增。
 400 | 300120 | Server Internal Error | 服务内部错误。请稍后重试。仍然出现可联系[技术支持](https://applink.feishu.cn/TLJpeNdW)。
+
+

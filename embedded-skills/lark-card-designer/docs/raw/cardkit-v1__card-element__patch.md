@@ -1,4 +1,4 @@
-# 更新组件属性
+﻿# 更新组件属性
 
 通过传入 `card_id`（卡片实体 ID）和 `element_id`（组件 ID），更新卡片实体中对应组件的属性。
 
@@ -87,3 +87,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 300312 | Unable to update element tag | 更新卡片属性时，不能更新组件的标签（tag）属性。
 400 | 300313 | Failed to update element  properties | 更新组件属性失败。请根据接口返回的错误信息检查输入参数。
 400 | 300317 | The sequence number for operating on the card did not increment consecutively | 操作卡片的序号（sequence）未按顺序递增。请确保在通过卡片 OpenAPI 操作同一张卡片时，sequence 的值相较于上一次操作严格递增。
+
+

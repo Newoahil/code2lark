@@ -1,4 +1,4 @@
-# 发送消息内容结构
+﻿# 发送消息内容结构
 
 本文介绍[发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)、[回复消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply)、[编辑消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/update)接口中各消息类型（`msg_type`）对应的消息内容（`content`）应如何构造。
 
@@ -30,11 +30,11 @@
 
 **内容示例**
 
-```json
+```json 
 {
     "text": "test content"
 }
-```
+``` 
 
 **参数说明**
 
@@ -44,34 +44,34 @@ text | string | 是 | 文本内容。<br>**示例值**：test content
 
 **[发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)请求体示例**
 
-```json
+```json 
 {
     "receive_id": "ou_7d8a6e6df7621556ce0d21922b67670xxxx",
     "content": "{\"text\":\"test content\"}",
     "msg_type": "text"
 }
-```
+``` 
 
 #### 支持换行符
 
 如果需要在文本中换行，可使用 `\n` 换行符。请求体示例如下（注意内容需要转义）：
 
-```json
+```json 
 {
     "receive_id": "oc_xxx",
     "content": "{\"text\":\"firstline \\n secondline \"}",
     "msg_type": "text"
 }
-```
+``` 
 
 #### 支持 @ 用户、@ 所有人
 
-```json
+```json 
 // @ 单个用户
 <at user_id="ou_xxxxxxx">用户名（可不填）</at>
 // @ 所有人
 <at user_id="all"></at>
-```
+``` 
 
 - @ 单个用户时，`user_id` 字段必须填入用户的 open_id，union_id 或 user_id 来 @ 指定人。请确保 ID 为有效值，ID 获取方式参考[如何获取 User ID、Open ID 和 Union ID？](https://open.feishu.cn/document/home/user-identity-introduction/open-id)。
 - @ 所有人时，`user_id` 取值为 `all`，并且需要注意所在群必须开启了 @ 所有人功能。
@@ -79,12 +79,12 @@ text | string | 是 | 文本内容。<br>**示例值**：test content
 
 文本消息 @ 用法示例：
 
-```json
+```json 
 {
     "receive_id": "oc_xxx",
     "content": "{\"text\":\"<at user_id=\\\"ou_xxxxxxx\\\">Tom</at> text content\"}",
     "msg_type": "text"
-}
+} 
 ```
 
 消息发送后的效果如下图：
@@ -94,7 +94,7 @@ text | string | 是 | 文本内容。<br>**示例值**：test content
 #### 支持部分样式标签
 
 支持加粗、斜体、下划线、删除线四种样式（可嵌套使用）：
-- **加粗**：`**文本示例**`
+- **加粗**：`**文本示例**`       
 - *斜体*：`<i>文本示例</i>`
 - _下划线_：`<u>文本示例</u>`
 - ~~删除线~~：`<s>文本示例</s>`warning
@@ -104,13 +104,13 @@ text | string | 是 | 文本内容。<br>**示例值**：test content
 - 该能力暂不支持[自定义机器人](https://open.feishu.cn/document/ukTMukTMukTM/ucTM5YjL3ETO24yNxkjN)和[批量发送消息](https://open.feishu.cn/document/ukTMukTMukTM/ucDO1EjL3gTNx4yN4UTM)接口。
 
 样式标签使用示例：
-```json
+```json 
 {
     "receive_id": "oc_xxx",
     "content": "{\"text\":\"**bold content<i>, bold and italic content</i>**\"}",
     "msg_type": "text"
 }
-```
+``` 
 
 消息发送后效果如下图：
 
@@ -125,13 +125,13 @@ text | string | 是 | 文本内容。<br>**示例值**：test content
 - 该能力暂不支持[自定义机器人](https://open.feishu.cn/document/ukTMukTMukTM/ucTM5YjL3ETO24yNxkjN)和[批量发送消息](https://open.feishu.cn/document/ukTMukTMukTM/ucDO1EjL3gTNx4yN4UTM)接口。
 
 超链接使用示例：
-```json
+```json 
 {
     "receive_id": "oc_xxx",
     "content": "{\"text\":\"[Feishu Open Platform](https://open.feishu.cn)\"}",
     "msg_type": "text"
 }
-```
+``` 
 
 消息发送后效果如下图：
 
@@ -148,7 +148,7 @@ text | string | 是 | 文本内容。<br>**示例值**：test content
 - 实际发送消息时，需要将 JSON 格式的内容压缩为一行、并进行转义。
 - 如需参考该 JSON 示例构建富文本消息内容，则需要把其中的 user_id、image_key、file_key 等示例值替换为真实值。
 
-```json
+```json 
 {
 	"zh_cn": {
 		"title": "我是一个标题",
@@ -172,11 +172,11 @@ text | string | 是 | 文本内容。<br>**示例值**：test content
 					"style": ["lineThrough"]
 				}
 			],
-	[{
+          	[{
 				"tag": "img",
 				"image_key": "img_7ea74629-9191-4176-998c-2e603c9c5e8g"
 			}],
-			[
+			[	
 				{
 					"tag": "text",
 					"text": "第二行:",
@@ -187,16 +187,16 @@ text | string | 是 | 文本内容。<br>**示例值**：test content
 					"text": "文本测试"
 				}
 			],
-	[{
+          	[{
 				"tag": "img",
 				"image_key": "img_7ea74629-9191-4176-998c-2e603c9c5e8g"
 			}],
-	[{
+          	[{
 				"tag": "media",
 				"file_key": "file_v2_0dcdd7d9-fib0-4432-a519-41d25aca542j",
 				"image_key": "img_7ea74629-9191-4176-998c-2e603c9c5e8g"
 			}],
-	[{
+          	[{
 				"tag": "emotion",
 				"emoji_type": "SMILE"
 			}],
@@ -218,7 +218,7 @@ text | string | 是 | 文本内容。<br>**示例值**：test content
 		...
 	}
 }
-```
+``` 
 
 **参数说明**
 
@@ -323,13 +323,13 @@ URL 自动链接 | `<https://www.feishu.cn>` | 支持 URL 自动链接。`<url>`
 
 [发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)时的请求体示例：
 
-```json
+```json 
 {
   "receive_id": "oc_820faa21d7ed275b53d1727a0feaa917",
   "msg_type": "post",
   "content": "{\"zh_cn\":{\"content\":[[{\"tag\":\"md\",\"text\":\"## 新版 Markdown 渲染示例\\n\\n1. 有序列表第一项\\n2. 有序列表第二项\\n\\n> 这是一段引用内容。\\n\\n```ts\\nconst feature = \\\"CommonMark 0.31 + GFM\\\";\\nconsole.log(feature);\\n```\\n\\n| 语法 | 状态 | 说明 |\\n| --- | --- | --- |\\n| 表格 | 支持 | 表格不支持嵌套 |\\n| 任务列表 | 支持 | 仅展示任务状态 |\\n| 自动链接 | 支持 | 裸 URL 可自动识别为链接 |\\n\\n- [x] 已完成：任务列表渲染\\n- [ ] 待处理：继续补充文档示例\\n\\n~~这是一段删除线内容~~\\n\\nhttps://open.feishu.cn\\n\\n<at user_id=\\\"ou_xxx\\\">lark</at> <at user_id=\\\"all\\\"></at>\\n\\n![飞书 Logo](img_v3_xxx)\"}]]}}"
 }
-```
+``` 
 发送后的效果图：
 
 ![markdown-clean-example.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/0fe2a670b734da11cd831a05e218e786_6khhE8Vi7y.png?height=1832&lazyload=true&maxWidth=300&width=1172)
@@ -338,12 +338,12 @@ URL 自动链接 | `<https://www.feishu.cn>` | 支持 URL 自动链接。`<url>`
 
 **内容示例**
 
-```json
+```json 
 {
     "image_key": "img_7ea74629-9191-4176-998c-2e603c9c5e8g"
 }
-```
-**参数说明**
+``` 
+**参数说明** 
 
 名称 | 类型 | 是否必填 | 描述
 ---|---|---|---
@@ -351,13 +351,13 @@ image_key | string | 是 | 图片 Key，通过[上传图片](https://open.feishu
 
 **[发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)请求体示例**
 
-```json
+```json 
 {
 	"receive_id": "oc_xxx",
 	"content": "{\"image_key\": \"img_v2_xxx\"}",
 	"msg_type": "image"
-}
-```
+} 
+``` 
 
 消息发送后的效果如下图：
 
@@ -420,13 +420,13 @@ data | object | 否 | 卡片模板的数据，要发送由搭建工具搭建的�
 ![b9d86d57c25f51570909a23ebc43026a_h4kayeS9dl.gif](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/b9d86d57c25f51570909a23ebc43026a_QEwsOFPWe5.gif?height=872&lazyload=true&width=1914)
 
 示例请求体如下所示：
-    ```json
+    ```json 
     {
       "receive_id": "ou_449b53ad6aee526f7ed311b216aabcef",
       "msg_type": "interactive",
       "content": "{\"schema\":\"2.0\",\"config\":{\"update_multi\":true,\"style\":{\"text_size\":{\"normal_v2\":{\"default\":\"normal\",\"pc\":\"normal\",\"mobile\":\"heading\"}}}},\"body\":{\"direction\":\"vertical\",\"padding\":\"12px 12px 12px 12px\",\"elements\":[{\"tag\":\"markdown\",\"content\":\"西湖，位于中国浙江省杭州市西湖区龙井路1号，杭州市区西部，汇水面积为21.22平方千米，湖面面积为6.38平方千米。\",\"text_align\":\"left\",\"text_size\":\"normal_v2\",\"margin\":\"0px 0px 0px 0px\"},{\"tag\":\"button\",\"text\":{\"tag\":\"plain_text\",\"content\":\"🌞更多景点介绍\"},\"type\":\"default\",\"width\":\"default\",\"size\":\"medium\",\"behaviors\":[{\"type\":\"open_url\",\"default_url\":\"https://baike.baidu.com/item/%E8%A5%BF%E6%B9%96/4668821\",\"pc_url\":\"\",\"ios_url\":\"\",\"android_url\":\"\"}],\"margin\":\"0px 0px 0px 0px\"}]},\"header\":{\"title\":{\"tag\":\"plain_text\",\"content\":\"今日旅游推荐\"},\"subtitle\":{\"tag\":\"plain_text\",\"content\":\"\"},\"template\":\"blue\",\"padding\":\"12px 12px 12px 12px\"}}"
-    }
-    ```
+    } 
+    ``` 
 
 消息发送后的效果如下图：
 
@@ -436,13 +436,13 @@ data | object | 否 | 卡片模板的数据，要发送由搭建工具搭建的�
 
 **内容示例**
 
-```json
+```json 
 {
     "chat_id": "oc_0dd200d32fda15216d2c2ef1ddb32f76"
 }
-```
+``` 
 
-**参数说明**
+**参数说明** 
 
 名称 | 类型 | 是否必填 | 描述
 ---|---|---|---
@@ -450,13 +450,13 @@ chat_id | string | 是 | 群 ID。获取方式参见[群ID 说明](https://open.
 
 **[发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)请求体示例**
 
-```json
+```json 
  {
 	"receive_id": "oc_xxx",
 	"content": "{\"chat_id\":\"oc_xxx\"}",
 	"msg_type": "share_chat"
 }
-```
+``` 
 机器人必须在群名片所在的群内，才可以成功发送群名片。
 
 消息发送后的效果如下图：
@@ -467,15 +467,15 @@ chat_id | string | 是 | 群 ID。获取方式参见[群ID 说明](https://open.
 
 **内容示例**
 
-```json
+```json 
 {
     "user_id": "ou_0dd200d32fda15216d2c2ef1ddb32f76"
-}
-```
+} 
+``` 
 - `user_id` 只支持设置用户的 open_id，且该用户需要在机器人的可用范围内，详情参见[配置应用可用范围](https://open.feishu.cn/document/home/introduction-to-scope-and-authorization/availability)。
 - 暂不支持分享机器人的名片。
 
-**参数说明**
+**参数说明** 
 
 名称 | 类型 | 是否必填 | 描述
 ---|---|---|---
@@ -483,13 +483,13 @@ user_id | string | 是 | 用户的 open_id，获取方式参见[如何获取 Ope
 
 **[发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)请求体示例**
 
-```json
+```json 
 {
 	"receive_id": "oc_820faa21d7ed275b53d1727a0feaa917",
 	"content": "{\"user_id\":\"ou_xxx\"}",
 	"msg_type": "share_user"
-}
-```
+} 
+``` 
 
 消息发送后的效果如下图：
 
@@ -501,13 +501,13 @@ user_id | string | 是 | 用户的 open_id，获取方式参见[如何获取 Ope
 
 **内容示例**
 
-```json
+```json 
 {
     "file_key": "75235e0c-4f92-430a-a99b-8446610223cg"
 }
-```
+``` 
 
-**参数说明**
+**参数说明** 
 
 名称 | 类型 | 是否必填 | 描述
 ---|---|---|---
@@ -515,13 +515,13 @@ file_key | string | 是 | 语音文件的 Key，通过[上传文件](https://ope
 
 **[发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)请求体示例**
 
-```json
+```json 
 {
 	"receive_id": "oc_xxx",
 	"content": "{\"file_key\":\"file_v2_xxx\"}",
 	"msg_type": "audio"
-}
-```
+} 
+``` 
 
 消息发送后的效果如下图：
 
@@ -531,13 +531,13 @@ file_key | string | 是 | 语音文件的 Key，通过[上传文件](https://ope
 
 **内容示例**
 
-```json
+```json 
 {
     "file_key": "75235e0c-4f92-430a-a99b-8446610223cg",
     "image_key": "img_xxxxxx"
 }
-```
-**参数说明**
+``` 
+**参数说明** 
 
 名称 | 类型 | 是否必填 | 描述
 ---|---|---|---
@@ -546,13 +546,13 @@ image_key | string | 否 | 视频的封面图片，可选择配置，不配置�
 
 **[发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)请求体示例**
 
-```json
+```json 
 {
     "receive_id": "oc_xxx",
     "content": "{\"file_key\":\"file_v2_xxx\",\"image_key\":\"img_v2_xxx\"}",
     "msg_type": "media"
-}
-```
+} 
+``` 
 
 消息发送后的效果如下图：
 
@@ -562,25 +562,25 @@ image_key | string | 否 | 视频的封面图片，可选择配置，不配置�
 
 **内容示例**
 
-```json
+```json 
 {
     "file_key": "75235e0c-4f92-430a-a99b-8446610223cg"
 }
-```
-**参数说明**
+``` 
+**参数说明** 
 
 名称 | 类型 | 是否必填 | 描述
 ---|---|---|---
 file_key | string | 是 | 文件的 Key，通过[上传文件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/file/create)接口获取文件的 Key（file_key）。<br>**示例值**：75235e0c-4f92-430a-a99b-8446610223cg
 
 **[发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)请求体示例**
-```json
+```json 
 {
 	"receive_id": "oc_820faa21d7ed275b53d1727a0feaa917",
 	"content": "{\"file_key\":\"file_v2_xxx\"}",
 	"msg_type": "file"
-}
-```
+} 
+``` 
 
 消息发送后的效果如下图：
 
@@ -590,12 +590,12 @@ file_key | string | 是 | 文件的 Key，通过[上传文件](https://open.feis
 
 **内容示例**
 
-```json
+```json 
 {
     "file_key": "75235e0c-4f92-430a-a99b-8446610223cg"
 }
-```
-**参数说明**
+``` 
+**参数说明** 
 
 名称 | 类型 | 是否必填 | 描述
 ---|---|---|---
@@ -603,13 +603,13 @@ file_key | string | 是 | 表情包文件的 Key，目前仅支持发送机器�
 
 **发消息请求体示例**
 
-```json
+```json 
 {
 	"receive_id": "oc_xxx",
 	"content": "{\"file_key\":\"file_v2_xxx\"}",
 	"msg_type": "sticker"
-}
-```
+} 
+``` 
 消息发送后的效果如下图：
 
 ![未标题-10.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/5617a52223f44877799f2de8c4639ed9_BBrI1lCAff.png?height=610&lazyload=true&maxWidth=300&width=632)
@@ -621,9 +621,9 @@ file_key | string | 是 | 表情包文件的 Key，目前仅支持发送机器�
 
 **内容示例**
 
-```json
+```json 
 {
-    "type": "divider",
+    "type": "divider", 
     "params": {
         "divider_text": {
             "text": "新会话",
@@ -638,7 +638,7 @@ file_key | string | 是 | 表情包文件的 Key，目前仅支持发送机器�
         "need_rollup": true
     }
 }
-```
+``` 
 
 **参数说明**
 
@@ -653,14 +653,15 @@ options | map | 否 | 可选配置项，格式为 `{key:value}` 形式，`key` �
 
 **[发送消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create)请求体示例**
 
-```json
+```json 
 {
         "receive_id": "oc_xxx",
         "content": "{\"type\":\"divider\",\"params\":{\"divider_text\":{\"text\":\"新会话\",\"i18n_text\":{\"zh_CN\":\"新会话\",\"en_US\":\"New Session\"}}},\"options\":{\"need_rollup\":true}}",
         "msg_type": "system"
-}
-```
+} 
+``` 
 
 效果示例如下图：
 
 ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/792f2064dabe161aa6e858514edf82b8_7008qWcmA1.png?height=248&lazyload=true&maxWidth=600&width=1824)
+

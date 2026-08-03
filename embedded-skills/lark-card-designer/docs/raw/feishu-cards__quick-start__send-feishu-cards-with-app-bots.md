@@ -1,4 +1,4 @@
-# 使用指定应用发送飞书卡片
+﻿# 使用指定应用发送飞书卡片
 
 通过本文你可以快速上手体验如何通过指定应用调用发送消息接口，向某个成员发送由搭建工具或卡片 JSON 构建的卡片。
 
@@ -131,8 +131,8 @@
 1. 在[发送消息 API](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create) 中，配置请求参数。
 
 1. 在 **查询参数** 页签下，设置 **receive_id_type** 为 `open_id`。
-	2. 在 **请求体** 页签下，将请求体替换为以下发送卡片的 JSON 示例：
-	 - 对于 JSON 代码构建的卡片，参考以下请求体示例：
+  	2. 在 **请求体** 页签下，将请求体替换为以下发送卡片的 JSON 示例：
+  	 - 对于 JSON 代码构建的卡片，参考以下请求体示例：
 
 ```json
         {
@@ -210,3 +210,5 @@ content | 是 | 消息内容。此处传入卡片相关内容。要发送由搭�
 [延时更新消息卡片](https://open.feishu.cn/document/ukTMukTMukTM/uMDO1YjLzgTN24yM4UjN) | 服务端 API | 用于交互组件的回传交互场景。当用户在卡片上操作交互组件后，如服务端无法在 3s 内返回更新卡片内容，可先返回空值，并在 30 分钟内调用此接口延时更新卡片内容。
 [更新应用发送的消息卡片](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/patch) | 服务端 API | 用于更新已发送的消息卡片内容，可以更新应用发送的 14 天内的消息。<br>**注意**：不要与 **延时更新消息卡片** 接口混用。
 [sendMessageCard](https://open.feishu.cn/document/uYjL24iN/uUjN5UjL1YTO14SN2kTN) | 客户端 API，必须在小程序或网页应用中调用 | 能以登录用户身份向指定会话发送消息卡片。发送前会对登录用户弹出二次确认弹窗，预览待发送的卡片内容。
+
+

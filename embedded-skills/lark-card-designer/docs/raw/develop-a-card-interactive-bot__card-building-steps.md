@@ -1,4 +1,4 @@
-# 卡片搭建说明
+﻿# 卡片搭建说明
 
 本文档介绍如何从 0 到 1 搭建卡片交互机器人教程中的三张卡片。通过本文档，你可了解搭建卡片、传入变量、配置交互动作所需步骤及对应原因解释。
 
@@ -62,3 +62,4 @@
 ![](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/42fca79d71078808a897f5d44d012369_ZL2GQEaygW.png?height=250&lazyload=true&maxWidth=500&width=635)
 
 ![](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/e9ead1fa3c69a8dcf173c4d4add9d47b_hKbhL3FjpS.png?height=678&lazyload=true&maxWidth=500&width=653)
+

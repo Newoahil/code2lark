@@ -1,4 +1,4 @@
-# 流式更新文本
+﻿# 流式更新文本
 
 对卡片中的普通文本元素（tag 为 plain_text 的元素）或富文本组件（tag 为 markdown 的组件）传入全量文本内容，以实现“打字机”式的文字输出效果。
 
@@ -100,3 +100,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 300313 | Failed to update element properties | 更新组件属性失败。请根据接口返回的错误信息检查输入参数。
 400 | 300317 | The sequence number for operating on the card did not increment consecutively | 操作卡片的序号（sequence）未按顺序递增。请确保在通过卡片 OpenAPI 操作同一张卡片时，sequence 的值相较于上一次操作严格递增。
 400 | 300120 | Server Internal Error | 服务内部错误。请确保 `sequence` 依次递增，然后稍后重试。仍然出现可联系[技术支持](https://applink.feishu.cn/TLJpeNdW)。
+
+

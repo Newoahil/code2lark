@@ -4,6 +4,8 @@ Use this file when the card is an action surface: approval, confirmation, parame
 
 Do not add controls just because Feishu supports them. Every control must reduce ambiguity, prevent an error, or shorten a required workflow.
 
+All parameter names and state labels in this file are design vocabulary, not Feishu JSON properties or enum values. Map controls only to verified JSON 2.0 components and require the implementation owner to check the matching component document for fields, nesting, callback behavior, and client constraints.
+
 ## Interaction Decision Rules
 
 | User need | Prefer | Avoid |

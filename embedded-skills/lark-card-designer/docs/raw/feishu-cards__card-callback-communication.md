@@ -1,4 +1,4 @@
-# 卡片回传交互回调
+﻿# 卡片回传交互回调
 
 **卡片回传交互**作用于飞书卡片的 **请求回调** 交互组件。当终端用户点击飞书卡片上的回传交互组件后，你在开发者后台应用内注册的回调请求地址将会收到 **卡片回传交互** 回调。该回调包含了用户与卡片之间的交互信息。
 
@@ -254,3 +254,5 @@ template_version_name | string | 否 | 搭建工具中创建的卡片的版本�
 200673 | 请求的卡片回调服务返回了错误的卡片。 | - 如果你添加的是新版卡片回传交互(`card.action.trigger`)回调，请参考[卡片回传交互](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-callback-communication#65787609)检查响应回调的结构体中 `card` 部分是否有误。<br>- 如果你添加的是旧版卡片回传交互(`card.action.trigger_v1`)回调，请参考[消息卡片回传交互（旧）](https://open.feishu.cn/document/ukTMukTMukTM/uYzM3QjL2MzN04iNzcDN/configuring-card-callbacks/card-callback-structure)检查响应回调的结构体中除 `toast` 外的其它部分是否有误。
 200830 | JSON 2.0 结构的卡片无法更新为 JSON 1.0 结构卡片。 | 如果交互前卡片的结构为[卡片 JSON 2.0 结构](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-structure)，交互后的卡片结构仍必须为 2.0 结构。
 300000 | 服务内部错误。 | 请联系[技术支持](https://applink.feishu.cn/TLJpeNdW)。
+
+

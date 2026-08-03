@@ -1,4 +1,4 @@
-# 图表
+﻿# 图表
 
 卡片搭建工具中的图表组件基于 [VChart](https://www.visactor.io/) 的图表定义，支持折线图、面积图、柱状图、饼图、词云等多种数据呈现方式，帮助你可视化各类信息，提高信息沟通效率。本文档介绍如何在搭建工具中使用新版卡片的图表组件。
 
@@ -59,3 +59,4 @@
 **为变量赋值**
 
 添加好变量后，在发送卡片时，即可通过请求体的 `template_variable` 字段为变量赋值。`template_variable` 字段是卡片绑定的变量列表，格式为 `{key:value}`，其中的 `key` 即为你定义的变量名称。详情参考[为卡片变量赋值](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/configure-card-variables#a6abb723)。
+

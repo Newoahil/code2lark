@@ -1,4 +1,4 @@
-# 勾选器组件
+﻿# 勾选器组件
 
 勾选器是一种交互组件，支持配置回调响应，主要用于任务勾选的场景。
 
@@ -51,7 +51,7 @@
           "img_key": "img_v2_38811724" // 图片的 key。仅在 tag 为 custom_icon 时生效。
         },
         "disabled": false,
-        "behaviors": []
+        "behaviors": []  
       }
     ]
   },
@@ -71,7 +71,7 @@
         "key": "value"
       }
     }
-  ],
+  ],  
   "hover_tips": {},  //用户在 PC 端将光标悬浮在勾选器上方时的文案提醒。
   "disabled": false,  // 是否禁用该勾选器。默认值 false。
   "disabled_tips": {}  // 禁用勾选器后，用户在 PC 端将光标悬浮在勾选器上方时的文案提醒。

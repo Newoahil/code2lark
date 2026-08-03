@@ -1,4 +1,4 @@
-# 上传图片
+﻿# 上传图片
 
 调用本接口将图片上传至飞书开放平台，支持上传 JPG、JPEG、PNG、WEBP、GIF、BMP、ICO、TIFF、HEIC 格式的图片，但需要注意 TIFF、HEIC 上传后会被转为 JPG 格式。
 
@@ -100,7 +100,7 @@ from requests_toolbelt import MultipartEncoder
 def uploadImage():
     url = "https://open.feishu.cn/open-apis/im/v1/images"
     form = {'image_type': 'message',
-            'image': (open('path/testimage.png', 'rb'))}  # 需要替换具体的path
+            'image': (open('path/testimage.png', 'rb'))}  # 需要替换具体的path 
     multi_form = MultipartEncoder(form)
     headers = {
         'Authorization': 'Bearer t-xxx',  ## 获取tenant_access_token, 需要替换为实际的token
@@ -152,3 +152,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 234042 | Hybrid deployment tenant storage error, such as full storage space, please contact tenant administrator. | 请求出现混部租户存储错误，如存储空间已满等，请联系租户管理员或[技术支持](https://applink.feishu.cn/TLJpeNdW)。
 
 更多错误码信息，参见[通用错误码](https://open.feishu.cn/document/ukTMukTMukTM/ugjM14COyUjL4ITN)。
+
+

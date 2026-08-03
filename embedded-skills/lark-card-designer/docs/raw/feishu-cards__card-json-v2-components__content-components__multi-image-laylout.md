@@ -1,4 +1,4 @@
-# 多图混排组件
+﻿# 多图混排组件
 
 飞书卡片支持多图混排组件。你可调用[上传图片](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/image/create)接口或在新版飞书卡片搭建工具中上传图片，获取图片的 key 传入多图混排组件中，使卡片内容更丰富。
 

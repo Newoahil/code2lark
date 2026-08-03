@@ -1,4 +1,4 @@
-# 使用自定义机器人发送飞书卡片
+﻿# 使用自定义机器人发送飞书卡片
 
 通过本文档，你可以快速体验如何使用飞书群聊中添加的自定义机器人发送卡片。
 
@@ -231,7 +231,7 @@
       curl -X POST -H "Content-Type: application/json" -d "{\"msg_type\":\"interactive\",\"card\":{\"type\":\"template\",\"data\":{\"template_id\":\"AAqi6xJ8rabcd\",\"template_version_name\":\"1.0.0\",\"template_variable\":{\"open_id\":\"ou_d506829e8b6a17607e56bcd6b1aabcef\"}}}}" "https://open.feishu.cn/open-apis/bot/v2/hook/f99fed8d-9b01-4dfe-ab56-xxxx"
       ```
 
-![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/da33feabb37f88a5ad9e00be6b9f8b34_GY7I3yBm84.png?height=268&lazyload=true&maxWidth=650&maxWidth=500&width=1705)
+![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/da33feabb37f88a5ad9e00be6b9f8b34_GY7I3yBm84.png?height=268&lazyload=true&maxWidth=650&maxWidth=500&width=1705)  
 
 - 如果你的操作系统是 **Windows 系统**，你也可以在本地打开 Windows PowerShell 工具，参考下表代码说明修改示例代码，然后在本地运行：
 
@@ -302,3 +302,5 @@ Content-Type: application/json | 请求头，无需修改。
 若调用成功，机器人将在其所在群聊发送卡片。若调用失败，你可在文档中搜索返回的错误码和错误信息获取排查建议。
 
 ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/7e7fc48bd2f3607e79ffab810f227c51_vIIToTHRsP.png?height=946&lazyload=true&maxWidth=500&width=947)
+
+

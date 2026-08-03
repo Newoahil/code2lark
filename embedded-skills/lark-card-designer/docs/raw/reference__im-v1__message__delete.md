@@ -1,4 +1,4 @@
-# 撤回消息
+﻿# 撤回消息
 
 调用该接口撤回指定消息。调用接口的身份不同（身份通过 Authorization 请求头参数指定），可实现的效果不同：
 
@@ -74,3 +74,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 232009 | Your request specifies a chat which has already been dissolved. | 群组已被解散，无法执行当前操作。
 
 更多错误码信息，参见[通用错误码](https://open.feishu.cn/document/ukTMukTMukTM/ugjM14COyUjL4ITN)。
+
+

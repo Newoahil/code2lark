@@ -1,4 +1,4 @@
-# 飞书卡片更新说明
+﻿# 飞书卡片更新说明
 
 在保持旧版消息卡片原有能力的基础上，飞书卡片进行了全面升级。主要更新如下所示。
 
@@ -61,3 +61,4 @@
 飞书卡片支持在飞书会话的置顶消息中展示。
 
 ![Frame 1321318172.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/1c23d0604d8c3d98c27074174cbdd32d_hr786xPhzC.png?height=1070&lazyload=true&maxWidth=400&width=1164)
+

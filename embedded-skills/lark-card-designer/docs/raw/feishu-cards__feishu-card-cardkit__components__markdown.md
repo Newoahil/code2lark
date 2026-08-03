@@ -1,4 +1,4 @@
-# 富文本
+﻿# 富文本
 卡片搭建工具中的富文本组件支持使用富文本语法渲染标题、表情、表格、图片、代码块、@ 人等元素。本文档介绍如何在搭建工具中使用新版卡片的富文本组件。
 
 ![](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/6511a33e09b9fa778e98913571b5c324_UCbikqrhz6.png?height=802&lazyload=true&maxWidth=600&width=1906)

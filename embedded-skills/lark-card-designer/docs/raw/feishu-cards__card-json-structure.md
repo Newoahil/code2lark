@@ -1,4 +1,4 @@
-# 卡片 JSON 1.0 结构
+﻿# 卡片 JSON 1.0 结构
 
 本文档介绍卡片 JSON 1.0 的结构和属性。了解卡片 JSON 2.0 的结构和属性，参考[卡片 JSON 2.0 结构](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-structure)。
 
@@ -318,3 +318,5 @@ trigger_conditions | 否 | Array | / | 触发降级的条件数组。满足其�
 └ type | 否 | String | "min_client_version" | 条件类型。可选值：<br>- <code>min_client_version</code>：设置最低客户端版本，当用户的客户端版本低于该设置时，触发降级；<br>- <code>element_tags</code>：指定组件。当用户的飞书客户端版本低于这些组件支持的最低客户端版本时，触发降级。
 └ value(当 type 为 "min_client_version"时) | 否 | String | "v7.4.1" | 最低飞书客户端版本的值，写法需符合以下格式之一：<br>- 7.4、7.4.1、7.4.1-xxx<br>- v7.4、v7.4.1、v7.4.1-xxx<br>- v7.3.7（0.103）<br>- v7.4.0-dev.d2666af5（0.14）<br></ul>
 └ value(当 type 为 "element_tags"时) | 否 | Array | ["table"] | 指定组件。当用户的飞书客户端版本低于这些组件支持的最低客户端版本时，触发降级。
+
+

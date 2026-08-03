@@ -21,13 +21,16 @@ For each case, compare the output against expected pattern, key data, component 
 | Long-running task | Current step, partial results, logs | `progress_card` | current state, step, blocker/next update, latest result, folded logs, explicit final pattern | many separate result cards; logs dominate first screen; final card stays process-first |
 | Streaming AI response | Progressive answer, tool steps, feedback after completion | `progress_card` with streaming overlay, then result pattern | reason for streaming, update mode, one primary streaming region, stable regions, exception states, interaction transition, finalization and fallback | short content streams for effect; multiple text regions compete; hidden reasoning or raw logs are exposed; active streaming contains complex approval/form interaction |
 | Real-client preview review | Feishu desktop/mobile screenshots, preview version, rendered interaction states, or visual acceptance request | existing scenario pattern plus `preview_review` overlay | version, evidence reviewed, observed issues versus inferred risks, responsive behavior, interaction safety, prioritized revisions, verdict, acceptance criteria | JSON or source is treated as visual proof; implementation/send/deployment steps are produced; IDs or credentials are repeated; no version or viewport is identified |
+| JSON 2.0 feasibility handoff | Any design expected to become Feishu Card JSON 2.0 | original scenario pattern plus mandatory feasibility gate | target schema, authoring path, exact official component tags, conceptual mappings, conditions, fallbacks, implementation verification | invented/deprecated tag; pseudo schema; root elements; guessed field/style; compatibility claimed without exact verification |
+| Visual-builder handoff | Card must be authored in the visual builder | original scenario pattern with authoring-path constraints | only builder-supported capabilities or explicit fallback; unsupported JSON-only components remain conditional | `collapsible_panel`, `select_img`, `checker`, or `audio` is prescribed as directly available in the visual builder |
+| Chart recommendation | Trend, composition, funnel, or target-gap visual | original scenario pattern with conditional chart | business question, chart type intent, compatible data grain, `chart_spec` verification requirement, non-chart fallback | chart is called sendable or compatible from the `chart` tag alone; fabricated VChart fields or no fallback |
 
 ## Review Procedure
 
 1. Identify which case is closest to the user input.
 2. Check that `card_pattern.name` matches the expected pattern or has a clear justified alternative.
 3. Check that `key_data_rules.must_show` includes the required trust fields: period, source, unit, owner, deadline, or audit trail when relevant.
-4. Check that `component_plan.data_display` matches the data shape: KPI blocks for few metrics, native table for bounded rows, chart for trend/composition/funnel, collapsible panel for raw evidence.
+4. Check that `component_plan.data_display` matches the data shape: conceptual KPI groups map to verified components, bounded rows use `table`, charts stay conditional until `chart_spec` validation, and folded evidence has an authoring-path fallback.
 5. Check that `visual_rules.color_policy` starts neutral and adds color only for status, risk, priority, trend, or action focus.
 6. For operational analytics, check that the card is organized by decision or action priority rather than data-source order, and that low-confidence conclusions remain visibly uncertain.
 7. For relative contribution or position analysis, check denominator, scope, time grain, and missing-value semantics.
@@ -36,8 +39,27 @@ For each case, compare the output against expected pattern, key data, component 
 10. Check that action cards include button layout, disabled/accepted/processing/final states, and audit feedback.
 11. For long-running actions, check that acceptance does not claim completion, duplicate clicks receive a visible stable state, side-effect boundaries are clear, and every processing state has a terminal or needs-input path.
 12. Check that implementation constraints remain handoff requirements and do not turn into callback payloads, HTTP handling, queue design, API calls, or code.
-13. Check that `structure_sketch` is labeled as a design handoff sketch only, not production-sendable Feishu JSON.
-14. Check that `design_red_lines` names the main failure modes for this scenario, not generic advice only.
+13. Check that `feasibility_check` separates `official_components`, `conditional_components`, `conceptual_only_patterns`, and `unsupported_or_unverified_requests`.
+14. Check every implementation-facing body component against the exact JSON 2.0 whitelist. Nested tags may appear only as nested mappings, never as generic `body.elements` components.
+15. Check that authoring-path restrictions are explicit. JSON-only and visual-builder-only capabilities must not be transferred across authoring paths without a fallback.
+16. Check that `structure_sketch` is labeled as a design handoff component map only, not production-sendable Feishu JSON, and that it contains no JSON-looking envelope.
+17. Check that `design_red_lines` names the main failure modes for this scenario, not generic advice only.
+
+## JSON 2.0 Hard Failures
+
+Fail the output immediately when any item below is present in an implementation-facing recommendation:
+
+- An invented or deprecated body tag such as `note`, `action`, `collapsible`, `button_group`, `form_optional`, or any `_or_` combination.
+- A pseudo-schema such as `schema: json_2_0_like` or a structure that places body components under root `elements` instead of `body.elements`.
+- Arbitrary CSS-like properties, generic style objects, HTML layout, gradients, shadows, fonts, flex/grid declarations, or unverified fields/enums presented as Feishu support.
+- A component or feature is declared supported without checking its exact official document when fields, nesting, authoring path, client version, resources, forwarding, or interaction behavior matter.
+- A nested tag such as `column`, `plain_text`, `lark_md`, `text_tag`, `standard_icon`, `custom_icon`, or `fallback_text` is used as a generic body component.
+- `chart` is declared implementation-compatible without requiring validation of its VChart `chart_spec` and providing a non-chart fallback.
+- A JSON-only component is prescribed for a visual-builder implementation, or a visual-builder-only capability is represented as a JSON tag.
+- A conditional or unsupported/unverified request has no conservative fallback.
+- The handoff claims production sendability, successful validation, or API acceptance without a real implementation-side validation and send/render test.
+
+Allowed occurrences of invalid names are limited to explicit warnings, negative examples, and compatibility tests that clearly say never to use them.
 
 ## Common Regression Signals
 
@@ -53,4 +75,7 @@ For each case, compare the output against expected pattern, key data, component 
 - Streaming cards expose logs or reasoning, keep several regions moving, or never transition to a stable final pattern.
 - Preview reviews trust code instead of rendered evidence, omit mobile or state coverage when relevant, or drift into sender scripts and deployment instructions.
 - Long evidence is not folded.
+- Conceptual labels look like component tags or are placed in JSON-looking structures.
+- Authoring-path restrictions are absent, so JSON-only components leak into visual-builder designs.
+- A valid component tag is treated as proof that all fields, nesting, or chart specs are valid.
 - The output claims to generate production-ready JSON, field-level schemas, callback contracts, or implementation code.

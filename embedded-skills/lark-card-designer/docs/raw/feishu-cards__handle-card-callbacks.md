@@ -1,4 +1,4 @@
-# 处理卡片回调
+﻿# 处理卡片回调
 
 为卡片添加交互组件后，你需在本地服务端接受并响应卡片回调，根据场景需求，实现立即更新卡片、延时更新卡片或不更新卡片等效果。本文档介绍如何订阅、接受并处理回调。
 
@@ -29,7 +29,7 @@
 
 | **添加回调方式** | **应用发送请求方式** |
 |------|----------|----------|
-| 只添加**新版**卡片回传交互(`card.action.trigger`)回调 | 1 个包含[新版回调结构](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-callback-communication)的请求 |
+| 只添加**新版**卡片回传交互(`card.action.trigger`)回调 | 1 个包含[新版回调结构](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-callback-communication)的请求 | 
 | 只添加**旧版**卡片回传交互(`card.action.trigger_v1`)回调 | 1 个包含[旧版回调结构](https://open.feishu.cn/document/ukTMukTMukTM/uYzM3QjL2MzN04iNzcDN/configuring-card-callbacks/card-callback-structure)的请求 | 参考了解回调结构 |
 | 同时添加**新版和旧版**卡片回传交互回调 | 2 个请求，分别包含[新版](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-callback-communication)和[旧版](https://open.feishu.cn/document/ukTMukTMukTM/uYzM3QjL2MzN04iNzcDN/configuring-card-callbacks/card-callback-structure)回调结构。此时，响应其中任一回调即为成功响应，建议你删除多余的请求方式 |
 | 在机器人页面配置过历史版本的消息卡片请求地址（如下图），并同时添加新版卡片回传交互(`card.action.trigger`)回调<br>![img_v3_02b9_439bc111-d97c-4f59-937d-d307980b536g.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/d5d3ea9fae646436ad42271f0162b88b_SzUVzB6gql.png?height=1188&lazyload=true&maxWidth=254&width=2214) | 2 个请求，分别包含[新版](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-callback-communication)和[旧版](https://open.feishu.cn/document/ukTMukTMukTM/uYzM3QjL2MzN04iNzcDN/configuring-card-callbacks/card-callback-structure)回调结构。此时，响应其中任一回调即为成功响应，建议你删除多余的请求方式  |

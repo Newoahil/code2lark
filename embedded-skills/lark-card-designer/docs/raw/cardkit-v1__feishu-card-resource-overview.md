@@ -1,4 +1,4 @@
-# 飞书卡片资源概述
+﻿# 飞书卡片资源概述
 飞书卡片是应用的一种能力，包括构建卡片内容所需的组件和发送卡片所需的能力，并提供了[可视化搭建工具](https://open.feishu.cn/cardkit?from=open_docs_overview)。飞书开放平台针对飞书卡片提供了一系列 OpenAPI，使用这些 OpenAPI 你可以在卡片和组件维度，局部或流式更新卡片。
 
 ## 典型案例
@@ -54,3 +54,5 @@
 `PATCH` [更新组件属性](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/patch) /open-apis/cardkit/v1/cards/:card_id/elements/:element_id | 创建与更新卡片(cardkit:card:write) | `tenant_access_token` | **✓** | **✓**
 `PUT` [流式更新文本](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/content) /open-apis/cardkit/v1/cards/:card_id/elements/:element_id/content | 创建与更新卡片(cardkit:card:write) | `tenant_access_token` | **✓** | **✓**
 `DELETE` [删除组件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/delete) /open-apis/cardkit/v1/cards/:card_id/elements/:element_id | 创建与更新卡片(cardkit:card:write) | `tenant_access_token` | **✓** | **✓**
+
+

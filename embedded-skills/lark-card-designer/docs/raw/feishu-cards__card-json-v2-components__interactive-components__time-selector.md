@@ -1,4 +1,4 @@
-# 时间选择器组件
+﻿# 时间选择器组件
 
 时间选择器组件是用于提供时间选项的交互组件。本文档介绍时间选择器组件的 JSON 结构和相关属性。
 **注意事项**：本文档介绍时间选择器组件的 JSON 2.0 结构，要查看历史 JSON 1.0 结构，参考[时间选择器](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/interactive-components/time-selector)。
@@ -168,3 +168,5 @@ confirm | 否 | Struct | 默认不生效此属性。 | 二次确认弹窗配置�
     }
 }
 ```
+
+

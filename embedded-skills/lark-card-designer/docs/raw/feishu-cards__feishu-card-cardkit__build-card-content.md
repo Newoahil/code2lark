@@ -1,4 +1,4 @@
-# 构建卡片内容
+﻿# 构建卡片内容
 
 本文档介绍如何使用可视化搭建工具构建卡片内容。你也可选择直接撰写卡片 JSON 代码构建卡片。详情参考[卡片 JSON 2.0 结构](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-structure)。
 

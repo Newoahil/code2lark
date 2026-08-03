@@ -1,10 +1,10 @@
-# 编辑消息
+﻿# 编辑消息
 
 调用该接口编辑已发送的消息内容，支持编辑文本、富文本消息。如需编辑卡片消息，请使用[更新应用发送的消息卡片](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/patch)接口。
 
 ## 前提条件
 
-- 应用需要开启[机器人能力](https://open.feishu.cn/document/uAjLw4CM/ugTN1YjL4UTN24CO1UjN/trouble-shooting/how-to-enable-bot-ability)。
+- 应用需要开启[机器人能力](https://open.feishu.cn/document/uAjLw4CM/ugTN1YjL4UTN24CO1UjN/trouble-shooting/how-to-enable-bot-ability)。  
 - 编辑用户单聊内的消息时，用户需要在机器人的[可用范围](https://open.feishu.cn/document/home/introduction-to-scope-and-authorization/availability)内。
 - 编辑群组内的消息时，机器人需要在该群组中，且拥有发言权限。
 
@@ -153,3 +153,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 232009 | Your request specifies a chat which has already been dissolved. | 消息所在的群组已被解散，无法操作。
 
 更多错误码信息，参见[通用错误码](https://open.feishu.cn/document/ukTMukTMukTM/ugjM14COyUjL4ITN)。
+
+

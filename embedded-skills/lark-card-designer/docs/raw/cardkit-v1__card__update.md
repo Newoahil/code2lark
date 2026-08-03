@@ -1,4 +1,4 @@
-# 全量更新卡片实体
+﻿# 全量更新卡片实体
 
 传入新的卡片 JSON 代码，覆盖更新指定的卡片实体的所有内容。
 
@@ -89,3 +89,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 400 | 300307 | The card DSL is empty | 卡片 JSON 数据为空。请检查数据。
 400 | 300311 | The current application does not have permission to update/use this card | 当前应用没有更新或使用该卡片的权限。请使用创建该卡片实体的应用调用相关 OpenAPI 发送、操作卡片。
 400 | 300317 | The sequence number for operating on the card did not increment consecutively | 操作卡片的序号（sequence）未按顺序递增。请确保在通过卡片 OpenAPI 操作同一张卡片时，sequence 的值相较于上一次操作严格递增。
+
+

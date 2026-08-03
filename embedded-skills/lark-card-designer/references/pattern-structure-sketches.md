@@ -1,8 +1,8 @@
 # Pattern Structure Sketches
 
-Use this file when design handoff needs a more concrete structure sketch than the default output. These are design sketches only. Do not treat them as production-sendable Feishu JSON, field-level schemas, or implementation templates.
+Use this file when design handoff needs a more concrete structure sketch than the default output. Every sketch is a conceptual component map, not production-sendable Feishu JSON, a field-level schema, or an implementation template.
 
-Keep sketches small. Show hierarchy, component intent, and field placement; avoid full API envelopes, credentials, callbacks, or complete component schemas.
+Before using a sketch, complete the feasibility check in `json-2.0-compatibility-rules.md`. Use exact official component names only in the mapping lines. Labels such as KPI group, article group, metadata note, button row, and step summary are design concepts, not component tags.
 
 ## Contents
 
@@ -18,165 +18,191 @@ Keep sketches small. Show hierarchy, component intent, and field placement; avoi
 
 Use for management reporting, business health, decision summaries, and high-level risk.
 
-```json
-{
-  "note": "Design handoff sketch only, not production-sendable Feishu JSON.",
-  "schema": "json_2_0_like",
-  "header": {
-    "title": "period + scope + conclusion",
-    "template": "neutral_or_single_status_color"
-  },
-  "elements": [
-    { "tag": "markdown", "content": "one-sentence conclusion and decision point" },
-    { "tag": "column_set", "purpose": "3_to_5_kpi_with_unit_baseline_delta" },
-    { "tag": "chart_or_markdown", "purpose": "small trend or target gap only if it changes the decision" },
-    { "tag": "note", "content": "source, update time, scope, caveat" },
-    { "tag": "collapsible", "content": "supporting details or raw rows" }
-  ]
-}
+```text
+Design handoff component map only; not production-sendable Feishu JSON.
+card
+  header (top-level): period + scope + conclusion; neutral or one semantic status intent
+  body.elements
+    markdown: one-sentence conclusion and decision point
+    KPI group (conceptual)
+      preferred mapping: column_set -> column -> div or markdown
+      fallback: vertically stacked div or markdown metrics
+    trend evidence, only when it changes the decision
+      conditional mapping: chart after VChart chart_spec verification
+      fallback: markdown with current value, baseline, and delta
+    metadata note (conceptual)
+      mapping: notation-sized neutral div; concise markdown is acceptable
+    supporting details
+      conditional mapping for JSON authoring: collapsible_panel
+      fallback for visual builder or unknown authoring path: summary + detail link
 ```
+
+Conditional checks: chart spec, column nesting, text styling, and collapsible authoring path. Do not prescribe a chart when the implementation owner cannot validate the spec.
 
 ## Ops Dashboard Card
 
 Use for daily/weekly operations, product operations, sales operations, anomalies, and owner follow-up.
 
-```json
-{
-  "note": "Design handoff sketch only, not production-sendable Feishu JSON.",
-  "schema": "json_2_0_like",
-  "header": {
-    "title": "period + scope + health/status",
-    "template": "neutral_or_status_color"
-  },
-  "elements": [
-    { "tag": "markdown", "content": "what changed, what needs attention" },
-    { "tag": "column_set", "purpose": "key_kpi_group" },
-    { "tag": "chart", "purpose": "trend, composition, funnel, or target gap" },
-    { "tag": "table", "purpose": "bounded_actionable_rows", "visible_rows": "5_to_10" },
-    { "tag": "collapsible", "content": "raw rows, old periods, long notes" },
-    { "tag": "note", "content": "source, owner, update time" }
-  ]
-}
+```text
+Design handoff component map only; not production-sendable Feishu JSON.
+card
+  header (top-level): period + scope + health/status
+  body.elements
+    markdown: what changed and what needs attention
+    KPI group (conceptual)
+      preferred mapping: column_set -> column -> div or markdown
+      fallback: vertical metric stack
+    trend, composition, funnel, or target-gap evidence
+      conditional mapping: chart after chart_spec verification
+      fallback: bounded table or staged markdown comparison
+    prioritized actionable rows
+      mapping: bounded table, normally 5 to 10 visible rows
+      fallback: compact markdown list
+    raw rows, older periods, or long evidence
+      conditional mapping for JSON authoring: collapsible_panel
+      fallback: detail link or separate detail card
+    metadata note (conceptual)
+      mapping: notation-sized neutral div with source, owner, and update time
 ```
 
-Product variant: make row identity `SKU/category`; prioritize inventory, sales, conversion, margin/refund, status, owner.
+Product variant: make row identity SKU/category; prioritize inventory, sales, conversion, margin/refund, status, and owner.
 
-Sales variant: prioritize revenue/order, target, forecast gap, funnel stage, region/channel, owner.
+Sales variant: prioritize revenue/orders, target, forecast gap, funnel stage, region/channel, and owner.
 
 ## Digest Card
 
 Use for blog, article, research, industry news, and knowledge aggregation.
 
-```json
-{
-  "note": "Design handoff sketch only, not production-sendable Feishu JSON.",
-  "schema": "json_2_0_like",
-  "header": {
-    "title": "topic + collection period",
-    "template": "neutral_or_priority_status"
-  },
-  "elements": [
-    { "tag": "markdown", "content": "why this collection matters" },
-    { "tag": "markdown_or_rich_text", "section": "must_read", "fields": ["title", "summary", "source", "time", "tags", "link"] },
-    { "tag": "markdown_or_rich_text", "section": "optional", "fields": ["title", "summary", "source", "link"] },
-    { "tag": "collapsible", "content": "archive, related links, longer notes" },
-    { "tag": "button_group", "purpose": "open, read later, useful/not useful when feedback matters" }
-  ]
-}
+```text
+Design handoff component map only; not production-sendable Feishu JSON.
+card
+  header (top-level): topic + collection period; normally neutral
+  body.elements
+    markdown: why this collection matters
+    must-read article group (conceptual)
+      mapping: markdown or repeated div items
+      fields by intent: title, summary, source, time, priority label, link
+    optional article group (conceptual)
+      mapping: markdown or repeated div items with lower visual emphasis
+    archive or related material
+      conditional mapping for JSON authoring: collapsible_panel
+      fallback: concise archive summary + detail link
+    actions, only when feedback or saving is supported
+      mapping: individual button components
+      multi-action layout: column_set -> column -> button after nesting verification
+      fallback: one primary button + overflow or text links for secondary actions
 ```
+
+Do not imply that a generic rich-text component or button-group component exists. Choose `markdown` or `div`, and map each action to a verified `button` or `overflow` component.
 
 ## Action Approval Card
 
 Use for approvals, confirmations, parameterized execution, permission changes, procurement, releases, and auditable decisions.
 
-```json
-{
-  "note": "Design handoff sketch only, not production-sendable Feishu JSON.",
-  "schema": "json_2_0_like",
-  "header": {
-    "title": "approval object + current state",
-    "template": "pending_or_final_status"
-  },
-  "elements": [
-    { "tag": "markdown", "content": "decision object, consequence, deadline" },
-    { "tag": "column_set_or_table", "purpose": "applicant, amount/scope, reason, impact, risk" },
-    { "tag": "note", "content": "policy caveat, audit requirement, source" },
-    { "tag": "form_optional", "purpose": "reject reason, return reason, parameter selection" },
-    { "tag": "button_group", "primary": "approve", "secondary": ["reject", "return", "view_detail"] },
-    { "tag": "collapsible", "content": "history, evidence, raw policy text" },
-    { "tag": "note", "content": "final state, operator, time, comment after action" }
-  ]
-}
+```text
+Design handoff component map only; not production-sendable Feishu JSON.
+card
+  header (top-level): approval object + current state
+  body.elements
+    markdown: decision object, consequence, and deadline
+    decision facts
+      choose column_set for a small fact set after nesting verification
+      choose table for bounded structured rows after column-definition verification
+      fallback: labeled div blocks
+    policy or audit caveat
+      mapping: notation-sized neutral div or concise markdown
+    required input, only when submission truly needs it
+      mapping: form containing verified input/select components
+      fallback: link to an external form or workflow
+    decision actions
+      mapping: individual button components
+      preferred hierarchy: one primary button; secondary actions in verified columns or overflow
+    history and evidence
+      conditional mapping for JSON authoring: collapsible_panel
+      fallback: summary + detail link
+    terminal audit state
+      mapping: div or markdown showing outcome, operator, time, and comment
 ```
 
-Always specify post-action state: `pending -> submitting -> approved/rejected/returned/expired/failed`.
+Always specify the interaction state model:
+
+```text
+pending
+  -> accepted (the interaction was received; controls lock)
+  -> processing, only when business work continues asynchronously
+  -> terminal: approved | rejected | returned | cancelled | expired | failed
+  -> needs_input, when the flow cannot continue without user information
+```
+
+Exact button fields, form nesting, callback values, and state mutation remain implementation-owner verification. This skill does not emit callback schemas.
 
 ## Analysis Card
 
 Use for retrospectives, root-cause analysis, evidence-backed diagnosis, and campaign/project reviews.
 
-```json
-{
-  "note": "Design handoff sketch only, not production-sendable Feishu JSON.",
-  "schema": "json_2_0_like",
-  "header": {
-    "title": "topic + result state",
-    "template": "neutral_or_risk_status"
-  },
-  "elements": [
-    { "tag": "markdown", "content": "one-sentence conclusion, impact, confidence" },
-    { "tag": "chart_or_table", "purpose": "baseline comparison and evidence" },
-    { "tag": "markdown", "content": "cause hypothesis with evidence boundary" },
-    { "tag": "table", "purpose": "corrective actions with owner and deadline" },
-    { "tag": "collapsible", "content": "raw data, logs, timeline, references" },
-    { "tag": "note", "content": "source, limitation, update time" }
-  ]
-}
+```text
+Design handoff component map only; not production-sendable Feishu JSON.
+card
+  header (top-level): topic + result state
+  body.elements
+    markdown: one-sentence conclusion, impact, and confidence
+    comparison evidence
+      choose chart only after chart_spec validation
+      choose bounded table when exact values or evidence rows matter more
+      fallback: markdown comparison with explicit baseline
+    markdown: cause hypothesis with evidence boundary
+    corrective actions
+      mapping: bounded table with action, owner, deadline, and state
+      fallback: compact markdown list
+    raw data, logs, timeline, or references
+      conditional mapping for JSON authoring: collapsible_panel
+      fallback: detail link or separate appendix card
+    metadata note (conceptual)
+      mapping: notation-sized neutral div with source, limitation, and update time
 ```
 
 ## Alert Card
 
 Use for incidents, warnings, short abnormal notifications, and single-status updates.
 
-```json
-{
-  "note": "Design handoff sketch only, not production-sendable Feishu JSON.",
-  "schema": "json_2_0_like",
-  "header": {
-    "title": "severity + impacted object",
-    "template": "severity_status_color"
-  },
-  "elements": [
-    { "tag": "markdown", "content": "current status, impact, likely cause" },
-    { "tag": "markdown_or_note", "content": "mitigation and next update time" },
-    { "tag": "button_group_optional", "purpose": "view details, acknowledge, refresh" },
-    { "tag": "collapsible", "content": "logs and secondary context" }
-  ]
-}
+```text
+Design handoff component map only; not production-sendable Feishu JSON.
+card
+  header (top-level): severity + impacted object; one semantic status intent
+  body.elements
+    markdown: current status, impact, and likely cause
+    div or markdown: mitigation and next update time
+    actions, only when the reader has a valid next step
+      mapping: individual button components
+      fallback: one detail link
+    logs and secondary context
+      conditional mapping for JSON authoring: collapsible_panel
+      fallback: detail link or separate detail card
 ```
 
-Escalate to `action_approval_card` when the reader must approve, confirm, or execute.
+Escalate to the action approval pattern when the reader must approve, confirm, or execute a consequential action.
 
 ## Progress Card
 
 Use for long-running tasks, streaming updates, and process tracking.
 
-```json
-{
-  "note": "Design handoff sketch only, not production-sendable Feishu JSON.",
-  "schema": "json_2_0_like",
-  "header": {
-    "title": "task + current state",
-    "template": "running_completed_failed_or_blocked"
-  },
-  "elements": [
-    { "tag": "markdown", "purpose": "single_primary_streaming_region", "content": "latest useful result or generated answer" },
-    { "tag": "markdown_or_step_list", "purpose": "current step, concise tool-result summary, blocker, next event" },
-    { "tag": "button_group_optional", "purpose": "stop, retry, provide input, or feedback only when valid for current state" },
-    { "tag": "collapsible", "content": "tool output, logs, historical steps" },
-    { "tag": "note", "content": "run stats, source, update time, timeout or fallback note" }
-  ]
-}
+```text
+Design handoff component map only; not production-sendable Feishu JSON.
+card
+  header (top-level): task + current state; keep stable during updates
+  body.elements
+    primary streaming region
+      mapping: one markdown component with the latest useful result
+    step summary (conceptual)
+      mapping: markdown or repeated div blocks for current step, blocker, and next event
+    state-valid actions
+      mapping: individual button components for stop, retry, input, or feedback
+      fallback: one primary action or a read-only status
+    tool output, logs, or historical steps
+      conditional mapping for JSON authoring: collapsible_panel
+      fallback: concise summary + detail link
+    metadata note (conceptual)
+      mapping: notation-sized neutral div with run stats, source, update time, and fallback state
 ```
 
-Keep the header and primary content region stable during updates. When complete, close streaming, remove generating language, and switch to the final result pattern instead of keeping a process-first layout.
+Keep the header and primary content region stable during updates. On completion, close streaming, remove generating language, and switch to the appropriate result-oriented pattern. CardKit update operations, element IDs, sequencing, and send behavior remain implementation responsibilities.

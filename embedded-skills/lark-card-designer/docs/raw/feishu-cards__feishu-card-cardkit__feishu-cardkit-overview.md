@@ -1,4 +1,4 @@
-# 飞书卡片搭建工具概述
+﻿# 飞书卡片搭建工具概述
 
 飞书卡片提供了可视化的飞书卡片搭建工具，你不需要裸写卡片的 JSON 代码，通过拖拉拽的方式即可构建一张卡片。本文档介绍搭建工具的功能特性。
 
@@ -67,6 +67,6 @@
 - 了解如何使用卡片，参考以下文档：
     - [预览与发布卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/preview-and-publish-cards)
     - [导入导出卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/import-and-export-cards)
-    - [发送卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/send-feishu-card)
+    - [发送卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/send-feishu-card) 
          - [更新卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/update-feishu-card)
          - [链接预览开发指南](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/development-link-preview/link-preview-development-guide)

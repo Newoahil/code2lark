@@ -2,13 +2,15 @@
 
 Use this file when the output needs design handoff constraints, not only high-level card style. Keep constraints scoped to the components used in the proposed card.
 
+Atomic constraints are design intents unless the exact field has been verified for the selected JSON 2.0 component. Do not translate generic visual language into guessed fields or CSS-like syntax.
+
 ## Constraint Layers
 
 | Layer | Constraints | Use when |
 | --- | --- | --- |
 | Typography | text size, text weight, text alignment, line count | hierarchy or mobile readability matters |
-| Color | header template, inline text color, tag color, icon color, border/background color | status, risk, trend, or priority needs visual encoding |
-| Spacing | divider, margin, section grouping, collapsible boundary | the card has multiple modules or dense data |
+| Color | header template, inline text color, tag color, icon color, verified component border/background intent | status, risk, trend, or priority needs visual encoding |
+| Spacing | `hr`, verified margin/padding/spacing fields, section grouping, `collapsible_panel` boundary | the card has multiple modules or dense data |
 | Data display | table columns, column width priority, data type, sort key, empty state | rows/columns drive comprehension or action |
 | Interaction | primary/secondary/destructive button, disabled state, confirm copy | user action changes state |
 | Metadata | period, source, update time, owner, audit trail, confidence | data needs trust, traceability, or compliance |
@@ -39,10 +41,12 @@ Use inline color as micro-emphasis, not as a layout system.
 
 Design handoff hints:
 
-- Rich text / markdown: use inline font color syntax for short fragments.
+- `markdown`: use the documented inline font-color syntax only for short fragments after checking the exact official syntax.
 - Plain text component: use `text_color` when the whole text element has one semantic state.
 - Tags: use `text_tag` or option tags when the colored item is a status or category.
 - Table cells: prefer `options`, `lark_md`, or `markdown` data types for colored/status content instead of coloring a whole row.
+
+Verify the exact text path before naming field syntax. Nested `plain_text`/`lark_md` tags and `markdown` body components have different capabilities.
 
 Recommended mapping:
 
@@ -61,7 +65,7 @@ Use tags for compact classification.
 - Status tags: `高风险`, `待审批`, `已完成`, `已过期`.
 - Priority tags: `P0`, `P1`, `必读`, `可选`.
 - Object tags: `SKU`, `商机`, `权限`, `发布`.
-- Keep tag text short. Long explanations belong in markdown or notes.
+- Keep tag text short. Long explanations belong in `markdown`; secondary metadata belongs in notation-sized `div` or concise `markdown`.
 - Use tag color from semantic state. Do not invent decorative tag palettes.
 
 ## Typography
@@ -75,8 +79,10 @@ Use tags for compact classification.
 
 - Use dividers between modules with different decisions: summary, metrics, actions, evidence, audit.
 - Avoid dividers inside a tightly related metric group.
-- Use collapsible boundaries for raw evidence, old history, logs, and long rows.
+- For JSON authoring, use verified `collapsible_panel` boundaries for raw evidence, old history, logs, and long rows; otherwise use a detail link or separate detail card.
 - If the first screen feels crowded, reduce competing modules before reducing required context.
+- Use `hr` when naming the JSON 2.0 divider component. Do not prescribe CSS borders, shadows, gradients, or generic border-radius values.
+- Margin, padding, background, border, width, and spacing support must be verified on the selected component; similar field names are not universal.
 
 ## Table Constraints
 
@@ -127,6 +133,7 @@ design_constraints:
 - table_columns: visible=[name,status,delta,owner], folded=[id,raw_update_time]
 - buttons: primary=approve, secondary=[reject,return], disabled_after=final_state
 - responsive_behavior: stack secondary fields on mobile; fold raw evidence
+- compatibility: exact fields and enum values require matching JSON 2.0 component verification
 ```
 
 For deeper button, input, select, and form constraints, use `interaction-parameters.md`.

@@ -5,7 +5,8 @@ Use this file to keep designs compatible with Feishu/Lark card realities. It is 
 ## Basis
 
 - Default to Feishu card JSON 2.0-style structure for new designs.
-- Use structure sketches only to show hierarchy and component intent.
+- Run `json-2.0-compatibility-rules.md` before selecting concrete components or style fields.
+- Use conceptual component maps only to show hierarchy, verified component mappings, and fallback intent.
 - Do not claim structure sketches are production-sendable or implementation-ready.
 - Mention JSON 1.0 only when reviewing older cards or compatibility.
 - Use CardKit concepts when the design needs card entity lifecycle, partial update, streaming text updates, template variables, or reusable card content.
@@ -14,10 +15,11 @@ Use this file to keep designs compatible with Feishu/Lark card realities. It is 
 
 A structure sketch may include:
 
-- `config` placeholders
-- `header` with title and status color intent
-- `elements` showing markdown, column set, table, chart, buttons, notes, or collapsible sections
-- comments or placeholder values explaining intent
+- `header` as a top-level card region with title and restrained status intent
+- `body` as a conceptual region
+- verified component names such as `markdown`, `div`, `column_set`, `table`, `chart`, `button`, and `collapsible_panel`
+- conceptual pattern names only when followed by an explicit mapping to real components
+- conditions and fallbacks for chart, form, collapsed detail, media, or interaction choices
 
 A structure sketch must not include:
 
@@ -27,17 +29,23 @@ A structure sketch must not include:
 - production validation guarantees
 - field-level implementation schemas
 - generated business IDs pretending to be real
+- pseudo-schema values such as `json_2_0_like`
+- root `elements` presented as JSON 2.0 structure
+- invented or deprecated tags such as `note`, `action`, `collapsible`, `button_group`, or `_or_` combinations
+- arbitrary CSS-like properties or unverified component fields
 
-Always label sketches: "Design handoff sketch only, not production-sendable Feishu JSON."
+Always label sketches: "Design handoff component map only; not production-sendable Feishu JSON."
+
+If an implementation owner asks for compatibility review, verify that real JSON 2.0 uses `schema: 2.0` and places body components under `body.elements`. Do not turn that review into JSON generation.
 
 ## Markdown And Rich Text
 
-- Use Markdown/rich text for conclusions, short descriptions, and grouped bullets.
+- Use the `markdown` body component for conclusions, short descriptions, and grouped bullets.
 - Avoid Markdown pipe tables for structured data; prefer native table.
 - Keep paragraphs short. Long explanations should be folded or linked.
 - Use links for details that do not need to be read inside the card.
-- For inline colored text, use rich text or `lark_md` color syntax only for short semantic fragments.
-- For whole plain text elements, use `text_color` only when the entire element has one semantic state.
+- For inline colored text, use the exact documented `markdown` font-color syntax only for short semantic fragments; do not infer syntax from generic HTML or Markdown.
+- For whole plain text elements, use `text_color` only through a documented text field of a verified component and only when the entire element has one semantic state.
 - Use `text_tag` or table option tags when the colored content is a status/category, not prose.
 - Link text color should follow platform behavior; do not design custom link colors.
 
@@ -45,7 +53,7 @@ Always label sketches: "Design handoff sketch only, not production-sendable Feis
 
 - Feishu card color fields support official color enums; some fields also support configured RGBA custom colors.
 - Do not specify a color field when the design does not need semantic color.
-- Rich text / Markdown can express inline colored text with font color syntax.
+- The `markdown` component can express inline colored text through documented font-color syntax.
 - Plain text components can use `text_color` when `tag` is `plain_text`.
 - Table columns can carry status through option tags or markdown-capable data types.
 - Icons can carry color, but icon color should reinforce state instead of adding decoration.
@@ -60,9 +68,10 @@ Always label sketches: "Design handoff sketch only, not production-sendable Feis
 
 ## Charts
 
-- Recommend chart type and intent, not full chart JSON by default.
+- Recommend chart type and intent, not full chart JSON or a guessed VChart spec.
 - Explain why chart beats KPI/table for this case.
 - Avoid decorative charts without a decision question.
+- Mark chart as conditional until the implementation owner validates `chart_spec`.
 
 ## Images And Media
 
@@ -79,12 +88,21 @@ Always label sketches: "Design handoff sketch only, not production-sendable Feis
 
 ## Streaming And Partial Updates
 
-- Use one primary plain-text or rich-text region for typewriter-style output.
+- Use one primary verified `markdown` or `div` region for progressive output, according to the exact CardKit/authoring-path support.
 - Use component-level updates for steps, charts, button state, or feedback rather than streaming unstable structured content.
 - Keep update ordering and active-interaction conflicts visible as implementation handoff constraints.
 - Treat shared multi-update behavior, timeout, forwarding restrictions, final closure, content limits, and client fallback as compatibility concerns.
 - Do not include sequence values, API payloads, callback code, or streaming parameter tuning in normal design output.
 - Read `streaming-card-rules.md` for the full design decision and state-transition model.
+
+## Strict JSON 2.0 Notes
+
+- JSON 2.0 rejects unsupported properties; unknown fields must be omitted or marked for official verification.
+- `note` and `action` are deprecated. Use notation-sized neutral `div`/concise `markdown`, and individual `button`/`overflow` components instead.
+- Visual-builder-only recycling containers must not appear in JSON mappings.
+- `collapsible_panel`, `select_img`, and `checker` are JSON-supported but unavailable in the visual builder.
+- Conditional `audio` requires the exact official document, client/resource/forwarding checks, and a fallback.
+- Component nesting is parent-specific. Verify the matching component document rather than inferring from visual similarity.
 
 ## Long Content
 

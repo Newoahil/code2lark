@@ -1,9 +1,9 @@
-# 回复消息
+﻿# 回复消息
 
 调用该接口回复指定消息。回复的内容支持文本、富文本、卡片、群名片、个人名片、图片、视频、文件等多种类型。
 
 ## 前提条件
-- 应用需要开启[机器人能力](https://open.feishu.cn/document/uAjLw4CM/ugTN1YjL4UTN24CO1UjN/trouble-shooting/how-to-enable-bot-ability)。
+- 应用需要开启[机器人能力](https://open.feishu.cn/document/uAjLw4CM/ugTN1YjL4UTN24CO1UjN/trouble-shooting/how-to-enable-bot-ability)。  
 - 回复用户消息（即单聊消息）时，用户需要在机器人的[可用范围](https://open.feishu.cn/document/home/introduction-to-scope-and-authorization/availability)内。
 - 回复群消息时，机器人需要在群中，且拥有发言权限。
 
@@ -54,7 +54,7 @@ uuid | string | 否 | 自定义设置的唯一字符串序列，用于在回复�
 
 **请求示例**
 
-```json
+```json 
 curl --location --request POST 'https://open.feishu.cn/open-apis/im/v1/messages/om_xxxxxx/reply' \
 --header 'Authorization: Bearer t-xxxxxx' \
 --header 'Content-Type: application/json; charset=utf-8' \
@@ -185,3 +185,5 @@ HTTP状态码 | 错误码 | 描述 | 排查建议
 200915 | table rows name is invalid | 表格的行名称没有在列中声明。在卡片的[表格组件](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/table)参数内，`rows` 字段需要以 `"name": VLAUE` 的形式定义每一行的数据内容，其中 `name` 为 `column` 中的 `name`（自定义的列 key），你需要检查 `column` 字段值，确保其中的 `name` 已传入正确值。
 
 其他未列出的错误码请参见[服务端通用错误码](https://open.feishu.cn/document/ukTMukTMukTM/ugjM14COyUjL4ITN)。
+
+

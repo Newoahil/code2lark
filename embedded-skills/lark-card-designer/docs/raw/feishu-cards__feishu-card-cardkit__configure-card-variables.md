@@ -1,4 +1,4 @@
-# 配置卡片变量
+﻿# 配置卡片变量
 
 使用搭建工具构建好卡片的样式内容后，你可为卡片添加卡片变量，根据实际业务场景，为变量赋值，让卡片灵活多变，实现多场景复用。本文档介绍卡片变量的类型和配置卡片变量的步骤。
 
@@ -98,7 +98,7 @@
 - 变量的类型一经创建，不支持修改。
 - 如果删除的变量已添加在其他组件内，则对应组件内的变量也会同步被删除。
 - 已发布并被已用于发送消息的飞书卡片不支持删除。
--
+- 
 ![](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/3988fa725588a79b904f43d3dc10fdf0_jgVtwHmk0L.gif?height=1180&lazyload=true&maxWidth=500&width=1758)
 
 ### 为卡片变量赋值
@@ -115,7 +115,7 @@
         "template_id":"AAqi6xJ8rabcd",
         "template_version_name":"1.0.0",
         "template_variable":{ // 数据报表卡片案例中的变量，对应搭建工具中的模拟数据。你可在此自定义这些变量的值。
-            "summary_ticket":"10",
+            "summary_ticket":"10",    
             "summary_hours":"10",
             "summary_pending":"20%",
             "object_list_1":[
@@ -138,7 +138,7 @@
                     "diff_color": "green"
                 }
             ]
-        }
+        }       
     }
 }
 ```
@@ -1064,3 +1064,5 @@ false
 ![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/6b65d5e2a42053355bbd8ff43f63b625_L6iMtv4VNN.png?height=479&lazyload=true&maxWidth=400&width=1592)
 
 你可进一步删除原来文本类型变量。推荐你使用[新版卡片](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/cardkit-upgraded-version-card-release-notes)，新版卡片的 **普通文本** 变量可直接渲染富文本样式，开发者无需再创建富文本变量。
+
+
