@@ -58,6 +58,47 @@ node tools/run-cobuild-demo.mjs --static-only
 
 这些检查证明 skill 规则和静态交付合同可被外部 agent 读取；真实飞书 Level 2 仍要求操作者配置应用凭据、测试群、长连接、`card.action.trigger` 订阅和权限，并提供脱敏证据。
 
+### Toolkit zip 交付给需求方
+
+交付形态选择 **skill + CLI/runtime toolkit zip**，同一个 zip 同时包含：
+
+- skill 层：`SKILL.md`、`references/`、内嵌 Lark Card Designer；
+- CLI/runtime 层：`dist/`、`src/`、`package.json`、测试和工具脚本；
+- 两种模式：Retrofit 和 Co-Build。
+
+从实现仓库打包：
+
+```powershell
+npm run package:toolkit
+```
+
+输出：
+
+```text
+dist/code2lark-toolkit-v<version>.zip
+```
+
+需求方解压后应至少看到：
+
+```text
+SKILL.md
+PACKAGE-MANIFEST.md
+package.json
+dist/index.js
+src/
+references/
+embedded-skills/lark-card-designer/
+tools/run-cobuild-demo.mjs
+tests/fixtures/cobuild-demo-prompt.md
+```
+
+交付、安装、验收和排障请从以下文档开始：
+
+- `docs/code2lark-toolkit-zip-delivery-guide.md`：toolkit zip 内容、安装、自检、Retrofit 和 Co-Build 两种模式用法。
+- `docs/cobuild-user-runbook.md`：zip 安装、自然需求输入、生成物使用、Feishu/Lark 配置与 Level 2 验证步骤。
+- `docs/cobuild-acceptance-checklist.md`：需求方验收清单。
+- `docs/troubleshooting-feishu-runtime.md`：SDK 安装、sender/runtime 区分、HTTP callback fallback、JSON 2.0 报错和回调问题排查。
+
 ## 常用命令
 
 ```powershell
