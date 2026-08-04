@@ -8,28 +8,27 @@ For the toolkit package itself, start with `docs/code2lark-toolkit-zip-delivery-
 
 The toolkit zip should contain the external-agent-facing Code2Lark skill package and the CLI/runtime layer. This Co-Build runbook focuses on the skill files required by the agent.
 
-Required zip contents:
+Required zip contents after entering the extracted toolkit root:
 
 ```text
-code2lark/
-  SKILL.md
-  references/
-    cobuild-workflow.md
-    cobuild-playbook.md
-    feishu-card-json-2-runtime-spec.md
-    feishu-runtime-gates.md
-    evidence-handoff.md
-    safety-and-secrets.md
-    confirmation-policy.md
-  embedded-skills/
-    lark-card-designer/
-      SKILL.md
-      references/json-2.0-compatibility-rules.md
-  tools/
-    run-cobuild-demo.mjs
-  tests/fixtures/
-    cobuild-demo-prompt.md
-    cobuild-demo-response.schema.json
+SKILL.md
+references/
+  cobuild-workflow.md
+  cobuild-playbook.md
+  feishu-card-json-2-runtime-spec.md
+  feishu-runtime-gates.md
+  evidence-handoff.md
+  safety-and-secrets.md
+  confirmation-policy.md
+embedded-skills/
+  lark-card-designer/
+    SKILL.md
+    references/json-2.0-compatibility-rules.md
+tools/
+  run-cobuild-demo.mjs
+tests/fixtures/
+  cobuild-demo-prompt.md
+  cobuild-demo-response.schema.json
 ```
 
 Optional but recommended zip contents:
@@ -41,11 +40,14 @@ docs/
   troubleshooting-feishu-runtime.md
 ```
 
-The zip can be produced from the skill package directory, for example:
+The zip should be produced from the Code2Lark implementation repository:
 
 ```powershell
-Compress-Archive -Path C:\works\code2lark\* -DestinationPath C:\Temp\code2lark-skill.zip -Force
+npm install
+npm run package:toolkit
 ```
+
+Expected output: `dist/code2lark-toolkit-v<version>.zip`.
 
 ## 2. Install the skill package
 
