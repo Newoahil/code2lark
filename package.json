@@ -19,7 +19,8 @@
     "test:e2e": "node --test tests/runtime-local-e2e.test.mjs",
     "test:coverage": "node --experimental-test-coverage --test tests/unit-pure-functions.test.mjs tests/cli-smoke.test.mjs tests/mode-b-install.test.mjs",
     "test": "npm run build && npm run test:unit && npm run test:smoke && npm run test:mode-b && npm run test:cobuild-demo && npm run test:e2e",
-    "demo:cobuild": "node tools/run-cobuild-demo.mjs"
+    "demo:cobuild": "node tools/run-cobuild-demo.mjs",
+    "package:toolkit": "npm run build && node tools/package-toolkit.mjs"
   },
   "engines": {
     "node": ">=24.16.0"
