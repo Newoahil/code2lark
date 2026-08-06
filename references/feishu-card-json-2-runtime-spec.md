@@ -4,7 +4,7 @@ This reference is the Code2Lark runtime boundary for Feishu/Lark Card JSON 2.0. 
 
 Use `lark-card-designer` for card information architecture, visual hierarchy, state design, and interaction intent. Use this spec only when converting that design handoff into production-sendable runtime payloads, sender payloads, callback responses, and verifier checks.
 
-In the current skill package, this spec is primarily a Co-Build delivery gate for generated `integrations/lark` modules. Retrofit should follow the same boundary when it converts existing or newly designed cards, but this small iteration is optimized for Co-Build handoff reliability.
+In the current skill repository, this spec is primarily a Co-Build delivery gate for generated `integrations/lark` modules. Retrofit should follow the same boundary when it converts existing or newly designed cards, but this small iteration is optimized for Co-Build handoff reliability.
 
 ## 1. Ownership Boundary
 

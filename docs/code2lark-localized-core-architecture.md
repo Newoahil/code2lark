@@ -6,7 +6,7 @@
 
 ## 1. Product Shape
 
-Code2Lark is a repository-root composite skill package with a TypeScript CLI/core implementation underneath it.
+Code2Lark is a repository-root composite skill with a TypeScript CLI/core implementation underneath it.
 
 ```text
 SKILL.md                         # Code2Lark skill entrypoint
