@@ -24,13 +24,14 @@ test("top-level docs define Code2Lark delivery modes", () => {
   const baseline = fs.readFileSync(path.join(root, "docs", "mvp-mode-a-b-baseline.md"), "utf8");
   const matrix = fs.readFileSync(path.join(root, "docs", "capability-validation-matrix.md"), "utf8");
 
-  assert.match(readme, /Mode A is the external host, sidecar, or gateway path\./);
-  assert.match(readme, /Mode B is the target-project embedded host-module path\./);
-  assert.match(readme, /Mode A.*(已验证|validated)/i);
-  assert.match(readme, /Mode B.*(已验证|validated)/i);
-  assert.doesNotMatch(readme, /Mode B.*pending real/i);
-  assert.doesNotMatch(readme, /Mode B.*待真实验收/);
-  assert.match(readme, /self-hosted-runtime is the generated host module/i);
+  assert.match(readme, /直接被 coding agent 加载/);
+  assert.match(readme, /仓库根目录直接包含 `SKILL\.md`/);
+  assert.match(readme, /<agent-skills-dir>\/code2lark/);
+  assert.match(readme, /Retrofit/);
+  assert.match(readme, /Co-Build/);
+  assert.match(readme, /integrations\/lark/);
+  assert.doesNotMatch(readme, new RegExp("package" + ":toolkit"));
+  assert.doesNotMatch(readme, new RegExp("code2lark-" + "toolkit"));
   assert.match(charter, /Mode A.*external host/i);
   assert.match(charter, /Mode B.*embedded host module/i);
   assert.doesNotMatch(charter, /Mode B.*not considered productized until/i);
@@ -59,7 +60,9 @@ test("top-level docs define Code2Lark delivery modes", () => {
   assert.match(matrix, /calendar-stock-updater/);
   assert.match(matrix, /Mode A/);
   assert.match(matrix, /Mode B/);
-  assert.match(readme, /canonical MVP package.*schema 0\.2/i);
+  assert.match(readme, /标准交付方式是把这个仓库作为 skill root/);
+  assert.match(readme, /CLI 是 Code2Lark skill 的执行层/);
+  assert.doesNotMatch(readme, /canonical MVP package.*schema 0\.2/i);
   assert.match(status, /canonical MVP package.*schema 0\.2/i);
 });
 
