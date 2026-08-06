@@ -53,7 +53,7 @@ code2lark/
   src/
 ```
 
-`SKILL.md` is the only public skill entrypoint. `references/` holds process rules. `embedded-skills/lark-card-designer/` is the bundled card-design capability. `tools/` documents executable reuse and local integration plans. The repository's existing `src/` is the real Code2Lark CLI/core implementation that the skill package will progressively wrap and factor into reusable APIs.
+`SKILL.md` is the only public skill entrypoint. `references/` holds process rules. `embedded-skills/lark-card-designer/` is the bundled card-design capability. `tools/` documents executable reuse and local integration plans. The repository's existing `src/` is the real Code2Lark CLI/core implementation that the skill repository will progressively wrap and factor into reusable APIs.
 
 ## Red Lines
 

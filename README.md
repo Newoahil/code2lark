@@ -45,7 +45,7 @@ integrations/lark
 
 ## 本地开发与验证
 
-开发机需要 Node.js `>=24.16.0` 和 npm `11.x`。
+开发机需要 Node.js `>=24.16.0` 和 npm `11.x`。仅作为 agent skill 被发现和加载时不需要运行 `npm install`；只有要使用本仓库的 CLI、demo runner 或测试时才需要安装依赖。
 
 ```powershell
 npm install
@@ -62,7 +62,7 @@ npm run test:cobuild-demo
 
 ## 常用 CLI 命令
 
-CLI 是 Code2Lark skill 的执行层。安装依赖并构建后，可从仓库根目录运行：
+CLI 是 Code2Lark skill 的执行层。需要执行 CLI、demo 或测试时，先安装依赖并构建：
 
 ```powershell
 npm install
