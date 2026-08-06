@@ -1,6 +1,6 @@
 # Code2Lark Local Module Plan
 
-Code2Lark is now shaped as a repository-root skill package. The real implementation remains in the repository's existing `src/` tree; this document records the local second-development direction that was considered for skill packaging.
+Code2Lark is now shaped as a repository-root skill. The real implementation remains in the repository's existing `src/` tree; this document records the local second-development direction that was considered for skill repository integration.
 
 Planned module areas in the real `src/` tree:
 

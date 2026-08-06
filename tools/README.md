@@ -23,7 +23,7 @@ External tools should become implementation details. Code2Lark should own the no
 
 ## Packaging Boundary
 
-The repository root is the Code2Lark skill package root because it contains `SKILL.md`, `references/`, `embedded-skills/`, and `tools/`. The existing `package.json` remains the Node CLI/core package metadata for the current TypeScript implementation (`lark-deployer` while the CLI package name is still historical). Do not treat `package.json` as the skill distribution manifest until a dedicated packaging step is designed.
+The repository root is the Code2Lark skill root because it contains `SKILL.md`, `references/`, `embedded-skills/`, and `tools/`. The existing `package.json` remains the Node CLI/core package metadata for the current TypeScript implementation (`lark-deployer` while the CLI package name is still historical). Do not treat `package.json` as the skill manifest.
 
 ## Co-Build Demo Runner
 
