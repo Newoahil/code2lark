@@ -1,22 +1,32 @@
 # Code2Lark
 
-Code2Lark 是一个面向 Feishu/Lark 接入交付的 **skill + CLI/runtime toolkit**。它既能作为外部 agent 可加载的 skill，指导 Retrofit / Co-Build 工作流，也能通过本仓库内的 TypeScript CLI 生成、安装、验证和交接 Lark 集成包。
+Code2Lark 是一个可以直接被 coding agent 加载的 Feishu/Lark 接入 skill。标准交付方式是把这个仓库作为 skill root：clone 下来后放到 Claude Code、Codex-like agent 或其他支持本地 skills 的目录中，仓库根目录直接包含 `SKILL.md`。
 
-当前 npm 包名和 CLI bin 仍保留历史名称 `lark-deployer`，但交付品牌和 skill 入口统一为 Code2Lark。
+当前 npm 包名和 CLI bin 仍保留历史名称 `lark-deployer`。这是 skill 内部复用的执行层；用户入口仍是 Code2Lark skill。
 
-## 当前交付形态
+## 标准安装方式
 
-当前推荐交付物是一个 toolkit zip：
+把仓库 clone 到 agent 的 skills 目录，或 clone 后复制整个仓库根目录。关键要求是：安装目录本身必须直接包含 `SKILL.md`。
 
-```text
-dist/code2lark-toolkit-v<version>.zip
+Claude-style local skills 示例：
+
+```powershell
+git clone https://github.com/Newoahil/code2lark.git C:\Users\<user>\.claude\skills\code2lark
 ```
 
-这个 zip 同时包含：
+如果你的 agent 使用其他 skills/plugin 目录，把同一个仓库根目录放到对应位置即可：
 
-- **Skill layer**：`SKILL.md`、`references/`、内嵌 `embedded-skills/lark-card-designer/`。
-- **CLI/runtime layer**：`dist/`、`src/`、`package.json`、`tools/`、`tests/`、`docs/`。
-- **Retrofit + Co-Build 两种模式**：既能给已有项目补 Lark 入口，也能在新业务能力设计时同步设计 Lark 入口。
+```text
+<agent-skills-dir>/code2lark/
+  SKILL.md
+  references/
+  embedded-skills/lark-card-designer/
+  tools/
+  src/
+  package.json
+```
+
+不要把 `dist/`、`out/`、`generated/`、`handoff/` 或真实 `.env` 当作 skill 交付内容提交；这些是本地构建、生成或验证产物。
 
 ## 支持模式
 
@@ -33,7 +43,7 @@ integrations/lark
 
 这个模块应包含真实 runtime 边界，而不是只输出卡片草图或本地 mock。
 
-## 快速开始
+## 本地开发与验证
 
 开发机需要 Node.js `>=24.16.0` 和 npm `11.x`。
 
@@ -43,32 +53,22 @@ npm run build
 npm test
 ```
 
-生成可交付 toolkit zip：
+验证 skill 静态合同：
 
 ```powershell
-npm run package:toolkit
-```
-
-解压后的需求方自检：
-
-```powershell
-npm install --ignore-scripts
-npm run build
-node dist/index.js --help
 node tools/run-cobuild-demo.mjs --static-only
+npm run test:cobuild-demo
 ```
-
-## 需求方安装
-
-Claude-style local skills 可以把 zip 解压后的 toolkit root 放到：
-
-```text
-C:\Users\<user>\.claude\skills\code2lark
-```
-
-其他 agent 使用时，把同一个 root folder 安装到对应 skill/plugin 目录即可。该 root 必须直接包含 `SKILL.md`。
 
 ## 常用 CLI 命令
+
+CLI 是 Code2Lark skill 的执行层。安装依赖并构建后，可从仓库根目录运行：
+
+```powershell
+npm install
+npm run build
+node dist/index.js --help
+```
 
 Retrofit 典型流程：
 
@@ -96,13 +96,6 @@ node dist/index.js handoff generated\<target>-lark
 node dist/index.js verify:card <card-json-file-or-directory>
 ```
 
-Co-Build skill 合同自检：
-
-```powershell
-node tools/run-cobuild-demo.mjs --static-only
-npm run test:cobuild-demo
-```
-
 ## Lark runtime 边界
 
 Code2Lark 明确区分 outbound sender 和 inbound receiver：
@@ -117,14 +110,15 @@ Code2Lark 明确区分 outbound sender 和 inbound receiver：
 
 ## 重要文档
 
-- `docs/code2lark-toolkit-zip-delivery-guide.md`：toolkit zip 打包、安装、自检、Retrofit / Co-Build 使用入口。
-- `docs/cobuild-user-runbook.md`：需求方使用 Co-Build 的操作手册。
-- `docs/cobuild-acceptance-checklist.md`：需求方验收清单。
-- `docs/troubleshooting-feishu-runtime.md`：SDK、sender/runtime、长连接、HTTP callback fallback、JSON 2.0 排障。
+- `SKILL.md`：agent 加载的唯一公开入口。
 - `references/retrofit-workflow.md`：Retrofit skill 工作流。
 - `references/cobuild-workflow.md` 和 `references/cobuild-playbook.md`：Co-Build skill 工作流和交付规则。
 - `references/feishu-card-json-2-runtime-spec.md`：Lark Card Designer sketch 到 runtime payload 的边界。
 - `references/feishu-runtime-gates.md`：runtime、transport、handoff gates。
+- `docs/cobuild-user-runbook.md`：需求方使用 Co-Build 的操作手册。
+- `docs/cobuild-acceptance-checklist.md`：需求方验收清单。
+- `docs/troubleshooting-feishu-runtime.md`：SDK、sender/runtime、长连接、HTTP callback fallback、JSON 2.0 排障。
+- `tools/README.md`：本地工具和 demo runner 说明。
 
 ## 测试与验证
 

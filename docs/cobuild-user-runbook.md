@@ -1,79 +1,49 @@
 # Code2Lark Co-Build User Runbook
 
-This runbook is for delivery recipients who already received the Code2Lark skill + CLI/runtime toolkit zip and want to use its Co-Build mode to generate a Feishu/Lark integration.
+This runbook is for users who installed the Code2Lark repository as a coding-agent skill and want to use Co-Build mode to generate a Feishu/Lark integration.
 
-For the toolkit package itself, start with `docs/code2lark-toolkit-zip-delivery-guide.md`.
+## 1. Install Code2Lark as a skill
 
-## 1. What the zip delivers
+Code2Lark is distributed as a cloneable skill repository. The installed skill root must contain `SKILL.md` directly.
 
-The toolkit zip should contain the external-agent-facing Code2Lark skill package and the CLI/runtime layer. This Co-Build runbook focuses on the skill files required by the agent.
+Claude-style local skills example:
 
-Required zip contents after entering the extracted toolkit root:
-
-```text
-SKILL.md
-references/
-  cobuild-workflow.md
-  cobuild-playbook.md
-  feishu-card-json-2-runtime-spec.md
-  feishu-runtime-gates.md
-  evidence-handoff.md
-  safety-and-secrets.md
-  confirmation-policy.md
-embedded-skills/
-  lark-card-designer/
-    SKILL.md
-    references/json-2.0-compatibility-rules.md
-tools/
-  run-cobuild-demo.mjs
-tests/fixtures/
-  cobuild-demo-prompt.md
-  cobuild-demo-response.schema.json
+```powershell
+git clone https://github.com/Newoahil/code2lark.git C:\Users\<user>\.claude\skills\code2lark
 ```
 
-Optional but recommended zip contents:
+For Codex-like or other coding agents, use that agent's configured skills/plugin directory and keep the same root layout:
 
 ```text
-docs/
-  cobuild-user-runbook.md
-  cobuild-acceptance-checklist.md
-  troubleshooting-feishu-runtime.md
+code2lark/
+  SKILL.md
+  references/
+    cobuild-workflow.md
+    cobuild-playbook.md
+    feishu-card-json-2-runtime-spec.md
+    feishu-runtime-gates.md
+    evidence-handoff.md
+    safety-and-secrets.md
+    confirmation-policy.md
+  embedded-skills/
+    lark-card-designer/
+      SKILL.md
+      references/json-2.0-compatibility-rules.md
+  tools/
+    run-cobuild-demo.mjs
+  tests/fixtures/
+    cobuild-demo-prompt.md
+    cobuild-demo-response.schema.json
 ```
 
-The zip should be produced from the Code2Lark implementation repository:
+If any of these files are missing, do not start a real Co-Build delivery. Re-clone or repair the skill repository first.
+
+## 2. Run a local skill sanity check
+
+From the installed skill root:
 
 ```powershell
 npm install
-npm run package:toolkit
-```
-
-Expected output: `dist/code2lark-toolkit-v<version>.zip`.
-
-## 2. Install the skill package
-
-Unzip the package into the agent's skill directory. For Claude-style local skills, the target path is typically:
-
-```text
-C:\Users\<user>\.claude\skills\code2lark
-```
-
-After extraction, confirm these files exist:
-
-```text
-SKILL.md
-references/feishu-card-json-2-runtime-spec.md
-references/feishu-runtime-gates.md
-embedded-skills/lark-card-designer/references/json-2.0-compatibility-rules.md
-tools/run-cobuild-demo.mjs
-```
-
-If any of these files are missing, do not start a real Co-Build delivery. Ask for a new zip package.
-
-## 3. Run a local skill sanity check
-
-From the extracted skill root:
-
-```powershell
 node tools/run-cobuild-demo.mjs --static-only
 ```
 
@@ -90,7 +60,7 @@ Expected result:
 
 This confirms that the Co-Build skill references are readable. It does not prove a real Feishu tenant has been configured.
 
-## 4. Use a natural business prompt
+## 3. Use a natural business prompt
 
 The user should describe the desired business workflow naturally. They do not need to mention JSON 2.0, long connection, callbacks, or verifier details.
 
@@ -106,7 +76,7 @@ Example:
 
 Code2Lark should automatically choose Co-Build when the business capability and the Lark entrypoint are being designed together.
 
-## 5. Expected generated output
+## 4. Expected generated output
 
 The generated or installed target project should contain:
 
@@ -136,7 +106,7 @@ Minimum requirements:
 - `verify:card` or equivalent exists.
 - Local simulator, if generated, is marked QA-only and not the delivery target.
 
-## 6. Configure the generated integration
+## 5. Configure the generated integration
 
 Inside the generated target project, copy the env template locally:
 
@@ -161,7 +131,7 @@ SEND_ON_START=false
 
 Never commit `.env`, raw callbacks, runtime logs, access tokens, chat IDs, open IDs, message IDs, or screenshots containing tenant identifiers.
 
-## 7. Install dependencies
+## 6. Install dependencies
 
 For embedded-long-connection runtime, install the integration dependencies explicitly:
 
@@ -189,7 +159,7 @@ The developer must choose one of:
 2. Keep the long-connection code generated and defer runtime start.
 3. Explicitly switch to HTTP callback fallback and prepare a public HTTPS URL plus Feishu callback configuration.
 
-## 8. Run local verification
+## 7. Run local verification
 
 From the target project root:
 
@@ -210,7 +180,7 @@ Local verification should prove:
 - Unauthorized operators are rejected.
 - JSON 2.0 runtime payloads reject `tag: "action"`, `tag: "note"`, design-only fields, and legacy button values.
 
-## 9. Configure Feishu/Lark Open Platform
+## 8. Configure Feishu/Lark Open Platform
 
 Before real Level 2 verification, the tenant operator must:
 
@@ -221,7 +191,7 @@ Before real Level 2 verification, the tenant operator must:
 5. Add the bot to the test chat.
 6. Confirm the operator open IDs used in allowlist belong to the same app/tenant context.
 
-## 10. Start and test real runtime
+## 9. Start and test real runtime
 
 Start the business service first:
 
@@ -247,7 +217,7 @@ Important distinction:
 - It does not prove the long-connection receive path is active.
 - Real Level 2 requires a click event to arrive through `card.action.trigger` and update business state/card state.
 
-## 11. Completion states
+## 10. Completion states
 
 Use these states in handoff and status reports:
 

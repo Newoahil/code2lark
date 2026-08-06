@@ -1,12 +1,13 @@
 # Code2Lark Co-Build Acceptance Checklist
 
-Use this checklist before handing the Code2Lark toolkit zip or a generated Co-Build integration to a demand-side team.
+Use this checklist before handing the Code2Lark skill repository or a generated Co-Build integration to a demand-side team.
 
-## 1. Package acceptance
+## 1. Skill repository acceptance
 
-- [ ] Delivery was provided as a zip or repository revision with `SKILL.md` at the skill root.
-- [ ] Toolkit delivery includes CLI/runtime files: `package.json`, `dist/index.js`, and `src/`.
-- [ ] Toolkit delivery supports both Retrofit and Co-Build references.
+- [ ] Delivery was provided as a repository revision or clone with `SKILL.md` at the skill root.
+- [ ] The skill root can be placed directly under the target agent's skills/plugin directory.
+- [ ] The repository includes CLI/runtime source files: `package.json`, `src/`, `tools/`, and tests.
+- [ ] The skill repository supports both Retrofit and Co-Build references.
 - [ ] `references/retrofit-workflow.md` exists.
 - [ ] `references/cobuild-workflow.md` exists.
 - [ ] `references/cobuild-playbook.md` exists.
